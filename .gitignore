@@ -1,0 +1,8 @@
+# Ne JAMAIS publier ces éléments
+node_modules/
+.env
+data/
+
+# Divers
+.DS_Store
+*.log

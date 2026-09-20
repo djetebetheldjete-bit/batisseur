@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bâtisseur · Parcours</title>
+<style>
+  :root{
+    --ground:#EEF1F6; --surface:#fff; --surface-2:#EDF1F6; --surface-3:#E7ECF3;
+    --ink:#0E1B2E; --ink-soft:#33445C; --ink-faint:#6B7A90;
+    --line:#D8DFE9; --line-strong:#C6CFDB; --accent:#147C8C; --accent-deep:#0C5866; --warm:#D98A2B; --good:#2E8B6F; --lock:#9AA7B8; --bad:#c0392b;
+    --nav:#0E1B2E; --nav-ink:#E7EFF6; --nav-line:#22334A;
+    --f-display:"Sora",system-ui,sans-serif; --f-body:"Instrument Sans",system-ui,sans-serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  @media(prefers-color-scheme:dark){:root{
+    --ground:#0A121D; --surface:#101E30; --surface-2:#15263B; --surface-3:#1C2E45;
+    --ink:#E9EFF6; --ink-soft:#AFBED2; --ink-faint:#7C8DA5; --line:#223449; --line-strong:#2E4460;
+    --accent:#3FB9C9; --accent-deep:#2A97A6; --warm:#E8A64C; --good:#4FBF9B; --lock:#5C6C82; --bad:#e77; --nav:#07101B;
+  }}
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--f-body),system-ui,sans-serif;line-height:1.5;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+
+  .top{display:flex;align-items:center;gap:12px;background:var(--nav);color:var(--nav-ink);padding:10px 16px;border-bottom:1px solid var(--nav-line);flex:0 0 auto;}
+  .top .brand{display:flex;align-items:center;gap:9px;font-family:var(--f-display),sans-serif;font-weight:700;font-size:.98rem;}
+  .top .brand .logo{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--warm));display:grid;place-items:center;color:#06121c;font-weight:800;font-size:13px;}
+  .top .k{font-family:var(--f-mono),monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8fa5bd;}
+  .top .grow{flex:1;}
+  .top .newbtn{font-family:var(--f-mono),monospace;font-size:11px;color:#9fb3c9;background:transparent;border:1px solid var(--nav-line);border-radius:8px;padding:6px 11px;cursor:pointer;}
+  .top .newbtn:hover{color:#fff;border-color:#3a5372;}
+
+  .tabs{display:none;background:var(--surface-2);border-bottom:1px solid var(--line);padding:7px 10px;gap:6px;flex:0 0 auto;}
+  .tabs button{flex:1;font-family:var(--f-mono),monospace;font-size:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);padding:9px;border-radius:8px;cursor:pointer;}
+  .tabs button.active{border-color:var(--accent);color:var(--ink);font-weight:600;}
+
+  .panes{flex:1;display:grid;grid-template-columns:212px 1fr 44%;min-height:0;}
+
+  .railpane{background:var(--surface-2);border-right:1px solid var(--line);padding:16px 12px;overflow-y:auto;min-height:0;}
+  .railpane .rt{font-family:var(--f-mono),monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:12px;}
+  .mrow{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border-radius:9px;margin-bottom:3px;}
+  .mrow .mk{flex:0 0 auto;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;border:1.5px solid var(--line-strong);color:var(--ink-faint);background:var(--surface);}
+  .mrow .ml{display:flex;flex-direction:column;line-height:1.25;}
+  .mrow .ml b{font-family:var(--f-display),sans-serif;font-weight:600;font-size:.88rem;color:var(--ink-soft);}
+  .mrow .ml i{font-style:normal;font-family:var(--f-mono),monospace;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin-top:2px;}
+  .mrow.done .mk{background:var(--good);border-color:var(--good);color:#fff;}
+  .mrow.cur{background:var(--surface);border:1px solid var(--accent);}
+  .mrow.cur .mk{border-color:var(--accent);color:var(--accent-deep);background:color-mix(in srgb,var(--accent) 15%,var(--surface));}
+  .mrow.cur .ml b{color:var(--ink);}
+  @media(prefers-color-scheme:dark){.mrow.cur .mk{color:var(--accent);}}
+  .soon{margin-top:14px;padding:10px;border:1px dashed var(--line);border-radius:9px;color:var(--ink-faint);font-size:.78rem;}
+  .soon .h{font-family:var(--f-mono),monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
+
+  .chatpane{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);background:var(--surface);}
+  .ch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);flex:0 0 auto;}
+  .ch-head .st{font-family:var(--f-display),sans-serif;font-weight:620;font-size:.92rem;}
+  .ch-head .st small{display:block;font-family:var(--f-mono),monospace;font-weight:400;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin-top:2px;}
+  .nextbtn{font-family:var(--f-display),sans-serif;font-weight:600;font-size:.82rem;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--accent-deep);border-radius:9px;padding:8px 12px;cursor:pointer;white-space:nowrap;}
+  .nextbtn:hover{background:var(--accent);color:#fff;}
+  .nextbtn:disabled{opacity:.4;cursor:default;background:var(--surface-2);border-color:var(--line);color:var(--ink-faint);}
+  @media(prefers-color-scheme:dark){.nextbtn{color:var(--accent);}}
+  .quickbtn{font-family:var(--f-display),sans-serif;font-weight:600;font-size:.82rem;border:none;background:var(--warm);color:#1a1206;border-radius:9px;padding:8px 12px;cursor:pointer;white-space:nowrap;}
+  .quickbtn:hover{filter:brightness(1.05);}
+  .quickbtn:disabled{opacity:.5;cursor:default;}
+  .ch-actions{display:flex;gap:8px;align-items:center;}
+  .resumed{margin:10px 12px 0;font-family:var(--f-mono),monospace;font-size:10.5px;color:var(--ink-faint);background:var(--surface-2);border:1px dashed var(--line);border-radius:8px;padding:7px 10px;text-align:center;}
+  #thread{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:11px;min-height:0;}
+  .msg{max-width:88%;padding:10px 14px;border-radius:14px;font-size:.94rem;white-space:pre-wrap;}
+  .msg.user{align-self:flex-end;background:color-mix(in srgb,var(--accent) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line));border-radius:14px 4px 14px 14px;}
+  .msg.ai{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line);border-radius:4px 14px 14px 14px;color:var(--ink-soft);}
+  .msg.step{align-self:center;background:transparent;border:1px dashed var(--accent);color:var(--accent-deep);font-family:var(--f-mono),monospace;font-size:11px;}
+  @media(prefers-color-scheme:dark){.msg.step{color:var(--accent);}}
+  .msg.err{align-self:center;border:1px dashed var(--bad);color:var(--bad);font-size:.85rem;}
+  .msg.typing{color:var(--ink-faint);font-style:italic;}
+  form{display:flex;gap:8px;padding:11px 12px;border-top:1px solid var(--line);flex:0 0 auto;}
+  textarea{flex:1;resize:none;font-family:inherit;font-size:.93rem;padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);min-height:44px;max-height:130px;}
+  textarea:disabled{opacity:.6;}
+  button.send{font-family:var(--f-display),sans-serif;font-weight:600;border:none;background:var(--accent);color:#fff;padding:0 16px;border-radius:10px;cursor:pointer;}
+  button.send:disabled{opacity:.5;cursor:default;}
+
+  .previewpane{display:flex;flex-direction:column;min-height:0;background:var(--surface-3);}
+  .pv-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);flex:0 0 auto;flex-wrap:wrap;}
+  .pv-head .tt{font-family:var(--f-display),sans-serif;font-weight:620;font-size:.9rem;display:flex;align-items:center;gap:8px;}
+  .pv-head .live{font-family:var(--f-mono),monospace;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--warm);border:1px solid color-mix(in srgb,var(--warm) 40%,var(--line));border-radius:100px;padding:2px 7px;}
+  .seg{display:flex;background:var(--surface-3);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px;}
+  .seg button{font-family:var(--f-mono),monospace;font-size:11px;border:none;background:transparent;color:var(--ink-faint);padding:4px 9px;border-radius:6px;cursor:pointer;white-space:nowrap;}
+  .seg button.active{background:var(--surface);color:var(--ink);}
+  .dlbtn{font-family:var(--f-mono),monospace;font-size:11px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface));color:var(--accent-deep);border-radius:8px;padding:5px 10px;cursor:pointer;white-space:nowrap;text-decoration:none;}
+  .dlbtn:hover{background:var(--accent);color:#fff;}
+  @media(prefers-color-scheme:dark){.dlbtn{color:var(--accent);}}
+  .pv-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .pv-stage{flex:1;min-height:0;overflow:auto;padding:14px;display:flex;justify-content:center;align-items:flex-start;}
+  .device{width:100%;height:100%;background:#fff;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;box-shadow:0 8px 28px rgba(14,27,46,.10);transition:max-width .3s ease;}
+  .device.mobile{max-width:390px;}
+  .device iframe{width:100%;height:100%;border:0;display:block;background:#fff;}
+  .placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;height:100%;color:var(--ink-faint);padding:24px;gap:10px;}
+  .placeholder .em{font-size:2rem;}
+  .placeholder p{max-width:32ch;font-size:.9rem;}
+
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  @media(max-width:900px){
+    .app{height:100dvh;}
+    .tabs{display:flex;}
+    .panes{grid-template-columns:1fr;}
+    .railpane,.chatpane{border-right:0;}
+    .pane[data-pane]{display:none;}
+    .pane[data-pane].show{display:flex;}
+    .railpane.pane.show{display:block;}
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="top">
+      <div class="brand"><span class="logo">B</span> Bâtisseur</div>
+      <span class="k">Parcours complet</span>
+      <span class="grow"></span>
+      <button class="newbtn" id="newBtn" type="button">↻ Recommencer</button>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button data-tab="rail" type="button">◱ Parcours</button>
+      <button data-tab="chat" class="active" type="button">💬 Discussion</button>
+      <button data-tab="preview" type="button">🖥 Aperçu</button>
+    </div>
+
+    <div class="panes">
+      <!-- RAIL -->
+      <div class="railpane pane" data-pane="rail">
+        <div class="rt">Votre parcours</div>
+        <div id="railInner"></div>
+        <div class="soon">
+          <div class="h">Bientôt</div>
+          D'autres types de projets (boutique en ligne, prise de rendez-vous…).
+        </div>
+      </div>
+
+      <!-- CHAT -->
+      <div class="chatpane pane show" data-pane="chat">
+        <div class="ch-head">
+          <div class="st" id="stepLabel">Comprendre le projet<small id="stepSub">Orientation</small></div>
+          <div class="ch-actions">
+            <button class="nextbtn" id="nextBtn" type="button" disabled>Étape suivante →</button>
+          </div>
+        </div>
+        <div class="resumed" id="resumed" style="display:none;">↩ Reprise de votre parcours en cours.</div>
+        <div id="thread" aria-live="polite"></div>
+        <form id="form">
+          <textarea id="input" placeholder="Votre réponse… (ex. « mets le titre en bleu »)" autofocus disabled></textarea>
+          <button class="send" id="send" type="submit" disabled>Envoyer</button>
+        </form>
+      </div>
+
+      <!-- PREVIEW -->
+      <div class="previewpane pane" data-pane="preview">
+        <div class="pv-head">
+          <div class="tt">Aperçu <span class="live" id="liveTag" style="display:none;">en direct</span></div>
+          <div class="pv-tools">
+            <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">⤓ Télécharger mon site</a>
+            <div class="seg" id="devToggle">
+              <button data-dev="desktop" class="active" type="button">🖥</button>
+              <button data-dev="mobile" type="button">📱</button>
+            </div>
+          </div>
+        </div>
+        <div class="pv-stage">
+          <div class="device" id="device">
+            <div class="placeholder" id="placeholder">
+              <div class="em">🪧</div>
+              <p>Votre site apparaîtra ici dès l'étape « Créer la base ». Répondez à la discussion : dès que l'assistant a l'essentiel, il le construit — puis vous modifiez tout ce que vous voulez au fil du chat.</p>
+            </div>
+            <iframe id="preview" title="Aperçu du site" sandbox="allow-same-origin allow-popups allow-top-navigation-by-user-activation" style="display:none;"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STEP_LABELS = [
+      { label: "Comprendre le projet", sub: "Orientation" },
+      { label: "Définir les fondations", sub: "Étape 1" },
+      { label: "Réunir les éléments", sub: "Étape 2" },
+      { label: "Prendre en main l'assistant", sub: "Étape 3" },
+      { label: "Créer la base", sub: "Étape 4" },
+      { label: "Ajouter les rubriques", sub: "Étape 5" },
+      { label: "Mettre en place le contact", sub: "Étape 6" },
+      { label: "Soigner l'apparence", sub: "Étape 7" },
+      { label: "Publier", sub: "Étape 8" }
+    ];
+    const LAST = STEP_LABELS.length - 1;
+
+    const $ = (id) => document.getElementById(id);
+    const thread = $("thread"), form = $("form"), input = $("input"), sendBtn = $("send");
+    const newBtn = $("newBtn"), nextBtn = $("nextBtn"), resumedNote = $("resumed");
+    const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
+    const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
+
+    const STORAGE_KEY = "batisseur_parcours_id";
+    let convId = null, step = 0, siteBuilt = false;
+
+    const getSavedId = () => { try { return localStorage.getItem(STORAGE_KEY); } catch(e){ return null; } };
+    const setSavedId = (id) => { try { localStorage.setItem(STORAGE_KEY, id); } catch(e){} };
+    const clearSavedId = () => { try { localStorage.removeItem(STORAGE_KEY); } catch(e){} };
+
+    function bubble(text, cls){ const d=document.createElement("div"); d.className="msg "+cls; d.textContent=text; thread.appendChild(d); thread.scrollTop=thread.scrollHeight; return d; }
+    function setBusy(b){ input.disabled=b; sendBtn.disabled=b; if(!b) input.focus(); }
+
+    function renderRail(){
+      railInner.innerHTML = "";
+      STEP_LABELS.forEach((s,i) => {
+        const row = document.createElement("div");
+        row.className = "mrow " + (i < step ? "done" : (i === step ? "cur" : "todo"));
+        row.innerHTML = `<span class="mk">${i < step ? "✓" : (i+1)}</span><span class="ml"><b>${s.label}</b><i>${s.sub}</i></span>`;
+        railInner.appendChild(row);
+      });
+      stepLabel.childNodes[0].nodeValue = STEP_LABELS[step].label;
+      stepSub.textContent = STEP_LABELS[step].sub;
+      nextBtn.disabled = step >= LAST;
+      nextBtn.textContent = step >= LAST ? "Parcours terminé ✓" : "Étape suivante →";
+    }
+
+    function reloadPreview(){
+      if(!convId) return;
+      previewFrame.src = "/preview/" + convId + "/index.html?t=" + Date.now();
+      previewFrame.style.display = "block";
+      placeholder.style.display = "none";
+      liveTag.style.display = "inline-block";
+      siteBuilt = true;
+      dlBtn.href = "/api/download?id=" + encodeURIComponent(convId);
+      dlBtn.setAttribute("download", "index.html");
+      dlBtn.style.display = "inline-block";
+    }
+
+    // enlève les blocs de code (pour l'affichage des messages à la reprise)
+    function stripBlocks(text){
+      let t = text.replace(/```html:[A-Za-z0-9_.-]+[ \t]*\r?\n[\s\S]*?```/g, "")
+                  .replace(/```html\s*\r?\n?[\s\S]*?```/gi, "").trim();
+      return t || "✓ (mise à jour du site)";
+    }
+
+    async function startNew(){
+      thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
+      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none";
+      renderRail();
+      const typing = bubble("…","ai typing"); setBusy(true);
+      try{
+        const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
+        const data = await r.json(); typing.remove();
+        if(!r.ok){ bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); return; }
+        convId=data.id; step=data.step||0; setSavedId(convId); renderRail();
+        bubble(data.reply||"","ai");
+        if(data.siteUpdated) reloadPreview();
+      }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur. Est-il bien lancé ?","err"); }
+      finally{ setBusy(false); }
+    }
+
+    async function resume(id){
+      try{
+        const r = await fetch("/api/conversation?id="+encodeURIComponent(id));
+        if(!r.ok) return false;
+        const data = await r.json();
+        convId=id; step=data.step||0;
+        thread.innerHTML="";
+        (data.messages||[]).forEach(m => {
+          if(m.role==="user") bubble(m.content,"user");
+          else bubble(stripBlocks(m.content),"ai");
+        });
+        if(data.hasSite) reloadPreview();
+        renderRail(); resumedNote.style.display="block"; setBusy(false);
+        return true;
+      }catch(e){ return false; }
+    }
+
+    async function send(message){
+      bubble(message,"user");
+      const typing = bubble("…","ai typing"); setBusy(true);
+      try{
+        const r = await fetch("/api/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId,message})});
+        const data = await r.json(); typing.remove();
+        if(!r.ok){ bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); }
+        else { bubble(data.reply||"","ai"); if(data.siteUpdated) reloadPreview(); }
+      }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur.","err"); }
+      finally{ setBusy(false); }
+    }
+
+    async function goNext(){
+      if(step >= LAST) return;
+      nextBtn.disabled = true;
+      bubble("→ Passage à l'étape : " + STEP_LABELS[step+1].label, "step");
+      const typing = bubble("…","ai typing"); setBusy(true);
+      try{
+        const r = await fetch("/api/next",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
+        const data = await r.json(); typing.remove();
+        if(!r.ok){ bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
+        step = data.step; renderRail();
+        if(data.reply) bubble(data.reply,"ai");
+        if(data.siteUpdated) reloadPreview();
+      }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur.","err"); nextBtn.disabled=(step>=LAST); }
+      finally{ setBusy(false); }
+    }
+
+    form.addEventListener("submit",(e)=>{ e.preventDefault(); const t=input.value.trim(); if(!t||!convId) return; input.value=""; send(t); });
+    input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); form.requestSubmit(); } });
+    newBtn.addEventListener("click",()=>{ clearSavedId(); convId=null; startNew(); });
+    nextBtn.addEventListener("click", goNext);
+
+    $("devToggle").addEventListener("click",(e)=>{ const b=e.target.closest("button"); if(!b) return; document.querySelectorAll("#devToggle button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); device.classList.toggle("mobile", b.dataset.dev==="mobile"); });
+    $("tabs").addEventListener("click",(e)=>{ const b=e.target.closest("button"); if(!b) return; document.querySelectorAll("#tabs button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); document.querySelectorAll(".pane[data-pane]").forEach(p=>p.classList.toggle("show", p.dataset.pane===b.dataset.tab)); });
+
+    (async function init(){
+      renderRail();
+      const saved = getSavedId();
+      if(saved && await resume(saved)) return;
+      clearSavedId(); startNew();
+    })();
+  </script>
+</body>
+</html>

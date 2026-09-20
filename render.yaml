@@ -1,0 +1,15 @@
+# Configuration de déploiement pour Render (https://render.com)
+# Render lit ce fichier et configure tout seul le service. Vous n'aurez qu'à
+# renseigner votre clé API dans le tableau de bord (elle N'est PAS écrite ici).
+services:
+  - type: web
+    name: batisseur
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false            # à saisir dans le tableau de bord Render (jamais dans le code)
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5 # la variante par défaut ; modifiable ensuite

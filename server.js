@@ -1,0 +1,370 @@
+/**
+ * Bâtisseur — le parcours complet (moteur v1.5)
+ *
+ * Principes de fiabilité (v1.5) :
+ * - UNE SEULE structure : le site est une page unique (index.html). Plus de mode.
+ * - Édition à partir du RÉEL : à chaque retouche, on injecte le code EXACT du site
+ *   actuel dans le prompt, et Claude renvoie la page entière à jour. Rien ne se perd.
+ * - EXTRACTION BLINDÉE : le code du site est toujours retiré du message affiché —
+ *   jamais de HTML qui fuite dans la discussion, quel que soit le format renvoyé.
+ * - HISTORIQUE LÉGER : on ne stocke que le TEXTE des messages (sans code). Le fichier
+ *   du site est la seule source de vérité.
+ *
+ * Étapes : Diagnostic + Modules 01 à 08. Aucune dépendance : Node.js 18+.
+ */
+
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+
+function loadEnv(file) {
+  try {
+    const txt = fs.readFileSync(file, "utf8");
+    txt.split(/\r?\n/).forEach((line) => {
+      if (line.trim().startsWith("#")) return;
+      const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)\s*$/);
+      if (m) {
+        let v = m[2].trim();
+        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+        if (process.env[m[1]] === undefined) process.env[m[1]] = v;
+      }
+    });
+  } catch (e) {}
+}
+loadEnv(path.join(__dirname, ".env"));
+
+const API_KEY = process.env.ANTHROPIC_API_KEY;
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
+const PORT = process.env.PORT || 3000;
+
+// --- Les étapes (build:true = étape qui produit / modifie le site) ---
+const STEPS = [
+  { key: "diagnostic", label: "Comprendre le projet",      promptFile: "diagnostic.txt", kickoff: "Bonjour ! Je découvre Bâtisseur et je veux créer un projet." },
+  { key: "clarifier",  label: "Définir les fondations",    promptFile: "clarifier.txt",  kickoff: "On passe à la clarification de mon site." },
+  { key: "rassembler", label: "Réunir les éléments",       promptFile: "rassembler.txt", kickoff: "On passe à rassembler les contenus de mon site." },
+  { key: "bienparler", label: "Prendre en main l'assistant", promptFile: "module-03.txt", kickoff: "On passe à : bien te demander les choses, avant de construire." },
+  { key: "accueil",    label: "Créer la base",             promptFile: "module-04.txt",  kickoff: "On passe à la construction de la page d'accueil de mon site.", build: true },
+  { key: "pagescles",  label: "Ajouter les rubriques",     promptFile: "module-05.txt",  kickoff: "On passe à l'ajout des rubriques (À propos, Réalisations…).", build: true },
+  { key: "contact",    label: "Mettre en place le contact", promptFile: "module-06.txt", kickoff: "On passe à la mise en place du contact.", build: true },
+  { key: "beaumobile", label: "Soigner l'apparence",       promptFile: "module-07.txt",  kickoff: "On passe à rendre le site beau et impeccable sur mobile.", build: true },
+  { key: "miseenligne",label: "Publier",                   promptFile: "module-08.txt",  kickoff: "On passe à la mise en ligne de mon site.", build: true }
+];
+const LAST_STEP = STEPS.length - 1;
+
+const PROMPTS = STEPS.map((s) => {
+  try { return fs.readFileSync(path.join(__dirname, "prompts", s.promptFile), "utf8"); }
+  catch (e) { console.warn(`  (prompt ${s.promptFile} introuvable)`); return "Tu es un assistant chaleureux, clair et sans jargon."; }
+});
+
+// --- Consigne de construction (UNE SEULE PAGE), ajoutée aux étapes de build ---
+const SINGLE_INSTRUCTION = `
+
+=== RÈGLES DE FORMAT (à respecter SANS EXCEPTION) ===
+Le site est UNE SEULE PAGE : index.html. Chaque rubrique est une SECTION avec un id (ex. <section id="services">). Le menu utilise des ancres internes (ex. <a href="#services">Services</a>) et chaque entrée a bien sa section. Jamais de lien vide (href="#") ni de lien qui ne mène nulle part.
+
+FORMAT DE SORTIE — LE PLUS IMPORTANT :
+1) D'abord un COURT message pour la personne (1 à 3 phrases, en français simple, SANS jargon, SANS parler de code, SANS balise).
+2) Ensuite le site, dans UN SEUL bloc de code, exactement ainsi :
+\`\`\`html:index.html
+<!doctype html>
+<html lang="fr">
+... la page ENTIÈRE ...
+</html>
+\`\`\`
+- Tu renvoies TOUJOURS la page ENTIÈRE (jamais un extrait, jamais « ... » à la place du contenu).
+- Tu ne mets JAMAIS de code ni de balise HTML en dehors de ce bloc. Ton message à la personne n'en contient jamais.
+- UN SEUL bloc de code par réponse.
+
+CONTRAINTES TECHNIQUES :
+- 100 % HTML + CSS. AUCUN JavaScript. AUCUNE image ni police externe, AUCUN fichier externe.
+- Responsive, impeccable sur mobile. Dans le <style> : html{scroll-behavior:smooth;}.
+
+RUBRIQUES LIBRES :
+- Le menu reflète EXACTEMENT les rubriques voulues (Accueil, Services, Réalisations, À propos, Contact, Tarifs, Blog, FAQ, Équipe, Galerie, Horaires… ce que la personne veut).
+- Tu peux à tout moment AJOUTER, RENOMMER, RÉORDONNER ou SUPPRIMER une rubrique sur demande, puis tu renvoies la page entière.
+- PLACEHOLDER : une rubrique dont le contenu n'est pas fourni reçoit un espace réservé clair et élégant (ex. « Vos réalisations apparaîtront ici — dites-moi de les ajouter »). Jamais de section vide ni cassée.
+
+ESPACES MÉDIAS — DEMANDE AVANT DE SUPPOSER :
+- Quand un espace n'est pas clair (zone d'image, galerie, document…), tu DEMANDES d'abord à la personne à quoi il sert : « des photos », « du texte », ou « des documents (PDF / Word / PowerPoint) » — puis tu poses le bon espace réservé.
+- Pour une image : un cadre réservé propre avec une légende. Pour un document : une zone qui annonce le document à venir. Tu n'inventes jamais d'image externe.`;
+
+const DATA_DIR = path.join(__dirname, "data");
+const SITES_DIR = path.join(DATA_DIR, "sites");
+try { fs.mkdirSync(SITES_DIR, { recursive: true }); } catch (e) {}
+
+const PUBLIC_DIR = path.join(__dirname, "public");
+const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".ico": "image/x-icon", ".png": "image/png", ".svg": "image/svg+xml" };
+
+function sendJson(res, code, obj) { res.writeHead(code, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(obj)); }
+function readBody(req) { return new Promise((resolve, reject) => { let b = ""; req.on("data", (c) => { b += c; if (b.length > 8e6) req.destroy(); }); req.on("end", () => resolve(b)); req.on("error", reject); }); }
+
+function validId(id) { return typeof id === "string" && /^[A-Za-z0-9-]{8,64}$/.test(id); }
+function convPath(id) { return validId(id) ? path.join(DATA_DIR, id + ".json") : null; }
+function siteDir(id) { return validId(id) ? path.join(SITES_DIR, id) : null; }
+function siteFile(id) { const d = siteDir(id); return d ? path.join(d, "index.html") : null; }
+function safeFile(name) { return /^[A-Za-z0-9_-]+\.html$/.test(name) ? name : null; }
+
+function loadConv(id) { const p = convPath(id); if (!p) return null; try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { return null; } }
+function saveConv(conv) { const p = convPath(conv.id); if (!p) return; try { fs.writeFileSync(p, JSON.stringify(conv, null, 2)); } catch (e) { console.error("Sauvegarde :", e); } }
+
+// --- Le site : lecture / écriture (une seule page = index.html) ---
+function readSite(id) { const f = siteFile(id); if (!f) return null; try { return fs.readFileSync(f, "utf8"); } catch (e) { return null; } }
+function hasSite(id) { const f = siteFile(id); try { return !!f && fs.existsSync(f); } catch (e) { return false; } }
+function writeSite(id, html) {
+  const dir = siteDir(id); if (!dir || !html) return false;
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+  // une seule page : on nettoie d'éventuelles anciennes pages puis on écrit index.html
+  try { fs.readdirSync(dir).forEach((f) => { if (f.endsWith(".html") && f !== "index.html") fs.unlinkSync(path.join(dir, f)); }); } catch (e) {}
+  try { fs.writeFileSync(path.join(dir, "index.html"), html); return true; } catch (e) { return false; }
+}
+
+// --- EXTRACTION BLINDÉE ---------------------------------------------------
+// Objectif : récupérer le HTML du site QUEL QUE SOIT le format renvoyé par Claude,
+// et surtout garantir qu'AUCUN code ne reste dans le message affiché à la personne.
+function looksLikeHtml(s) {
+  if (!s) return false;
+  return /<!doctype html/i.test(s) || /<html[\s>]/i.test(s) ||
+         (/<(section|header|main|body|nav|div|h1|footer)[\s>]/i.test(s) && (s.match(/<[a-z!\/]/gi) || []).length > 4);
+}
+
+function extractSite(text) {
+  let message = String(text || "");
+  let html = null;
+
+  // 1) Tous les blocs de code entre ``` … ``` (avec ou sans langage / nom de fichier).
+  const blocks = [];
+  const fence = /```[^\n`]*\r?\n?([\s\S]*?)```/g;
+  let m;
+  while ((m = fence.exec(message))) blocks.push(m[1]);
+  if (blocks.length) {
+    // On retire TOUS les blocs fermés du message : rien de codé ne doit rester.
+    message = message.replace(/```[^\n`]*\r?\n?[\s\S]*?```/g, "").trim();
+    const htmlBlocks = blocks.filter(looksLikeHtml).sort((a, b) => b.length - a.length);
+    if (htmlBlocks.length) html = htmlBlocks[0].trim();
+  }
+
+  // 2) Pas de bloc HTML fermé ? On cherche une page HTML « nue » dans le texte.
+  if (!html) {
+    const bare = message.match(/<!doctype html[\s\S]*?<\/html>/i) || message.match(/<html[\s\S]*?<\/html>/i);
+    if (bare) { html = bare[0].trim(); message = message.replace(bare[0], "").trim(); }
+  }
+
+  // 3) Filet de sécurité : on efface tout résidu de HTML complet dans le message.
+  message = message
+    .replace(/<!doctype html[\s\S]*?<\/html>/gi, "")
+    .replace(/<html[\s\S]*?<\/html>/gi, "")
+    .trim();
+
+  // 4) Réponse tronquée : une fence ouverte non refermée, ou un HTML nu qui commence
+  //    sans se terminer. On coupe le message à cet endroit (et on récupère le HTML).
+  const cut = message.search(/```|<!doctype html|<html[\s>]/i);
+  if (cut !== -1) {
+    let tail = message.slice(cut).replace(/^```[^\n`]*\r?\n?/, "");
+    if (!html && looksLikeHtml(tail)) html = tail.trim();
+    message = message.slice(0, cut).trim();
+  }
+
+  // 5) Nettoyage final du message (backticks orphelins, lignes vides multiples).
+  message = message.replace(/`{1,3}/g, "").replace(/\n{3,}/g, "\n\n").trim();
+
+  return { html, message };
+}
+// -------------------------------------------------------------------------
+
+async function callClaude(system, messages) {
+  const clean = messages.map((m) => ({ role: m.role, content: m.content }));
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ model: MODEL, max_tokens: 8192, system, messages: clean })
+  });
+  const data = await response.json();
+  if (!response.ok) { console.error("Erreur API Claude :", data); const e = new Error((data && data.error && data.error.message) || "Erreur de l'API Claude."); e.status = response.status; throw e; }
+  return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+}
+
+// Génère la réponse de l'étape courante (et met à jour le site si c'est une étape de construction).
+async function produceCurrent(conv) {
+  const step = conv.step || 0;
+  const isBuild = !!STEPS[step].build;
+
+  let system = PROMPTS[step];
+  if (isBuild) {
+    system += SINGLE_INSTRUCTION;
+    // On injecte le CODE RÉEL du site actuel : Claude part de l'existant, pas de sa mémoire.
+    const current = readSite(conv.id);
+    if (current) {
+      system += `
+
+=== ÉTAT ACTUEL DU SITE (index.html) ===
+Voici le code EXACT du site tel qu'il est maintenant. Tu PARS de ce code, tu appliques la demande de la personne, et tu renvoies le fichier ENTIER à jour. Tu ne repars jamais de zéro (sauf demande explicite), et tu ne perds aucun contenu déjà présent.
+\`\`\`html
+${current}
+\`\`\``;
+    }
+  }
+
+  const reply = await callClaude(system, conv.messages);
+
+  // Extraction blindée : le HTML ne fuite jamais dans le message.
+  const ex = extractSite(reply);
+  let siteUpdated = false;
+  let message = ex.message;
+
+  if (isBuild && ex.html && writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
+  if (!message || !message.trim()) message = siteUpdated ? "✓ J'ai mis à jour votre site — regardez l'aperçu." : (ex.html ? "✓ C'est fait." : reply);
+
+  // Historique LÉGER : on ne stocke que le TEXTE (jamais le code). Le fichier = source de vérité.
+  conv.messages.push({ role: "assistant", content: message });
+  conv.updatedAt = new Date().toISOString();
+  saveConv(conv);
+  return { reply: message, siteUpdated };
+}
+
+// POST /api/start
+async function handleStart(req, res) {
+  if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
+  try {
+    const id = crypto.randomUUID();
+    const conv = { id, step: 0, createdAt: new Date().toISOString(), messages: [{ role: "user", content: STEPS[0].kickoff, hidden: true }] };
+    const out = await produceCurrent(conv);
+    sendJson(res, 200, { id, step: 0, ...out });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
+// POST /api/chat
+async function handleChat(req, res) {
+  if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const conv = loadConv(p.id);
+    if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
+    if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
+    conv.messages.push({ role: "user", content: p.message });
+    const out = await produceCurrent(conv);
+    sendJson(res, 200, { step: conv.step, ...out });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
+// POST /api/next
+async function handleNext(req, res) {
+  if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const conv = loadConv(p.id);
+    if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
+    const current = conv.step || 0;
+    if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
+    conv.step = current + 1;
+    conv.messages.push({ role: "user", content: STEPS[conv.step].kickoff, hidden: true });
+    const out = await produceCurrent(conv);
+    sendJson(res, 200, { step: conv.step, atEnd: conv.step >= LAST_STEP, ...out });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
+// GET /api/download?id=... : télécharge le site (index.html) en pièce jointe
+function handleDownload(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const id = u.searchParams.get("id");
+  const f = siteFile(id);
+  if (!f || !fs.existsSync(f)) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Site introuvable — construisez-le d'abord."); }
+  fs.readFile(f, (err, content) => {
+    if (err) { res.writeHead(500); return res.end("Erreur de lecture."); }
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "content-disposition": 'attachment; filename="index.html"'
+    });
+    res.end(content);
+  });
+}
+
+// GET /api/conversation?id=...
+function handleGetConversation(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const conv = loadConv(u.searchParams.get("id"));
+  if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
+  sendJson(res, 200, { id: conv.id, step: conv.step || 0, hasSite: hasSite(conv.id), messages: conv.messages.filter((m) => !m.hidden) });
+}
+
+// GET /preview/<id>/<fichier> : sert le site généré
+function servePreview(req, res) {
+  const parts = decodeURIComponent(req.url.split("?")[0]).split("/").filter(Boolean); // ["preview", id, file?]
+  const id = parts[1]; const file = parts[2] || "index.html";
+  const dir = siteDir(id); const name = safeFile(file);
+  if (!dir || !name) { res.writeHead(404); return res.end("Introuvable"); }
+  const fp = path.join(dir, name);
+  if (!fp.startsWith(dir)) { res.writeHead(403); return res.end("Interdit"); }
+  fs.readFile(fp, (err, content) => {
+    if (err) {
+      // Filet : tout mène à l'accueil (une seule page).
+      const idx = path.join(dir, "index.html");
+      if (name !== "index.html" && fs.existsSync(idx)) {
+        return fs.readFile(idx, (e2, c2) => {
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+          res.end(e2 ? "Introuvable" : c2);
+        });
+      }
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      return res.end("<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui,sans-serif;color:#6B7A90;display:grid;place-items:center;height:88vh;text-align:center;padding:20px\">Le site n'est pas encore construit.<br>Arrivez à l'étape « Créer la base ».</body>");
+    }
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(content);
+  });
+}
+
+function serveStatic(req, res) {
+  let urlPath = decodeURIComponent(req.url.split("?")[0]);
+  if (urlPath === "/") urlPath = "/index.html";
+  const safe = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, "");
+  const filePath = path.join(PUBLIC_DIR, safe);
+  if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end("Accès interdit"); }
+  fs.readFile(filePath, (err, content) => {
+    if (err) { res.writeHead(404); return res.end("Page introuvable"); }
+    res.writeHead(200, { "content-type": MIME[path.extname(filePath)] || "application/octet-stream" });
+    res.end(content);
+  });
+}
+
+const server = http.createServer((req, res) => {
+  if (req.method === "POST" && req.url === "/api/start") return handleStart(req, res);
+  if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
+  if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);
+  if (req.method === "GET" && req.url.startsWith("/preview/")) return servePreview(req, res);
+  if (req.method === "GET") return serveStatic(req, res);
+  res.writeHead(405); res.end("Méthode non autorisée");
+});
+
+server.listen(PORT, () => {
+  console.log(`\n  Bâtisseur — parcours complet (v1.5) en marche.`);
+  console.log(`  Ouvrez  http://localhost:${PORT}`);
+  console.log(`  Étapes : ${STEPS.map((s) => s.label).join("  →  ")}`);
+  console.log(`  Modèle : ${MODEL}\n`);
+});
+
+// --- Auto-test hors ligne : node server.js --selftest ---
+if (process.argv.includes("--selftest")) {
+  const cases = [
+    ["nommé", "Voici votre site !\n```html:index.html\n<!doctype html><html><body><section id=\"accueil\">Bonjour</section></body></html>\n```\nDites-moi la suite."],
+    ["simple", "J'ai ajouté la rubrique.\n```html\n<!doctype html><html><body><nav>menu</nav></body></html>\n```"],
+    ["sans langage", "C'est fait.\n```\n<!doctype html><html><body><header>x</header><main>y</main></body></html>\n```"],
+    ["nu sans fence", "Voici le résultat : <!doctype html><html><body><section id=\"a\">A</section></body></html> Voilà."],
+    ["tronqué (pas de fin)", "Je mets à jour.\n```html:index.html\n<!doctype html><html><body><section id=\"services\">"],
+    ["deux blocs", "Note.\n```txt\nliste\n```\n```html\n<!doctype html><html><body><main>ok</main></body></html>\n```"],
+    ["pas de code (discussion)", "Quelles rubriques voulez-vous : Accueil, Services, Contact ?"]
+  ];
+  let ok = 0;
+  cases.forEach(([name, input]) => {
+    const r = extractSite(input);
+    const leak = /<\/?(html|body|section|nav|header|main|div|doctype)/i.test(r.message) || /```/.test(r.message);
+    const wantHtml = name !== "pas de code (discussion)";
+    const good = !leak && (wantHtml ? !!r.html : !r.html);
+    ok += good ? 1 : 0;
+    console.log(`${good ? "✓" : "✗"} ${name}`);
+    if (!good) console.log(`    message=<<${r.message}>> html=${r.html ? "[" + r.html.length + " car.]" : "null"}`);
+  });
+  console.log(`\n${ok}/${cases.length} cas OK`);
+  process.exit(ok === cases.length ? 0 : 1);
+}
