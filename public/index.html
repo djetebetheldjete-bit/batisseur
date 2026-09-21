@@ -105,6 +105,24 @@
   .choice.sel .chk:after{content:"✓";}
   .typebadge{display:inline-flex;align-items:center;gap:5px;font-family:var(--f-mono),monospace;font-size:10.5px;letter-spacing:.03em;color:var(--accent-deep);background:color-mix(in srgb,var(--accent) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));border-radius:100px;padding:3px 9px;white-space:nowrap;}
   @media(prefers-color-scheme:dark){.typebadge{color:var(--accent);}}
+  .accessbanner{margin:10px 12px 0;font-size:.82rem;border-radius:9px;padding:9px 12px;text-align:center;}
+  .accessbanner.finished{color:var(--warm);border:1px solid color-mix(in srgb,var(--warm) 40%,var(--line));background:color-mix(in srgb,var(--warm) 8%,var(--surface));}
+  .astats{display:flex;gap:8px;margin:4px 0 12px;flex-wrap:wrap;}
+  .astat{flex:1;min-width:84px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface-2);}
+  .astat b{display:block;font-family:var(--f-display),sans-serif;font-size:1.25rem;}
+  .astat span{font-family:var(--f-mono),monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);}
+  .acreate{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px dashed var(--line);border-radius:10px;padding:10px;margin-bottom:12px;}
+  .acreate input{flex:1;min-width:110px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-family:inherit;font-size:.84rem;}
+  .acreate button{border:none;background:var(--accent);color:#fff;font-family:var(--f-display),sans-serif;font-weight:600;border-radius:8px;padding:9px 14px;cursor:pointer;font-size:.84rem;}
+  .acreate .acerr{flex-basis:100%;color:var(--bad);font-size:.8rem;min-height:0;}
+  .llist{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto;}
+  .lrow{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--surface);}
+  .lrow .linfo{flex:1;min-width:0;}
+  .lrow .linfo b{display:block;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .lrow .linfo span{font-family:var(--f-mono),monospace;font-size:9.5px;color:var(--ink-faint);}
+  .lrow input.lcohort{width:118px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2);color:var(--ink);font-size:.78rem;}
+  .lrow select.lstatus{padding:6px 8px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface-2);color:var(--ink);font-size:.78rem;cursor:pointer;}
+  .aempty{color:var(--ink-faint);font-size:.86rem;text-align:center;padding:16px 8px;}
   .ch-actions{display:flex;gap:8px;align-items:center;}
   .resumed{margin:10px 12px 0;font-family:var(--f-mono),monospace;font-size:10.5px;color:var(--ink-faint);background:var(--surface-2);border:1px dashed var(--line);border-radius:8px;padding:7px 10px;text-align:center;}
   #thread{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:11px;min-height:0;}
@@ -166,6 +184,7 @@
       <span class="grow"></span>
       <button class="topbtn solid" id="loginOpenBtn" type="button" style="display:none;">Se connecter</button>
       <span class="acctname" id="acctName" style="display:none;"><span class="av" id="acctAv">?</span><span id="acctLabel"></span></span>
+      <button class="topbtn" id="adminBtn" type="button" style="display:none;">◱ Espace formateur</button>
       <button class="topbtn" id="espaceBtn" type="button" style="display:none;">◱ Mon espace</button>
       <button class="topbtn" id="logoutBtn" type="button" style="display:none;">Se déconnecter</button>
       <button class="newbtn" id="newBtn" type="button">↻ Recommencer</button>
@@ -242,6 +261,16 @@
         <button id="certCancel" type="button">Annuler</button>
         <button id="certGo" class="primary" type="button">Créer mon certificat</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Espace formateur (gestion des apprenants) -->
+  <div class="modal-bg" id="adminModal">
+    <div class="modal wide">
+      <h3>◱ Espace formateur</h3>
+      <p>Inscrivez vos apprenants et attribuez leur session. « Terminé » coupe l'accès à la construction (le projet reste consultable) ; « Actif » le (ré)autorise.</p>
+      <div id="adminBody"><div class="aempty">Chargement…</div></div>
+      <div class="row"><button id="adminClose" type="button">Fermer</button></div>
     </div>
   </div>
 
@@ -363,8 +392,9 @@
     const setSavedId = (id) => { try { localStorage.setItem(STORAGE_KEY, id); } catch(e){} };
     const clearSavedId = () => { try { localStorage.removeItem(STORAGE_KEY); } catch(e){} };
 
+    let buildLocked = false;
     function bubble(text, cls){ const d=document.createElement("div"); d.className="msg "+cls; d.textContent=text; thread.appendChild(d); thread.scrollTop=thread.scrollHeight; return d; }
-    function setBusy(b){ input.disabled=b; sendBtn.disabled=b; if(!b) input.focus(); }
+    function setBusy(b){ input.disabled = b || buildLocked; sendBtn.disabled = b || buildLocked; if(!b && !buildLocked) input.focus(); }
 
     function renderRail(){
       railInner.innerHTML = "";
@@ -391,7 +421,7 @@
       dlBtn.href = "/api/download?id=" + encodeURIComponent(convId);
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
-      if(canPublish){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "↻ Republier" : "🌐 Publier en ligne"; }
+      if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "↻ Republier" : "🌐 Publier en ligne"; }
     }
 
     function showPublished(url){
@@ -407,7 +437,7 @@
       try{
         const r = await fetch("/api/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ bubble("⚠ "+(data.error||"Publication impossible."),"err"); pubBtn.textContent=prev; pubBtn.disabled=false; return; }
+        if(!r.ok){ handleAccess(data); bubble("⚠ "+(data.error||"Publication impossible."),"err"); pubBtn.textContent=prev; pubBtn.disabled=false; return; }
         showPublished(data.url);
         bubble("✅ Votre site est en ligne : " + data.url + "\n(Après une modification, cliquez « ↻ Republier » pour mettre à jour.)","ai");
       }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur.","err"); pubBtn.textContent=prev; }
@@ -431,7 +461,7 @@
       try{
         const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({modules:currentModules})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); return; }
+        if(!r.ok){ handleAccess(data); bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); return; }
         convId=data.id; step=data.step||0; if(data.modules) currentModules=normMods(data.modules); setSavedId(convId); renderRail(); renderTypeBadge();
         bubble(data.reply||"","ai");
         if(data.siteUpdated) reloadPreview();
@@ -463,7 +493,7 @@
       try{
         const r = await fetch("/api/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId,message})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); }
+        if(!r.ok){ handleAccess(data); bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); }
         else { bubble(data.reply||"","ai"); if(data.siteUpdated) reloadPreview(); }
       }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur.","err"); }
       finally{ setBusy(false); }
@@ -477,7 +507,7 @@
       try{
         const r = await fetch("/api/next",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
+        if(!r.ok){ handleAccess(data); bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
         step = data.step; renderRail();
         if(data.reply) bubble(data.reply,"ai");
         if(data.siteUpdated) reloadPreview();
@@ -487,7 +517,7 @@
 
     form.addEventListener("submit",(e)=>{ e.preventDefault(); const t=input.value.trim(); if(!t||!convId) return; input.value=""; send(t); });
     input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); form.requestSubmit(); } });
-    newBtn.addEventListener("click", openTypeChooser);
+    newBtn.addEventListener("click", ()=>{ if(canBuildUI()) openTypeChooser(); else notifyBlocked(); });
     $("typeGo").addEventListener("click", confirmTypeChooser);
     $("typeCancel").addEventListener("click", ()=>{ closeTypeChooser(); if(!convId) startNew(["presentation"]); });
     typeModal.addEventListener("click",(e)=>{ if(e.target===typeModal){ closeTypeChooser(); if(!convId) startNew(["presentation"]); } });
@@ -519,8 +549,26 @@
     // ===== Comptes & espace membre (Palier 4) =====
     let me = null, authMode = "login";
     const loginOpenBtn = $("loginOpenBtn"), acctName = $("acctName"), acctAv = $("acctAv"), acctLabel = $("acctLabel");
-    const espaceBtn = $("espaceBtn"), logoutBtn = $("logoutBtn");
+    const espaceBtn = $("espaceBtn"), logoutBtn = $("logoutBtn"), adminBtn = $("adminBtn");
+    const adminModal = $("adminModal"), adminBody = $("adminBody");
     const authModal = $("authModal"), authTitle = $("authTitle"), authIntro = $("authIntro");
+
+    function canBuildUI(){ return !!me && (me.isAdmin || me.status === "active"); }
+    function canViewUI(){ return !!me && (me.isAdmin || me.status === "active" || me.status === "finished"); }
+    function refreshLock(){
+      buildLocked = !canBuildUI();
+      if(buildLocked){ input.disabled = true; sendBtn.disabled = true; nextBtn.style.display = "none"; pubBtn.style.display = "none"; }
+      else { nextBtn.style.display = ""; input.placeholder = "Votre réponse… (ex. « mets le titre en bleu »)"; }
+      showAccessBanner();
+    }
+    function showAccessBanner(){
+      let el = document.getElementById("accessBanner");
+      if(me && me.status === "finished" && !me.isAdmin){
+        if(!el){ el = document.createElement("div"); el.id = "accessBanner"; el.className = "accessbanner finished"; resumedNote.parentNode.insertBefore(el, resumedNote); }
+        el.textContent = "🎓 Formation terminée — vous pouvez consulter et télécharger vos projets, mais plus les modifier.";
+        el.style.display = "block";
+      } else if(el){ el.style.display = "none"; }
+    }
     const authName = $("authName"), authEmail = $("authEmail"), authPass = $("authPass"), authErr = $("authErr");
     const authGo = $("authGo"), authToggle = $("authToggle"), authSwitchLine = $("authSwitchLine");
     const espaceModal = $("espaceModal"), projList = $("projList");
@@ -529,13 +577,15 @@
       if(me){
         loginOpenBtn.style.display = "none";
         acctName.style.display = "inline-flex";
-        acctLabel.textContent = me.name;
+        acctLabel.textContent = me.name + (me.isAdmin ? " (formateur)" : "");
         acctAv.textContent = (me.name || "?").trim().charAt(0).toUpperCase() || "?";
-        espaceBtn.style.display = "inline-block";
+        adminBtn.style.display = me.isAdmin ? "inline-block" : "none";
+        espaceBtn.style.display = canViewUI() ? "inline-block" : "none";
         logoutBtn.style.display = "inline-block";
       } else {
         loginOpenBtn.style.display = "inline-block";
         acctName.style.display = "none";
+        adminBtn.style.display = "none";
         espaceBtn.style.display = "none";
         logoutBtn.style.display = "none";
       }
@@ -544,6 +594,42 @@
       try{ const r = await fetch("/api/auth/me"); const d = await r.json(); me = d.user || null; }
       catch(e){ me = null; }
       renderAccount();
+    }
+
+    function showBlocked(kind){
+      thread.innerHTML=""; resumedNote.style.display="none"; showAccessBanner();
+      step=0; siteBuilt=false; renderRail();
+      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
+      dlBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none";
+      buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
+      let msg;
+      if(kind==="none") msg="👋 Bienvenue sur Bâtisseur. Connectez-vous ou créez un compte pour commencer votre formation.";
+      else if(kind==="pending") msg="⏳ Votre inscription est bien reçue. Elle est en attente de validation par le formateur — vous aurez accès au parcours dès qu'elle sera validée.";
+      else if(kind==="finished") msg="🎓 Votre formation est terminée. Ouvrez « Mon espace » pour revoir et télécharger vos projets. Pour reprendre la construction, demandez à votre formateur de vous réautoriser.";
+      else msg="Accès non disponible pour le moment.";
+      bubble(msg,"ai");
+    }
+    async function startFlow(){
+      refreshLock();
+      if(canBuildUI()){
+        const saved = getSavedId();
+        if(saved && await resume(saved)) return;
+        clearSavedId(); openTypeChooser();
+      } else if(canViewUI()){
+        const saved = getSavedId();
+        if(saved && await resume(saved)) return;
+        showBlocked("finished");
+      } else {
+        showBlocked(me ? me.status : "none");
+      }
+    }
+    function notifyBlocked(){
+      if(!me){ openAuth("login"); return; }
+      if(me.status==="pending") bubble("⏳ Votre inscription est en attente de validation par le formateur.","ai");
+      else if(me.status==="finished") bubble("🎓 Formation terminée : demandez à votre formateur de vous réautoriser pour construire à nouveau.","ai");
+    }
+    function handleAccess(data){
+      if(data && data.accessStatus && me){ me.status = data.accessStatus; renderAccount(); refreshLock(); }
     }
 
     function setAuthMode(mode){
@@ -584,16 +670,15 @@
         const r = await fetch(url, { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body) });
         const d = await r.json();
         if(!r.ok){ authErr.textContent = d.error || "Impossible pour le moment."; return; }
-        me = d.user; renderAccount(); closeAuth();
-        bubble("👤 Connecté(e) en tant que " + me.name + ". Vos prochains projets seront enregistrés dans « Mon espace ».","ai");
+        me = d.user; renderAccount(); closeAuth(); startFlow();
       }catch(e){ authErr.textContent = "Impossible de joindre le serveur."; }
       finally{ authGo.disabled = false; authGo.textContent = prev; }
     }
 
     async function doLogout(){
       try{ await fetch("/api/auth/logout",{method:"POST"}); }catch(e){}
-      me = null; renderAccount();
-      bubble("Vous êtes déconnecté(e). Vos projets restent enregistrés dans votre espace.","ai");
+      me = null; convId = null; clearSavedId(); renderAccount();
+      showBlocked("none");
     }
 
     // Mon espace : liste des projets
@@ -630,24 +715,88 @@
       if(!ok){ bubble("⚠ Impossible d'ouvrir ce projet.","err"); }
     }
 
+    // ===== Espace formateur (admin) =====
+    async function openAdmin(){ adminModal.classList.add("show"); await loadLearners(); }
+    function closeAdmin(){ adminModal.classList.remove("show"); }
+    async function loadLearners(){
+      adminBody.innerHTML = '<div class="aempty">Chargement…</div>';
+      try{
+        const r = await fetch("/api/admin/learners"); const d = await r.json();
+        if(!r.ok){ adminBody.innerHTML = '<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; }
+        renderAdmin(d);
+      }catch(e){ adminBody.innerHTML = '<div class="aempty">Impossible de joindre le serveur.</div>'; }
+    }
+    function renderAdmin(d){
+      const s = d.stats || { total:0, active:0, pending:0, finished:0 };
+      adminBody.innerHTML = "";
+      const stats = document.createElement("div"); stats.className = "astats";
+      [["Apprenants",s.total],["Actifs",s.active],["En attente",s.pending],["Terminés",s.finished]].forEach(([lab,val])=>{
+        const c = document.createElement("div"); c.className = "astat"; c.innerHTML = '<b></b><span></span>';
+        c.querySelector("b").textContent = val; c.querySelector("span").textContent = lab; stats.appendChild(c);
+      });
+      adminBody.appendChild(stats);
+
+      const f = document.createElement("div"); f.className = "acreate";
+      f.innerHTML = '<input id="acName" placeholder="Nom et prénom" maxlength="80"><input id="acEmail" type="email" placeholder="Email" autocomplete="off"><input id="acCohort" placeholder="Session (ex. Sept. 2026 – A)" maxlength="80"><input id="acPass" type="text" placeholder="Mot de passe" autocomplete="off"><button id="acGo" type="button">+ Inscrire</button><div class="acerr" id="acErr"></div>';
+      adminBody.appendChild(f);
+      f.querySelector("#acGo").addEventListener("click", createLearner);
+
+      const list = document.createElement("div"); list.className = "llist";
+      if(!d.learners || !d.learners.length){ list.innerHTML = '<div class="aempty">Aucun apprenant inscrit pour le moment.</div>'; }
+      else d.learners.forEach((l)=>{
+        const row = document.createElement("div"); row.className = "lrow";
+        const info = document.createElement("div"); info.className = "linfo"; info.innerHTML = '<b></b><span></span>';
+        info.querySelector("b").textContent = l.name;
+        info.querySelector("span").textContent = l.email + " · " + l.projects + " projet" + (l.projects>1?"s":"");
+        const cohort = document.createElement("input"); cohort.className = "lcohort"; cohort.value = l.cohort || ""; cohort.placeholder = "Session";
+        const sel = document.createElement("select"); sel.className = "lstatus";
+        [["active","Actif"],["pending","En attente"],["finished","Terminé"]].forEach(([v,t])=>{ const o = document.createElement("option"); o.value = v; o.textContent = t; if(l.status===v) o.selected = true; sel.appendChild(o); });
+        const save = ()=>saveLearner(l.id, sel.value, cohort.value);
+        sel.addEventListener("change", save);
+        cohort.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); cohort.blur(); } });
+        cohort.addEventListener("blur", ()=>{ if((cohort.value||"") !== (l.cohort||"")) save(); });
+        row.appendChild(info); row.appendChild(cohort); row.appendChild(sel);
+        list.appendChild(row);
+      });
+      adminBody.appendChild(list);
+    }
+    async function saveLearner(userId, status, cohort){
+      try{
+        const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId,status,cohort})});
+        if(!r.ok){ await loadLearners(); }
+      }catch(e){}
+    }
+    async function createLearner(){
+      const name = $("acName").value.trim(), email = $("acEmail").value.trim(), cohort = $("acCohort").value.trim(), pass = $("acPass").value;
+      const err = $("acErr"); err.textContent = "";
+      if(!email || !pass){ err.textContent = "Email et mot de passe requis."; return; }
+      try{
+        const r = await fetch("/api/admin/learner/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name,email,cohort,password:pass})});
+        const d = await r.json();
+        if(!r.ok){ err.textContent = d.error || "Création impossible."; return; }
+        await loadLearners();
+      }catch(e){ err.textContent = "Impossible de joindre le serveur."; }
+    }
+
     loginOpenBtn.addEventListener("click", ()=> openAuth("login"));
     logoutBtn.addEventListener("click", doLogout);
     espaceBtn.addEventListener("click", openEspace);
+    adminBtn.addEventListener("click", openAdmin);
+    $("adminClose").addEventListener("click", closeAdmin);
+    adminModal.addEventListener("click",(e)=>{ if(e.target===adminModal) closeAdmin(); });
     authGo.addEventListener("click", submitAuth);
     $("authCancel").addEventListener("click", closeAuth);
     authModal.addEventListener("click",(e)=>{ if(e.target===authModal) closeAuth(); });
     [authEmail,authPass,authName].forEach(el=> el.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); submitAuth(); } }));
     $("espaceClose").addEventListener("click", closeEspace);
-    $("espaceNew").addEventListener("click", ()=>{ closeEspace(); openTypeChooser(); });
+    $("espaceNew").addEventListener("click", ()=>{ closeEspace(); if(canBuildUI()) openTypeChooser(); else notifyBlocked(); });
     espaceModal.addEventListener("click",(e)=>{ if(e.target===espaceModal) closeEspace(); });
 
     (async function init(){
       renderRail();
       await loadConfig();
       await loadMe();
-      const saved = getSavedId();
-      if(saved && await resume(saved)) return;
-      clearSavedId(); openTypeChooser();
+      await startFlow();
     })();
   </script>
 </body>

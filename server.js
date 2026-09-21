@@ -43,6 +43,8 @@ const NETLIFY_TOKEN = process.env.NETLIFY_TOKEN;
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const USE_DB = !!(SUPABASE_URL && SUPABASE_KEY);
+// Comptes formateur/administrateur (Palier « gestion des apprenants ») : liste d'emails.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
 // --- Les étapes (build:true = étape qui produit / modifie le site) ---
 const STEPS = [
@@ -273,16 +275,38 @@ async function getUserById(id) {
   if (USE_DB) { try { const r = await sb(`/users?id=eq.${encodeURIComponent(id)}&select=*`); return (r && r[0]) || null; } catch (err) { return null; } }
   const a = loadAccounts(); return a.users[id] || null;
 }
-async function createUser({ email, name, password }) {
+async function createUser({ email, name, password, status, cohort }) {
   const e = normEmail(email);
   const user = {
     id: crypto.randomUUID(), email: e,
     name: String(name || "").trim().slice(0, 80) || e.split("@")[0],
-    pass: hashPassword(password), created_at: new Date().toISOString()
+    pass: hashPassword(password),
+    status: status || "pending",
+    cohort: (cohort != null ? String(cohort).trim().slice(0, 80) : "") || null,
+    created_at: new Date().toISOString()
   };
   if (USE_DB) { await sb(`/users`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([user]) }); }
   else { const a = loadAccounts(); a.users[user.id] = user; a.emails[e] = user.id; saveAccounts(a); }
   return user;
+}
+async function updateUser(id, fields) {
+  if (!id) return null;
+  if (USE_DB) { await sb(`/users?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(fields) }); return await getUserById(id); }
+  const a = loadAccounts(); if (!a.users[id]) return null; Object.assign(a.users[id], fields); saveAccounts(a); return a.users[id];
+}
+
+// --- Rôles & statut d'accès ---
+function isAdmin(u) { return !!u && ADMIN_EMAILS.includes(normEmail(u.email)); }
+function userStatus(u) { if (!u) return "none"; if (isAdmin(u)) return "active"; return u.status || "active"; }
+function canView(u) { const s = userStatus(u); return isAdmin(u) || s === "active" || s === "finished"; }
+function canBuild(u) { return isAdmin(u) || userStatus(u) === "active"; }
+function owns(user, conv) { if (!conv || !conv.userId) return true; return !!(user && user.id === conv.userId); }
+function buildBlockMessage(user) {
+  if (!user) return { code: 401, error: "Connectez-vous pour accéder à votre formation." };
+  const s = userStatus(user);
+  if (s === "pending") return { code: 403, error: "Votre inscription est en attente de validation par le formateur." };
+  if (s === "finished") return { code: 403, error: "Votre formation est terminée : vous pouvez consulter vos projets, mais plus les modifier. Contactez votre formateur pour être réautorisé(e)." };
+  return { code: 403, error: "Accès non autorisé." };
 }
 
 // -- Sessions (jeton aléatoire côté serveur) --
@@ -329,16 +353,10 @@ async function currentUser(req) {
   const token = parseCookies(req)[SESSION_COOKIE];
   return token ? await getSessionUser(token) : null;
 }
-function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name } : null; }
+function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name, status: userStatus(u), cohort: u.cohort || null, isAdmin: isAdmin(u) } : null; }
 
-// Un projet rattaché à un compte n'est accessible qu'à son propriétaire.
+// Un projet rattaché à un compte n'est accessible qu'à son propriétaire (voir owns()).
 // Les projets anonymes (sans userId) restent accessibles par id, comme avant.
-async function canAccessConv(req, conv) {
-  if (!conv) return false;
-  if (!conv.userId) return true;
-  const u = await currentUser(req);
-  return !!(u && u.id === conv.userId);
-}
 
 // -- Liste des projets d'un compte (résumés légers pour « Mon espace ») --
 function convTitle(conv) {
@@ -482,14 +500,13 @@ ${current}
 async function handleStart(req, res) {
   if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
   try {
+    const user = await currentUser(req);
+    if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
     const id = crypto.randomUUID();
     const mods = normalizeModules(p.modules, p.projectType);
     const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
-    const conv = { id, step: 0, modules: mods, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
-    // Si l'apprenant est connecté, le projet lui est rattaché (espace membre).
-    const user = await currentUser(req);
-    if (user) { conv.userId = user.id; conv.ownerName = user.name; }
+    const conv = { id, step: 0, modules: mods, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
     const out = await produceCurrent(conv);
     sendJson(res, 200, { id, step: 0, modules: mods, ...out });
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
@@ -502,7 +519,9 @@ async function handleChat(req, res) {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
     const conv = await loadConv(p.id);
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
-    if (!(await canAccessConv(req, conv))) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    const user = await currentUser(req);
+    if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
     if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
     conv.messages.push({ role: "user", content: p.message });
     const out = await produceCurrent(conv);
@@ -517,7 +536,9 @@ async function handleNext(req, res) {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
     const conv = await loadConv(p.id);
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
-    if (!(await canAccessConv(req, conv))) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    const user = await currentUser(req);
+    if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
     const current = conv.step || 0;
     if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
     conv.step = current + 1;
@@ -532,7 +553,11 @@ async function handleDownload(req, res) {
   const u = new URL(req.url, "http://localhost");
   const id = u.searchParams.get("id");
   const conv = await loadConv(id);
-  if (conv && !(await canAccessConv(req, conv))) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Ce projet appartient à un autre compte."); }
+  if (conv) {
+    const cu = await currentUser(req);
+    if (!owns(cu, conv)) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Ce projet appartient à un autre compte."); }
+    if (conv.userId && !canView(cu)) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Accès non autorisé pour le moment."); }
+  }
   const html = await readSite(id);
   if (!html) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Site introuvable — construisez-le d'abord."); }
   res.writeHead(200, {
@@ -547,7 +572,9 @@ async function handleGetConversation(req, res) {
   const u = new URL(req.url, "http://localhost");
   const conv = await loadConv(u.searchParams.get("id"));
   if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
-  if (!(await canAccessConv(req, conv))) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+  if (conv.userId && !canView(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
   sendJson(res, 200, { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) });
 }
 
@@ -558,7 +585,10 @@ async function servePreview(req, res) {
   if (!validId(id)) { res.writeHead(404); return res.end("Introuvable"); }
   // Aperçu privé : un projet rattaché à un compte ne s'affiche qu'à son propriétaire.
   const conv = await loadConv(id);
-  if (conv && !(await canAccessConv(req, conv))) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui,sans-serif;color:#6B7A90;display:grid;place-items:center;height:88vh;text-align:center;padding:20px\">Cet aperçu est privé.<br>Connectez-vous avec le compte propriétaire.</body>"); }
+  if (conv && conv.userId) {
+    const cu = await currentUser(req);
+    if (!owns(cu, conv) || !canView(cu)) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui,sans-serif;color:#6B7A90;display:grid;place-items:center;height:88vh;text-align:center;padding:20px\">Cet aperçu est privé.<br>Connectez-vous avec le compte propriétaire.</body>"); }
+  }
   let html = null;
   try { html = await readSite(id); } catch (e) { html = null; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -638,7 +668,9 @@ async function handlePublish(req, res) {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
     const conv = await loadConv(p.id);
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
-    if (!(await canAccessConv(req, conv))) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    const user = await currentUser(req);
+    if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
     const out = await publishSite(conv);
     sendJson(res, 200, out);
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Publication impossible." }); }
@@ -656,7 +688,10 @@ async function handleRegister(req, res) {
     if (!validEmail(email)) return sendJson(res, 400, { error: "Adresse e-mail invalide." });
     if (typeof p.password !== "string" || p.password.length < 6) return sendJson(res, 400, { error: "Le mot de passe doit contenir au moins 6 caractères." });
     if (await findUserByEmail(email)) return sendJson(res, 409, { error: "Un compte existe déjà avec cette adresse. Connectez-vous." });
-    const user = await createUser({ email, name: p.name, password: p.password });
+    // Auto-inscription : le compte est « en attente » de validation par le formateur.
+    // Sauf l'admin lui-même, qui est actif d'emblée pour pouvoir gérer la plateforme.
+    const status = ADMIN_EMAILS.includes(email) ? "active" : "pending";
+    const user = await createUser({ email, name: p.name, password: p.password, status });
     const token = await createSession(user.id);
     setSessionCookie(res, token);
     sendJson(res, 200, { user: publicUser(user) });
@@ -695,6 +730,70 @@ async function handleProjects(req, res) {
   sendJson(res, 200, { projects: await listConvsForUser(u.id) });
 }
 
+// --- ESPACE FORMATEUR (admin) : gestion des apprenants & des sessions ---
+async function adminListUsers() {
+  if (USE_DB) { try { return (await sb(`/users?select=id,email,name,status,cohort,created_at&order=created_at.desc`)) || []; } catch (e) { console.error("adminListUsers:", e.message); return []; } }
+  const a = loadAccounts(); return Object.values(a.users).sort((x, y) => String(y.created_at || "").localeCompare(String(x.created_at || "")));
+}
+async function allConvs() {
+  if (USE_DB) { try { return ((await sb(`/conversations?select=data`)) || []).map((x) => x.data).filter(Boolean); } catch (e) { return []; } }
+  const out = [];
+  try { fs.readdirSync(DATA_DIR).forEach((f) => { if (!f.endsWith(".json") || f === "accounts.json") return; try { out.push(JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), "utf8"))); } catch (e) {} }); } catch (e) {}
+  return out;
+}
+
+// GET /api/admin/learners
+async function handleAdminLearners(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  const users = await adminListUsers();
+  const convs = await allConvs();
+  const byUser = {};
+  convs.forEach((c) => { if (!c || !c.userId) return; const b = byUser[c.userId] || (byUser[c.userId] = { projects: 0, published: 0 }); b.projects++; if (c.publishedUrl) b.published++; });
+  const learners = users
+    .filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)))
+    .map((x) => ({ id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, status: (x.status || "active"), createdAt: x.created_at || null, projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0 }));
+  const stats = {
+    total: learners.length,
+    active: learners.filter((l) => l.status === "active").length,
+    pending: learners.filter((l) => l.status === "pending").length,
+    finished: learners.filter((l) => l.status === "finished").length
+  };
+  const cohorts = {};
+  learners.forEach((l) => { const k = l.cohort || "—"; cohorts[k] = (cohorts[k] || 0) + 1; });
+  sendJson(res, 200, { learners, stats, cohorts });
+}
+
+// POST /api/admin/learner/create  { name, email, cohort, password }
+async function handleAdminCreate(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const email = normEmail(p.email);
+  if (!validEmail(email)) return sendJson(res, 400, { error: "Adresse e-mail invalide." });
+  if (typeof p.password !== "string" || p.password.length < 6) return sendJson(res, 400, { error: "Mot de passe : 6 caractères minimum." });
+  if (await findUserByEmail(email)) return sendJson(res, 409, { error: "Un compte existe déjà avec cette adresse." });
+  const user = await createUser({ email, name: p.name, password: p.password, status: "active", cohort: p.cohort });
+  sendJson(res, 200, { user: publicUser(user) });
+}
+
+// POST /api/admin/learner/update  { userId, status?, cohort? }
+async function handleAdminUpdate(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  if (!p.userId) return sendJson(res, 400, { error: "Apprenant manquant." });
+  const target = await getUserById(p.userId);
+  if (!target) return sendJson(res, 404, { error: "Apprenant introuvable." });
+  if (ADMIN_EMAILS.includes(normEmail(target.email))) return sendJson(res, 400, { error: "Le compte administrateur ne se gère pas ici." });
+  const fields = {};
+  if (typeof p.status === "string" && ["pending", "active", "finished"].includes(p.status)) fields.status = p.status;
+  if (p.cohort !== undefined) fields.cohort = String(p.cohort || "").trim().slice(0, 80) || null;
+  if (!Object.keys(fields).length) return sendJson(res, 400, { error: "Rien à modifier." });
+  const updated = await updateUser(p.userId, fields);
+  sendJson(res, 200, { user: publicUser(updated) });
+}
+
 // --- CERTIFICAT (simple) : une belle page imprimable en PDF ---
 function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 const MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
@@ -705,7 +804,9 @@ async function handleCertificate(req, res) {
   const id = u.searchParams.get("id");
   const conv = await loadConv(id);
   if (!conv) { res.writeHead(404, { "content-type": "text/html; charset=utf-8" }); return res.end("Conversation introuvable."); }
-  if (!(await canAccessConv(req, conv))) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Ce projet appartient à un autre compte."); }
+  const cu = await currentUser(req);
+  if (!owns(cu, conv)) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Ce projet appartient à un autre compte."); }
+  if (conv.userId && !canView(cu)) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Accès non autorisé pour le moment."); }
   // Le nom du compte fait foi ; sinon, le nom saisi ; sinon un libellé neutre.
   let name = (conv.ownerName || u.searchParams.get("name") || "").trim().slice(0, 80);
   if (!name) name = "Apprenant(e)";
@@ -771,6 +872,9 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/auth/logout") return handleLogout(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/auth/me")) return handleMe(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/projects")) return handleProjects(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/admin/learners")) return handleAdminLearners(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/learner/create") return handleAdminCreate(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/learner/update") return handleAdminUpdate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/certificate")) return handleCertificate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
@@ -787,7 +891,8 @@ server.listen(PORT, () => {
   console.log(`  Modèle : ${MODEL}`);
   console.log(`  Mémoire : ${USE_DB ? "base de données (Supabase)" : "fichiers locaux"}`);
   console.log(`  Publication : ${NETLIFY_TOKEN ? "activée" : "désactivée"}`);
-  console.log(`  Comptes : activés (espace membre)\n`);
+  console.log(`  Comptes : activés (espace membre)`);
+  console.log(`  Formateur(s) : ${ADMIN_EMAILS.length ? ADMIN_EMAILS.join(", ") : "aucun — définir ADMIN_EMAILS"}\n`);
 });
 
 // --- Auto-test hors ligne : node server.js --selftest ---

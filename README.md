@@ -246,6 +246,59 @@ On change de composition en cliquant **« ↻ Recommencer »**.
 Rien de nouveau à installer ni à configurer : ces fonctionnalités ne changent pas le moteur,
 elles guident seulement l'assistant. Les anciens projets restent compatibles.
 
+## Espace formateur & gestion des apprenants
+
+Bâtisseur devient un **outil de formation géré** : vous inscrivez vos apprenants, vous leur
+attribuez une **session** (leur mois / quinzaine de formation), et vous **contrôlez leur
+accès**.
+
+**Devenir formateur (admin).** Ajoutez une variable d'environnement **`ADMIN_EMAILS`** avec
+votre (vos) adresse(s), séparées par des virgules :
+
+```
+ADMIN_EMAILS=djetebetheldjete@gmail.com
+```
+
+- en local : dans `.env` ;
+- sur Render : *Environment* → *Add Environment Variable*.
+
+Créez ensuite votre compte avec cette adresse (bouton « Se connecter » → « Créer un compte ») :
+il est **actif d'emblée** et fait apparaître le bouton **« ◱ Espace formateur »** en haut.
+
+**Ce que vous pouvez faire dans l'espace formateur :**
+
+- **Inscrire un apprenant** (nom, email, session, mot de passe) — son compte est actif tout de
+  suite, vous lui transmettez ses identifiants ;
+- voir tous les apprenants, avec leur **session**, leur **statut** et le nombre de projets ;
+- changer le **statut** d'un clic : **Actif** (accès complet), **En attente** (pas encore
+  d'accès), **Terminé** (ne peut plus construire) ;
+- modifier la **session** de chacun ;
+- un **tableau de bord** : nombre d'apprenants actifs / en attente / terminés.
+
+**Les trois statuts.**
+
+- **En attente** — une personne qui s'inscrit elle-même arrive ainsi : elle n'a pas accès au
+  parcours tant que vous ne l'avez pas validée (et affectée à une session).
+- **Actif** — accès complet au parcours et à ses projets.
+- **Terminé** — l'apprenant **ne peut plus construire ni modifier**, mais peut encore
+  **consulter et télécharger** ses projets et récupérer son **certificat**. Repassez-le en
+  **Actif** pour le réautoriser.
+
+> **Important :** construire un site demande désormais un **compte actif**. La construction
+> anonyme (sans compte) n'est plus possible — c'est ce qui permet de réserver Bâtisseur à vos
+> apprenants inscrits.
+
+**Si vous utilisez Supabase**, ajoutez les deux colonnes de statut à la table `users`
+(dans **SQL Editor**) :
+
+```sql
+alter table users add column if not exists status text default 'active';
+alter table users add column if not exists cohort text;
+```
+
+(Le défaut `active` garde l'accès à vos comptes déjà créés ; les nouvelles auto-inscriptions
+sont mises « en attente » automatiquement par l'application.)
+
 ## Mettre à jour la plateforme déjà en ligne
 
 Le service Render est relié à votre dépôt GitHub. Pour publier une nouvelle version :
