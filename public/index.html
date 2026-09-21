@@ -92,6 +92,15 @@
   .projrow .pb span{font-family:var(--f-mono),monospace;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);}
   .projrow .tag{flex:0 0 auto;font-family:var(--f-mono),monospace;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--good);border:1px solid color-mix(in srgb,var(--good) 45%,var(--line));border-radius:100px;padding:2px 7px;}
   .projempty{color:var(--ink-faint);font-size:.88rem;text-align:center;padding:22px 8px;}
+  .choices{display:flex;flex-direction:column;gap:10px;margin:8px 0 2px;}
+  .choice{display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:14px 15px;cursor:pointer;color:var(--ink);}
+  .choice:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface-2));}
+  .choice .pi{flex:0 0 auto;width:38px;height:38px;border-radius:10px;background:var(--surface-3);display:grid;place-items:center;font-size:20px;}
+  .choice .pb{flex:1;min-width:0;}
+  .choice .pb b{display:block;font-family:var(--f-display),sans-serif;font-weight:640;font-size:1rem;}
+  .choice .pb span{font-size:.84rem;color:var(--ink-faint);}
+  .typebadge{display:inline-flex;align-items:center;gap:5px;font-family:var(--f-mono),monospace;font-size:10.5px;letter-spacing:.03em;color:var(--accent-deep);background:color-mix(in srgb,var(--accent) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));border-radius:100px;padding:3px 9px;white-space:nowrap;}
+  @media(prefers-color-scheme:dark){.typebadge{color:var(--accent);}}
   .ch-actions{display:flex;gap:8px;align-items:center;}
   .resumed{margin:10px 12px 0;font-family:var(--f-mono),monospace;font-size:10.5px;color:var(--ink-faint);background:var(--surface-2);border:1px dashed var(--line);border-radius:8px;padding:7px 10px;text-align:center;}
   #thread{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:11px;min-height:0;}
@@ -171,7 +180,7 @@
         <div id="railInner"></div>
         <div class="soon">
           <div class="h">Bientôt</div>
-          D'autres types de projets (boutique en ligne, prise de rendez-vous…).
+          Des fonctions interactives (vrai panier, calendrier de réservation) pour aller plus loin.
         </div>
       </div>
 
@@ -180,6 +189,7 @@
         <div class="ch-head">
           <div class="st" id="stepLabel">Comprendre le projet<small id="stepSub">Orientation</small></div>
           <div class="ch-actions">
+            <span class="typebadge" id="typeBadge" style="display:none;"></span>
             <button class="certbtn" id="certBtn" type="button" style="display:none;">🎓 Mon certificat</button>
             <button class="nextbtn" id="nextBtn" type="button" disabled>Étape suivante →</button>
           </div>
@@ -228,6 +238,16 @@
         <button id="certCancel" type="button">Annuler</button>
         <button id="certGo" class="primary" type="button">Créer mon certificat</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Choix du type de projet (Palier 5) -->
+  <div class="modal-bg" id="typeModal">
+    <div class="modal wide">
+      <h3>Que voulez-vous créer ?</h3>
+      <p>Choisissez le type de projet : l'assistant adaptera tout le parcours à votre choix. Vous pourrez toujours en démarrer un autre en cliquant « ↻ Recommencer ».</p>
+      <div class="choices" id="typeChoices"></div>
+      <div class="linkline"><button class="linkbtn" id="typeCancel" type="button">Annuler</button></div>
     </div>
   </div>
 
@@ -283,9 +303,38 @@
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
     const pubBtn = $("pubBtn"), pubLink = $("pubLink");
+    const typeBadge = $("typeBadge"), typeModal = $("typeModal"), typeChoices = $("typeChoices");
+
+    function renderTypeBadge(){
+      const t = typeInfo(currentType);
+      typeBadge.textContent = t.emoji + " " + t.label;
+      typeBadge.style.display = convId ? "inline-flex" : "none";
+    }
+    function openTypeChooser(){
+      typeChoices.innerHTML = "";
+      Object.keys(PROJECT_TYPES_UI).forEach((key) => {
+        const t = PROJECT_TYPES_UI[key];
+        const b = document.createElement("button");
+        b.className = "choice"; b.type = "button";
+        b.innerHTML = '<span class="pi">'+t.emoji+'</span><span class="pb"><b></b><span></span></span>';
+        b.querySelector("b").textContent = t.label;
+        b.querySelector(".pb > span").textContent = t.tagline;
+        b.addEventListener("click", ()=>{ closeTypeChooser(); clearSavedId(); convId = null; startNew(key); });
+        typeChoices.appendChild(b);
+      });
+      typeModal.classList.add("show");
+    }
+    function closeTypeChooser(){ typeModal.classList.remove("show"); }
 
     const STORAGE_KEY = "batisseur_parcours_id";
-    let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null;
+    let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null, currentType = "vitrine";
+
+    const PROJECT_TYPES_UI = {
+      vitrine:  { label: "Site vitrine",        emoji: "🪧",  tagline: "Présenter une activité, un métier, une association et donner envie de vous contacter." },
+      boutique: { label: "Boutique en ligne",   emoji: "🛍️", tagline: "Montrer des produits avec leurs prix et donner envie de commander." },
+      rdv:      { label: "Prise de rendez-vous", emoji: "📅", tagline: "Présenter vos prestations et permettre de demander un créneau." }
+    };
+    const typeInfo = (k) => PROJECT_TYPES_UI[k] || PROJECT_TYPES_UI.vitrine;
 
     const getSavedId = () => { try { return localStorage.getItem(STORAGE_KEY); } catch(e){ return null; } };
     const setSavedId = (id) => { try { localStorage.setItem(STORAGE_KEY, id); } catch(e){} };
@@ -349,17 +398,18 @@
       return t || "✓ (mise à jour du site)";
     }
 
-    async function startNew(){
+    async function startNew(type){
+      currentType = PROJECT_TYPES_UI[type] ? type : "vitrine";
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none";
       pubBtn.style.display="none"; pubLink.style.display="none"; publishedUrl=null;
-      renderRail();
+      renderRail(); renderTypeBadge();
       const typing = bubble("…","ai typing"); setBusy(true);
       try{
-        const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
+        const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectType:currentType})});
         const data = await r.json(); typing.remove();
         if(!r.ok){ bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); return; }
-        convId=data.id; step=data.step||0; setSavedId(convId); renderRail();
+        convId=data.id; step=data.step||0; if(data.projectType) currentType=data.projectType; setSavedId(convId); renderRail(); renderTypeBadge();
         bubble(data.reply||"","ai");
         if(data.siteUpdated) reloadPreview();
       }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur. Est-il bien lancé ?","err"); }
@@ -371,7 +421,7 @@
         const r = await fetch("/api/conversation?id="+encodeURIComponent(id));
         if(!r.ok) return false;
         const data = await r.json();
-        convId=id; step=data.step||0;
+        convId=id; step=data.step||0; currentType=data.projectType||"vitrine"; renderTypeBadge();
         thread.innerHTML="";
         (data.messages||[]).forEach(m => {
           if(m.role==="user") bubble(m.content,"user");
@@ -414,7 +464,9 @@
 
     form.addEventListener("submit",(e)=>{ e.preventDefault(); const t=input.value.trim(); if(!t||!convId) return; input.value=""; send(t); });
     input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); form.requestSubmit(); } });
-    newBtn.addEventListener("click",()=>{ clearSavedId(); convId=null; startNew(); });
+    newBtn.addEventListener("click", openTypeChooser);
+    $("typeCancel").addEventListener("click", ()=>{ closeTypeChooser(); if(!convId) startNew("vitrine"); });
+    typeModal.addEventListener("click",(e)=>{ if(e.target===typeModal){ closeTypeChooser(); if(!convId) startNew("vitrine"); } });
     nextBtn.addEventListener("click", goNext);
     pubBtn.addEventListener("click", doPublish);
 
@@ -539,8 +591,9 @@
         const row = document.createElement("button");
         row.className = "projrow"; row.type = "button";
         const stepName = (STEP_LABELS[p.step] || STEP_LABELS[0]).label;
+        const t = typeInfo(p.projectType);
         const tag = p.publishedUrl ? '<span class="tag">en ligne</span>' : (p.hasSite ? '<span class="tag" style="color:var(--warm);border-color:color-mix(in srgb,var(--warm) 45%,var(--line))">site prêt</span>' : '');
-        row.innerHTML = '<span class="pi">'+(p.hasSite?'🖥':'💬')+'</span><span class="pb"><b></b><span>Étape : '+stepName+'</span></span>'+tag;
+        row.innerHTML = '<span class="pi">'+t.emoji+'</span><span class="pb"><b></b><span>'+t.label+' · Étape : '+stepName+'</span></span>'+tag;
         row.querySelector("b").textContent = p.title;
         row.addEventListener("click", ()=> openProject(p.id));
         projList.appendChild(row);
@@ -561,7 +614,7 @@
     authModal.addEventListener("click",(e)=>{ if(e.target===authModal) closeAuth(); });
     [authEmail,authPass,authName].forEach(el=> el.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); submitAuth(); } }));
     $("espaceClose").addEventListener("click", closeEspace);
-    $("espaceNew").addEventListener("click", ()=>{ closeEspace(); clearSavedId(); convId=null; startNew(); });
+    $("espaceNew").addEventListener("click", ()=>{ closeEspace(); openTypeChooser(); });
     espaceModal.addEventListener("click",(e)=>{ if(e.target===espaceModal) closeEspace(); });
 
     (async function init(){
@@ -570,7 +623,7 @@
       await loadMe();
       const saved = getSavedId();
       if(saved && await resume(saved)) return;
-      clearSavedId(); startNew();
+      clearSavedId(); openTypeChooser();
     })();
   </script>
 </body>
