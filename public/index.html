@@ -99,6 +99,10 @@
   .choice .pb{flex:1;min-width:0;}
   .choice .pb b{display:block;font-family:var(--f-display),sans-serif;font-weight:640;font-size:1rem;}
   .choice .pb span{font-size:.84rem;color:var(--ink-faint);}
+  .choice .chk{flex:0 0 auto;width:22px;height:22px;border-radius:7px;border:2px solid var(--line-strong);background:var(--surface);display:grid;place-items:center;color:#fff;font-size:13px;font-weight:800;}
+  .choice.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface-2));}
+  .choice.sel .chk{background:var(--accent);border-color:var(--accent);}
+  .choice.sel .chk:after{content:"✓";}
   .typebadge{display:inline-flex;align-items:center;gap:5px;font-family:var(--f-mono),monospace;font-size:10.5px;letter-spacing:.03em;color:var(--accent-deep);background:color-mix(in srgb,var(--accent) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));border-radius:100px;padding:3px 9px;white-space:nowrap;}
   @media(prefers-color-scheme:dark){.typebadge{color:var(--accent);}}
   .ch-actions{display:flex;gap:8px;align-items:center;}
@@ -245,9 +249,12 @@
   <div class="modal-bg" id="typeModal">
     <div class="modal wide">
       <h3>Que voulez-vous créer ?</h3>
-      <p>Choisissez le type de projet : l'assistant adaptera tout le parcours à votre choix. Vous pourrez toujours en démarrer un autre en cliquant « ↻ Recommencer ».</p>
+      <p>Cochez un ou plusieurs volets. L'assistant construira un seul site qui les réunit. Vous pourrez changer en cliquant « ↻ Recommencer ».</p>
       <div class="choices" id="typeChoices"></div>
-      <div class="linkline"><button class="linkbtn" id="typeCancel" type="button">Annuler</button></div>
+      <div class="row">
+        <button id="typeCancel" type="button">Annuler</button>
+        <button id="typeGo" class="primary" type="button">Commencer</button>
+      </div>
     </div>
   </div>
 
@@ -304,37 +311,53 @@
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
     const pubBtn = $("pubBtn"), pubLink = $("pubLink");
     const typeBadge = $("typeBadge"), typeModal = $("typeModal"), typeChoices = $("typeChoices");
+    let chooserSel = new Set(["presentation"]);
 
     function renderTypeBadge(){
-      const t = typeInfo(currentType);
-      typeBadge.textContent = t.emoji + " " + t.label;
+      typeBadge.textContent = modulesEmojiUI(currentModules) + " " + modulesLabelUI(currentModules);
       typeBadge.style.display = convId ? "inline-flex" : "none";
     }
+    function paintChoices(){
+      typeChoices.querySelectorAll(".choice").forEach((el)=>{ el.classList.toggle("sel", chooserSel.has(el.dataset.key)); });
+    }
     function openTypeChooser(){
+      chooserSel = new Set(["presentation"]);
       typeChoices.innerHTML = "";
-      Object.keys(PROJECT_TYPES_UI).forEach((key) => {
-        const t = PROJECT_TYPES_UI[key];
+      MODULE_ORDER.forEach((key) => {
+        const t = MODULES_UI[key];
         const b = document.createElement("button");
-        b.className = "choice"; b.type = "button";
-        b.innerHTML = '<span class="pi">'+t.emoji+'</span><span class="pb"><b></b><span></span></span>';
-        b.querySelector("b").textContent = t.label;
+        b.className = "choice"; b.type = "button"; b.dataset.key = key;
+        b.innerHTML = '<span class="chk"></span><span class="pi">'+t.emoji+'</span><span class="pb"><b></b><span></span></span>';
+        b.querySelector("b").textContent = t.short;
         b.querySelector(".pb > span").textContent = t.tagline;
-        b.addEventListener("click", ()=>{ closeTypeChooser(); clearSavedId(); convId = null; startNew(key); });
+        b.addEventListener("click", ()=>{
+          if(chooserSel.has(key)){ chooserSel.delete(key); } else { chooserSel.add(key); }
+          if(chooserSel.size === 0) chooserSel.add(key); // au moins un volet
+          paintChoices();
+        });
         typeChoices.appendChild(b);
       });
+      paintChoices();
       typeModal.classList.add("show");
     }
     function closeTypeChooser(){ typeModal.classList.remove("show"); }
+    function confirmTypeChooser(){
+      const mods = MODULE_ORDER.filter(k => chooserSel.has(k));
+      closeTypeChooser(); clearSavedId(); convId = null; startNew(mods.length ? mods : ["presentation"]);
+    }
 
     const STORAGE_KEY = "batisseur_parcours_id";
-    let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null, currentType = "vitrine";
+    let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null, currentModules = ["presentation"];
 
-    const PROJECT_TYPES_UI = {
-      vitrine:  { label: "Site vitrine",        emoji: "🪧",  tagline: "Présenter une activité, un métier, une association et donner envie de vous contacter." },
-      boutique: { label: "Boutique en ligne",   emoji: "🛍️", tagline: "Montrer des produits avec leurs prix et donner envie de commander." },
-      rdv:      { label: "Prise de rendez-vous", emoji: "📅", tagline: "Présenter vos prestations et permettre de demander un créneau." }
+    const MODULES_UI = {
+      presentation: { short: "Présentation", emoji: "🪧",  tagline: "Présenter une activité, un métier, une association." },
+      boutique:     { short: "Boutique",     emoji: "🛍️", tagline: "Montrer des produits avec leurs prix et donner envie de commander." },
+      rdv:          { short: "Rendez-vous",  emoji: "📅", tagline: "Présenter vos prestations et permettre de demander un créneau." }
     };
-    const typeInfo = (k) => PROJECT_TYPES_UI[k] || PROJECT_TYPES_UI.vitrine;
+    const MODULE_ORDER = ["presentation", "boutique", "rdv"];
+    function normMods(list){ const set = Array.isArray(list) ? list : []; const c = MODULE_ORDER.filter(k => set.includes(k)); return c.length ? c : ["presentation"]; }
+    function modulesLabelUI(mods){ mods = normMods(mods); if(mods.length===1 && mods[0]==="presentation") return "Site vitrine"; return mods.map(k => MODULES_UI[k].short).join(" + "); }
+    function modulesEmojiUI(mods){ return normMods(mods).map(k => MODULES_UI[k].emoji).join(""); }
 
     const getSavedId = () => { try { return localStorage.getItem(STORAGE_KEY); } catch(e){ return null; } };
     const setSavedId = (id) => { try { localStorage.setItem(STORAGE_KEY, id); } catch(e){} };
@@ -398,18 +421,18 @@
       return t || "✓ (mise à jour du site)";
     }
 
-    async function startNew(type){
-      currentType = PROJECT_TYPES_UI[type] ? type : "vitrine";
+    async function startNew(mods){
+      currentModules = normMods(mods);
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none";
       pubBtn.style.display="none"; pubLink.style.display="none"; publishedUrl=null;
       renderRail(); renderTypeBadge();
       const typing = bubble("…","ai typing"); setBusy(true);
       try{
-        const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectType:currentType})});
+        const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({modules:currentModules})});
         const data = await r.json(); typing.remove();
         if(!r.ok){ bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); return; }
-        convId=data.id; step=data.step||0; if(data.projectType) currentType=data.projectType; setSavedId(convId); renderRail(); renderTypeBadge();
+        convId=data.id; step=data.step||0; if(data.modules) currentModules=normMods(data.modules); setSavedId(convId); renderRail(); renderTypeBadge();
         bubble(data.reply||"","ai");
         if(data.siteUpdated) reloadPreview();
       }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur. Est-il bien lancé ?","err"); }
@@ -421,7 +444,7 @@
         const r = await fetch("/api/conversation?id="+encodeURIComponent(id));
         if(!r.ok) return false;
         const data = await r.json();
-        convId=id; step=data.step||0; currentType=data.projectType||"vitrine"; renderTypeBadge();
+        convId=id; step=data.step||0; currentModules=normMods(data.modules); renderTypeBadge();
         thread.innerHTML="";
         (data.messages||[]).forEach(m => {
           if(m.role==="user") bubble(m.content,"user");
@@ -465,8 +488,9 @@
     form.addEventListener("submit",(e)=>{ e.preventDefault(); const t=input.value.trim(); if(!t||!convId) return; input.value=""; send(t); });
     input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); form.requestSubmit(); } });
     newBtn.addEventListener("click", openTypeChooser);
-    $("typeCancel").addEventListener("click", ()=>{ closeTypeChooser(); if(!convId) startNew("vitrine"); });
-    typeModal.addEventListener("click",(e)=>{ if(e.target===typeModal){ closeTypeChooser(); if(!convId) startNew("vitrine"); } });
+    $("typeGo").addEventListener("click", confirmTypeChooser);
+    $("typeCancel").addEventListener("click", ()=>{ closeTypeChooser(); if(!convId) startNew(["presentation"]); });
+    typeModal.addEventListener("click",(e)=>{ if(e.target===typeModal){ closeTypeChooser(); if(!convId) startNew(["presentation"]); } });
     nextBtn.addEventListener("click", goNext);
     pubBtn.addEventListener("click", doPublish);
 
@@ -591,9 +615,9 @@
         const row = document.createElement("button");
         row.className = "projrow"; row.type = "button";
         const stepName = (STEP_LABELS[p.step] || STEP_LABELS[0]).label;
-        const t = typeInfo(p.projectType);
+        const mods = normMods(p.modules);
         const tag = p.publishedUrl ? '<span class="tag">en ligne</span>' : (p.hasSite ? '<span class="tag" style="color:var(--warm);border-color:color-mix(in srgb,var(--warm) 45%,var(--line))">site prêt</span>' : '');
-        row.innerHTML = '<span class="pi">'+t.emoji+'</span><span class="pb"><b></b><span>'+t.label+' · Étape : '+stepName+'</span></span>'+tag;
+        row.innerHTML = '<span class="pi">'+modulesEmojiUI(mods)+'</span><span class="pb"><b></b><span>'+modulesLabelUI(mods)+' · Étape : '+stepName+'</span></span>'+tag;
         row.querySelector("b").textContent = p.title;
         row.addEventListener("click", ()=> openProject(p.id));
         projList.appendChild(row);

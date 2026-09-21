@@ -95,46 +95,76 @@ ESPACES MÉDIAS — DEMANDE AVANT DE SUPPOSER :
 - Quand un espace n'est pas clair (zone d'image, galerie, document…), tu DEMANDES d'abord à la personne à quoi il sert : « des photos », « du texte », ou « des documents (PDF / Word / PowerPoint) » — puis tu poses le bon espace réservé.
 - Pour une image : un cadre réservé propre avec une légende. Pour un document : une zone qui annonce le document à venir. Tu n'inventes jamais d'image externe.`;
 
-// --- TYPES DE PROJET (Palier 5) : le type oriente TOUT le parcours ---
+// --- VOLETS DU PROJET (Paliers 5 & 6) : un projet combine un ou plusieurs volets ---
 // Version « vitrine intelligente » : catalogue / prestations joliment présentés,
 // commande ou rendez-vous via contact ou formulaire simple. 100% HTML/CSS, sans
-// JavaScript, sans base de données côté site — l'engin de construction ne change pas.
-const PROJECT_TYPES = {
-  vitrine: {
-    label: "Site vitrine",
-    emoji: "🪧",
-    tagline: "Présenter une activité, un métier, une association et donner envie de vous contacter.",
-    context: "Le projet est un SITE VITRINE classique : présenter l'activité, inspirer confiance, et inciter à prendre contact.",
+// JavaScript. Un projet peut RÉUNIR plusieurs volets dans une seule page cohérente.
+const MODULES = {
+  presentation: {
+    label: "Présentation", short: "Présentation", emoji: "🪧",
+    tagline: "Présenter une activité, un métier, une association.",
+    context: "un volet PRÉSENTATION (site vitrine) : présenter l'activité, inspirer confiance et inciter au contact",
     build: ""
   },
   boutique: {
-    label: "Boutique en ligne",
-    emoji: "🛍️",
+    label: "Boutique en ligne", short: "Boutique", emoji: "🛍️",
     tagline: "Montrer des produits avec leurs prix et donner envie de commander.",
-    context: "Le projet est une BOUTIQUE EN LIGNE (version vitrine) : présenter des produits à vendre et donner envie de commander.",
+    context: "un volet BOUTIQUE EN LIGNE (vitrine) : présenter des produits à vendre",
     build: `
 
-=== TYPE DE PROJET : BOUTIQUE EN LIGNE (vitrine) ===
+=== VOLET BOUTIQUE EN LIGNE (vitrine) ===
 - Prévois une rubrique « Boutique » / « Nos produits » : une GRILLE de produits. Chaque produit = une carte avec un cadre image réservé (placeholder propre), un NOM, une courte description et un PRIX bien visible.
 - Ajoute une rubrique « Comment commander » qui explique la marche à suivre, avec un moyen de contact CLIQUABLE (email/téléphone/WhatsApp) et, si un email est connu, un formulaire de commande simple en HTML (nom, produit souhaité, quantité, message) dont le bouton envoie vers cet email via un lien mailto:. SANS JavaScript.
 - N'invente NI paiement en ligne NI panier qui calcule un total : à ce stade la commande se fait par contact. Reste strictement 100% HTML/CSS.
-- Mets en avant un bouton d'action « Commander » / « Nous contacter » visible dès l'accueil.`
+- Mets en avant un bouton d'action « Commander » / « Nous contacter ».`
   },
   rdv: {
-    label: "Prise de rendez-vous",
-    emoji: "📅",
+    label: "Prise de rendez-vous", short: "Rendez-vous", emoji: "📅",
     tagline: "Présenter vos prestations et permettre de demander un créneau.",
-    context: "Le projet est un site de PRISE DE RENDEZ-VOUS (version vitrine) : présenter des prestations et faciliter la demande de rendez-vous.",
+    context: "un volet PRISE DE RENDEZ-VOUS (vitrine) : présenter des prestations et faciliter la demande de rendez-vous",
     build: `
 
-=== TYPE DE PROJET : PRISE DE RENDEZ-VOUS (vitrine) ===
+=== VOLET PRISE DE RENDEZ-VOUS (vitrine) ===
 - Prévois une rubrique « Prestations » / « Services » : chaque prestation = un nom, une courte description, et sa DURÉE et son PRIX quand c'est pertinent.
 - Ajoute une rubrique « Horaires » (jours et heures d'ouverture) et une rubrique « Demander un rendez-vous » avec un formulaire simple en HTML (nom, téléphone/email, prestation souhaitée, date et heure souhaitées, message). Si un email est connu, le bouton envoie vers cet email via un lien mailto:. SANS JavaScript.
 - N'invente NI agenda interactif NI disponibilités en temps réel : à ce stade la demande se fait par le formulaire/contact. Reste strictement 100% HTML/CSS.
-- Mets en avant un bouton « Prendre rendez-vous » visible dès l'accueil.`
+- Mets en avant un bouton « Prendre rendez-vous ».`
   }
 };
-function projectType(conv) { return PROJECT_TYPES[conv && conv.projectType] ? conv.projectType : "vitrine"; }
+const MODULE_ORDER = ["presentation", "boutique", "rdv"];
+
+// Normalise une sélection de volets (tableau moderne, ou ancien champ projectType).
+function normalizeModules(mods, legacyType) {
+  let set = [];
+  if (Array.isArray(mods)) set = mods;
+  else if (typeof legacyType === "string") set = (legacyType === "boutique" || legacyType === "rdv") ? [legacyType] : ["presentation"];
+  const clean = MODULE_ORDER.filter((k) => set.includes(k));
+  return clean.length ? clean : ["presentation"];
+}
+function convModules(conv) {
+  if (conv && Array.isArray(conv.modules) && conv.modules.length) return normalizeModules(conv.modules);
+  return normalizeModules(null, conv && conv.projectType);
+}
+function modulesContext(mods) {
+  if (mods.length === 1) return "Le projet est " + MODULES[mods[0]].context + ".";
+  return "Le projet COMBINE plusieurs volets dans UNE SEULE page cohérente : " + mods.map((k) => MODULES[k].context).join(" ; ") + ". Le menu doit couvrir toutes ces sections.";
+}
+function modulesBuild(mods) {
+  let out = mods.map((k) => MODULES[k].build).filter(Boolean).join("\n");
+  if (mods.length > 1) {
+    out += `
+
+=== PROJET COMBINÉ (plusieurs volets) ===
+- Le site est UNE SEULE page qui réunit TOUS les volets choisis, chacun dans sa SECTION avec sa propre entrée dans le menu.
+- L'accueil présente l'ensemble et oriente vers chaque volet (ex. « Découvrir la boutique », « Prendre rendez-vous »).
+- Garde une identité visuelle unique et cohérente sur toute la page ; ne fais pas plusieurs sites séparés.`;
+  }
+  return out;
+}
+function modulesLabel(mods) {
+  if (mods.length === 1 && mods[0] === "presentation") return "Site vitrine";
+  return mods.map((k) => MODULES[k].short).join(" + ");
+}
 
 const DATA_DIR = path.join(__dirname, "data");
 const SITES_DIR = path.join(DATA_DIR, "sites");
@@ -318,7 +348,7 @@ function convTitle(conv) {
   return "Projet sans titre";
 }
 function convSummary(conv) {
-  return { id: conv.id, title: convTitle(conv), projectType: projectType(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, updatedAt: conv.updatedAt || conv.createdAt || null };
+  return { id: conv.id, title: convTitle(conv), modules: convModules(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, updatedAt: conv.updatedAt || conv.createdAt || null };
 }
 async function listConvsForUser(userId) {
   if (!userId) return [];
@@ -408,16 +438,16 @@ async function callClaude(system, messages) {
 async function produceCurrent(conv) {
   const step = conv.step || 0;
   const isBuild = !!STEPS[step].build;
-  const ptype = PROJECT_TYPES[projectType(conv)];
+  const mods = convModules(conv);
 
-  // Le type de projet éclaire TOUTES les étapes (le diagnostic comme la construction).
+  // Les volets choisis éclairent TOUTES les étapes (le diagnostic comme la construction).
   let system = PROMPTS[step] + `
 
 === CONTEXTE DU PROJET ===
-${ptype.context}`;
+${modulesContext(mods)}`;
   if (isBuild) {
     system += SINGLE_INSTRUCTION;
-    if (ptype.build) system += ptype.build;
+    const focus = modulesBuild(mods); if (focus) system += focus;
     // On injecte le CODE RÉEL du site actuel : Claude part de l'existant, pas de sa mémoire.
     const current = await readSite(conv.id);
     if (current) {
@@ -454,15 +484,14 @@ async function handleStart(req, res) {
   try {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
     const id = crypto.randomUUID();
-    const ptypeKey = PROJECT_TYPES[p.projectType] ? p.projectType : "vitrine";
-    const ptype = PROJECT_TYPES[ptypeKey];
-    const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${ptype.label}.`;
-    const conv = { id, step: 0, projectType: ptypeKey, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
+    const mods = normalizeModules(p.modules, p.projectType);
+    const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
+    const conv = { id, step: 0, modules: mods, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
     // Si l'apprenant est connecté, le projet lui est rattaché (espace membre).
     const user = await currentUser(req);
     if (user) { conv.userId = user.id; conv.ownerName = user.name; }
     const out = await produceCurrent(conv);
-    sendJson(res, 200, { id, step: 0, projectType: ptypeKey, ...out });
+    sendJson(res, 200, { id, step: 0, modules: mods, ...out });
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
@@ -519,7 +548,7 @@ async function handleGetConversation(req, res) {
   const conv = await loadConv(u.searchParams.get("id"));
   if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
   if (!(await canAccessConv(req, conv))) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
-  sendJson(res, 200, { id: conv.id, step: conv.step || 0, projectType: projectType(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) });
+  sendJson(res, 200, { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) });
 }
 
 // GET /preview/<id>/<fichier> : sert le site généré (une seule page)

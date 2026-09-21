@@ -218,31 +218,33 @@ create table if not exists sessions (
 Aucune variable d'environnement supplémentaire n'est nécessaire : la fonctionnalité
 s'appuie sur la base déjà branchée (ou sur les fichiers locaux à défaut).
 
-## Types de projet (Palier 5)
+## Types de projet & volets combinés (Paliers 5 et 6)
 
-Au démarrage d'un nouveau projet, l'apprenant choisit **ce qu'il veut créer** — une petite
-fenêtre « Que voulez-vous créer ? » propose trois types :
+Au démarrage d'un nouveau projet, une fenêtre **« Que voulez-vous créer ? »** propose de
+**cocher un ou plusieurs volets** :
 
-- **🪧 Site vitrine** — présenter une activité, un métier, une association (comportement
-  d'origine).
+- **🪧 Présentation** — présenter une activité, un métier, une association (site vitrine).
 - **🛍️ Boutique en ligne** — une grille de produits (photo, nom, prix, description) et une
   rubrique « Comment commander » avec un contact cliquable ou un formulaire simple.
 - **📅 Prise de rendez-vous** — des prestations (durée, prix), les horaires, et une rubrique
   « Demander un rendez-vous » avec un formulaire simple.
 
-Le type choisi **oriente tout le parcours** (le diagnostic comme la construction) : le badge
-du type s'affiche en haut de la discussion, et chaque projet de « Mon espace » indique son
-type. On change de type en cliquant **« ↻ Recommencer »**.
+**Un projet peut en réunir plusieurs à la fois** (Palier 6) : par exemple *Présentation +
+Boutique + Rendez-vous*. L'assistant construit alors **un seul site cohérent** où chaque
+volet a sa section et son entrée de menu, avec une identité visuelle unique. Les volets
+choisis **orientent tout le parcours** (le diagnostic comme la construction) : un badge les
+affiche en haut de la discussion, et chaque projet de « Mon espace » indique sa composition.
+On change de composition en cliquant **« ↻ Recommencer »**.
 
-> **Version « vitrine intelligente ».** À ce stade, la boutique et la prise de rendez-vous
-> sont **présentées** joliment, mais la commande / la demande de créneau se fait par
-> **contact ou formulaire** (lien `mailto:`), sans paiement en ligne ni agenda interactif.
-> Tout reste **100 % HTML/CSS, sans JavaScript** : c'est ce qui garde les sites increvables.
-> Les vraies fonctions interactives (panier qui calcule, calendrier de réservation) sont une
-> étape ultérieure.
+> **Version « vitrine intelligente ».** La boutique et la prise de rendez-vous sont
+> **présentées** joliment, mais la commande / la demande de créneau se fait par **contact ou
+> formulaire** (lien `mailto:`), sans paiement en ligne ni agenda interactif. Tout reste
+> **100 % HTML/CSS, sans JavaScript** : c'est ce qui garde les sites increvables. Les vraies
+> fonctions interactives (panier qui calcule, calendrier de réservation) sont une étape
+> ultérieure.
 
-Rien de nouveau à installer ni à configurer : cette fonctionnalité ne change pas le moteur,
-elle guide seulement l'assistant.
+Rien de nouveau à installer ni à configurer : ces fonctionnalités ne changent pas le moteur,
+elles guident seulement l'assistant. Les anciens projets restent compatibles.
 
 ## Mettre à jour la plateforme déjà en ligne
 
