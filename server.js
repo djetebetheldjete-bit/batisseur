@@ -152,6 +152,152 @@ async function writeSite(id, html) {
   try { fs.writeFileSync(path.join(dir, "index.html"), html); return true; } catch (e) { return false; }
 }
 
+// ============================================================
+// PALIER 4 — COMPTES & ESPACE MEMBRE
+// ------------------------------------------------------------
+// Un apprenant peut créer un compte : ses projets lui sont rattachés,
+// visibles dans « Mon espace », et son certificat porte son nom.
+// Les comptes sont OPTIONNELS : sans compte, on construit comme avant.
+// Aucune dépendance : mots de passe hachés avec crypto.scrypt, sessions
+// par jeton aléatoire stocké côté serveur (base de données ou fichier).
+// ============================================================
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 60; // 60 jours
+const SESSION_COOKIE = "bat_session";
+const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
+
+// -- Stockage FICHIER des comptes (mode sans base de données) --
+function loadAccounts() {
+  try { return JSON.parse(fs.readFileSync(ACCOUNTS_FILE, "utf8")); }
+  catch (e) { return { users: {}, emails: {}, sessions: {} }; }
+}
+function saveAccounts(a) { try { fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(a, null, 2)); } catch (e) { console.error("saveAccounts:", e); } }
+
+function normEmail(s) { return String(s || "").trim().toLowerCase(); }
+function validEmail(s) { return typeof s === "string" && s.length <= 200 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
+
+// -- Mot de passe : haché avec scrypt (jamais stocké en clair) --
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(String(pw), salt, 64);
+  return salt.toString("hex") + ":" + hash.toString("hex");
+}
+function verifyPassword(pw, stored) {
+  try {
+    const [saltHex, hashHex] = String(stored || "").split(":");
+    if (!saltHex || !hashHex) return false;
+    const hash = crypto.scryptSync(String(pw), Buffer.from(saltHex, "hex"), 64);
+    const a = Buffer.from(hashHex, "hex");
+    return a.length === hash.length && crypto.timingSafeEqual(a, hash);
+  } catch (e) { return false; }
+}
+
+// -- Utilisateurs --
+async function findUserByEmail(email) {
+  const e = normEmail(email);
+  if (USE_DB) { try { const r = await sb(`/users?email=eq.${encodeURIComponent(e)}&select=*`); return (r && r[0]) || null; } catch (err) { console.error("findUserByEmail:", err.message); return null; } }
+  const a = loadAccounts(); const id = a.emails[e]; return id ? (a.users[id] || null) : null;
+}
+async function getUserById(id) {
+  if (!id) return null;
+  if (USE_DB) { try { const r = await sb(`/users?id=eq.${encodeURIComponent(id)}&select=*`); return (r && r[0]) || null; } catch (err) { return null; } }
+  const a = loadAccounts(); return a.users[id] || null;
+}
+async function createUser({ email, name, password }) {
+  const e = normEmail(email);
+  const user = {
+    id: crypto.randomUUID(), email: e,
+    name: String(name || "").trim().slice(0, 80) || e.split("@")[0],
+    pass: hashPassword(password), created_at: new Date().toISOString()
+  };
+  if (USE_DB) { await sb(`/users`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([user]) }); }
+  else { const a = loadAccounts(); a.users[user.id] = user; a.emails[e] = user.id; saveAccounts(a); }
+  return user;
+}
+
+// -- Sessions (jeton aléatoire côté serveur) --
+async function createSession(userId) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const created_at = new Date().toISOString();
+  if (USE_DB) { await sb(`/sessions`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([{ token, user_id: userId, created_at }]) }); }
+  else { const a = loadAccounts(); a.sessions[token] = { userId, at: Date.now() }; saveAccounts(a); }
+  return token;
+}
+async function deleteSession(token) {
+  if (!token) return;
+  if (USE_DB) { try { await sb(`/sessions?token=eq.${encodeURIComponent(token)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); } catch (e) {} return; }
+  const a = loadAccounts(); if (a.sessions[token]) { delete a.sessions[token]; saveAccounts(a); }
+}
+async function getSessionUser(token) {
+  if (!token) return null;
+  if (USE_DB) {
+    try {
+      const r = await sb(`/sessions?token=eq.${encodeURIComponent(token)}&select=user_id,created_at`);
+      const s = r && r[0]; if (!s) return null;
+      if (Date.now() - new Date(s.created_at).getTime() > SESSION_TTL_MS) { await deleteSession(token); return null; }
+      return await getUserById(s.user_id);
+    } catch (e) { return null; }
+  }
+  const a = loadAccounts(); const s = a.sessions[token]; if (!s) return null;
+  if (Date.now() - (s.at || 0) > SESSION_TTL_MS) { delete a.sessions[token]; saveAccounts(a); return null; }
+  return a.users[s.userId] || null;
+}
+
+// -- Cookies / utilisateur courant --
+function parseCookies(req) {
+  const h = req.headers.cookie || ""; const out = {};
+  h.split(";").forEach((p) => { const i = p.indexOf("="); if (i > -1) out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); });
+  return out;
+}
+function setSessionCookie(res, token) {
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+}
+function clearSessionCookie(res) {
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+}
+async function currentUser(req) {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  return token ? await getSessionUser(token) : null;
+}
+function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name } : null; }
+
+// Un projet rattaché à un compte n'est accessible qu'à son propriétaire.
+// Les projets anonymes (sans userId) restent accessibles par id, comme avant.
+async function canAccessConv(req, conv) {
+  if (!conv) return false;
+  if (!conv.userId) return true;
+  const u = await currentUser(req);
+  return !!(u && u.id === conv.userId);
+}
+
+// -- Liste des projets d'un compte (résumés légers pour « Mon espace ») --
+function convTitle(conv) {
+  if (conv.title) return String(conv.title).slice(0, 60);
+  const firstReal = (conv.messages || []).find((m) => m.role === "user" && !m.hidden);
+  if (firstReal && firstReal.content) return String(firstReal.content).replace(/\s+/g, " ").trim().slice(0, 60) || "Projet sans titre";
+  return "Projet sans titre";
+}
+function convSummary(conv) {
+  return { id: conv.id, title: convTitle(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, updatedAt: conv.updatedAt || conv.createdAt || null };
+}
+async function listConvsForUser(userId) {
+  if (!userId) return [];
+  if (USE_DB) {
+    try {
+      const r = await sb(`/conversations?data->>userId=eq.${encodeURIComponent(userId)}&select=data&order=updated_at.desc`);
+      return (r || []).map((row) => convSummary(row.data)).filter((s) => s.id);
+    } catch (e) { console.error("listConvsForUser:", e.message); return []; }
+  }
+  const out = [];
+  try {
+    fs.readdirSync(DATA_DIR).forEach((f) => {
+      if (!f.endsWith(".json") || f === "accounts.json") return;
+      try { const c = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), "utf8")); if (c && c.userId === userId) out.push(convSummary(c)); } catch (e) {}
+    });
+  } catch (e) {}
+  out.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  return out;
+}
+
 // --- EXTRACTION BLINDÉE ---------------------------------------------------
 // Objectif : récupérer le HTML du site QUEL QUE SOIT le format renvoyé par Claude,
 // et surtout garantir qu'AUCUN code ne reste dans le message affiché à la personne.
@@ -261,6 +407,9 @@ async function handleStart(req, res) {
   try {
     const id = crypto.randomUUID();
     const conv = { id, step: 0, createdAt: new Date().toISOString(), messages: [{ role: "user", content: STEPS[0].kickoff, hidden: true }] };
+    // Si l'apprenant est connecté, le projet lui est rattaché (espace membre).
+    const user = await currentUser(req);
+    if (user) { conv.userId = user.id; conv.ownerName = user.name; }
     const out = await produceCurrent(conv);
     sendJson(res, 200, { id, step: 0, ...out });
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
@@ -273,6 +422,7 @@ async function handleChat(req, res) {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
     const conv = await loadConv(p.id);
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
+    if (!(await canAccessConv(req, conv))) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
     if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
     conv.messages.push({ role: "user", content: p.message });
     const out = await produceCurrent(conv);
@@ -287,6 +437,7 @@ async function handleNext(req, res) {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
     const conv = await loadConv(p.id);
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
+    if (!(await canAccessConv(req, conv))) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
     const current = conv.step || 0;
     if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
     conv.step = current + 1;
@@ -299,7 +450,10 @@ async function handleNext(req, res) {
 // GET /api/download?id=... : télécharge le site (index.html) en pièce jointe
 async function handleDownload(req, res) {
   const u = new URL(req.url, "http://localhost");
-  const html = await readSite(u.searchParams.get("id"));
+  const id = u.searchParams.get("id");
+  const conv = await loadConv(id);
+  if (conv && !(await canAccessConv(req, conv))) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Ce projet appartient à un autre compte."); }
+  const html = await readSite(id);
   if (!html) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Site introuvable — construisez-le d'abord."); }
   res.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
@@ -313,7 +467,8 @@ async function handleGetConversation(req, res) {
   const u = new URL(req.url, "http://localhost");
   const conv = await loadConv(u.searchParams.get("id"));
   if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
-  sendJson(res, 200, { id: conv.id, step: conv.step || 0, hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, messages: conv.messages.filter((m) => !m.hidden) });
+  if (!(await canAccessConv(req, conv))) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+  sendJson(res, 200, { id: conv.id, step: conv.step || 0, hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) });
 }
 
 // GET /preview/<id>/<fichier> : sert le site généré (une seule page)
@@ -321,6 +476,9 @@ async function servePreview(req, res) {
   const parts = decodeURIComponent(req.url.split("?")[0]).split("/").filter(Boolean); // ["preview", id, file?]
   const id = parts[1];
   if (!validId(id)) { res.writeHead(404); return res.end("Introuvable"); }
+  // Aperçu privé : un projet rattaché à un compte ne s'affiche qu'à son propriétaire.
+  const conv = await loadConv(id);
+  if (conv && !(await canAccessConv(req, conv))) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui,sans-serif;color:#6B7A90;display:grid;place-items:center;height:88vh;text-align:center;padding:20px\">Cet aperçu est privé.<br>Connectez-vous avec le compte propriétaire.</body>"); }
   let html = null;
   try { html = await readSite(id); } catch (e) { html = null; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -400,13 +558,62 @@ async function handlePublish(req, res) {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
     const conv = await loadConv(p.id);
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
+    if (!(await canAccessConv(req, conv))) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
     const out = await publishSite(conv);
     sendJson(res, 200, out);
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Publication impossible." }); }
 }
 
 // GET /api/config : ce que le client a besoin de savoir (ex. si la publication est dispo).
-function handleConfig(req, res) { sendJson(res, 200, { canPublish: !!NETLIFY_TOKEN }); }
+function handleConfig(req, res) { sendJson(res, 200, { canPublish: !!NETLIFY_TOKEN, accounts: true }); }
+
+// --- COMPTES (Palier 4) : inscription, connexion, session ---
+// POST /api/auth/register  { email, name, password }
+async function handleRegister(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const email = normEmail(p.email);
+    if (!validEmail(email)) return sendJson(res, 400, { error: "Adresse e-mail invalide." });
+    if (typeof p.password !== "string" || p.password.length < 6) return sendJson(res, 400, { error: "Le mot de passe doit contenir au moins 6 caractères." });
+    if (await findUserByEmail(email)) return sendJson(res, 409, { error: "Un compte existe déjà avec cette adresse. Connectez-vous." });
+    const user = await createUser({ email, name: p.name, password: p.password });
+    const token = await createSession(user.id);
+    setSessionCookie(res, token);
+    sendJson(res, 200, { user: publicUser(user) });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
+// POST /api/auth/login  { email, password }
+async function handleLogin(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const user = await findUserByEmail(p.email);
+    if (!user || !verifyPassword(p.password, user.pass)) return sendJson(res, 401, { error: "E-mail ou mot de passe incorrect." });
+    const token = await createSession(user.id);
+    setSessionCookie(res, token);
+    sendJson(res, 200, { user: publicUser(user) });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
+// POST /api/auth/logout
+async function handleLogout(req, res) {
+  try { await deleteSession(parseCookies(req)[SESSION_COOKIE]); } catch (e) {}
+  clearSessionCookie(res);
+  sendJson(res, 200, { ok: true });
+}
+
+// GET /api/auth/me
+async function handleMe(req, res) {
+  const u = await currentUser(req);
+  sendJson(res, 200, { user: publicUser(u) });
+}
+
+// GET /api/projects : les projets du compte connecté (pour « Mon espace »)
+async function handleProjects(req, res) {
+  const u = await currentUser(req);
+  if (!u) return sendJson(res, 401, { error: "Non connecté." });
+  sendJson(res, 200, { projects: await listConvsForUser(u.id) });
+}
 
 // --- CERTIFICAT (simple) : une belle page imprimable en PDF ---
 function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -418,7 +625,9 @@ async function handleCertificate(req, res) {
   const id = u.searchParams.get("id");
   const conv = await loadConv(id);
   if (!conv) { res.writeHead(404, { "content-type": "text/html; charset=utf-8" }); return res.end("Conversation introuvable."); }
-  let name = (u.searchParams.get("name") || "").trim().slice(0, 80);
+  if (!(await canAccessConv(req, conv))) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Ce projet appartient à un autre compte."); }
+  // Le nom du compte fait foi ; sinon, le nom saisi ; sinon un libellé neutre.
+  let name = (conv.ownerName || u.searchParams.get("name") || "").trim().slice(0, 80);
   if (!name) name = "Apprenant(e)";
   const now = new Date();
   const dateStr = `${now.getDate()} ${MOIS[now.getMonth()]} ${now.getFullYear()}`;
@@ -477,6 +686,11 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
   if (req.method === "POST" && req.url === "/api/publish") return handlePublish(req, res);
+  if (req.method === "POST" && req.url === "/api/auth/register") return handleRegister(req, res);
+  if (req.method === "POST" && req.url === "/api/auth/login") return handleLogin(req, res);
+  if (req.method === "POST" && req.url === "/api/auth/logout") return handleLogout(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/auth/me")) return handleMe(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/projects")) return handleProjects(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/certificate")) return handleCertificate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
@@ -492,7 +706,8 @@ server.listen(PORT, () => {
   console.log(`  Étapes : ${STEPS.map((s) => s.label).join("  →  ")}`);
   console.log(`  Modèle : ${MODEL}`);
   console.log(`  Mémoire : ${USE_DB ? "base de données (Supabase)" : "fichiers locaux"}`);
-  console.log(`  Publication : ${NETLIFY_TOKEN ? "activée" : "désactivée"}\n`);
+  console.log(`  Publication : ${NETLIFY_TOKEN ? "activée" : "désactivée"}`);
+  console.log(`  Comptes : activés (espace membre)\n`);
 });
 
 // --- Auto-test hors ligne : node server.js --selftest ---

@@ -28,8 +28,12 @@
   .top .brand .logo{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--warm));display:grid;place-items:center;color:#06121c;font-weight:800;font-size:13px;}
   .top .k{font-family:var(--f-mono),monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8fa5bd;}
   .top .grow{flex:1;}
-  .top .newbtn{font-family:var(--f-mono),monospace;font-size:11px;color:#9fb3c9;background:transparent;border:1px solid var(--nav-line);border-radius:8px;padding:6px 11px;cursor:pointer;}
-  .top .newbtn:hover{color:#fff;border-color:#3a5372;}
+  .top .newbtn,.top .topbtn{font-family:var(--f-mono),monospace;font-size:11px;color:#9fb3c9;background:transparent;border:1px solid var(--nav-line);border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap;}
+  .top .newbtn:hover,.top .topbtn:hover{color:#fff;border-color:#3a5372;}
+  .top .topbtn.solid{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .top .topbtn.solid:hover{filter:brightness(1.08);color:#fff;}
+  .top .acctname{display:flex;align-items:center;gap:6px;font-family:var(--f-display),sans-serif;font-weight:600;font-size:.82rem;color:#cfe0f0;}
+  .top .acctname .av{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--warm));display:grid;place-items:center;color:#06121c;font-weight:800;font-size:11px;}
 
   .tabs{display:none;background:var(--surface-2);border-bottom:1px solid var(--line);padding:7px 10px;gap:6px;flex:0 0 auto;}
   .tabs button{flex:1;font-family:var(--f-mono),monospace;font-size:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);padding:9px;border-radius:8px;cursor:pointer;}
@@ -74,6 +78,20 @@
   .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
   .modal button{font-family:var(--f-display),sans-serif;font-weight:600;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:.85rem;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);}
   .modal button.primary{border:none;background:var(--accent);color:#fff;}
+  .modal.wide{max-width:540px;}
+  .modal .stack input{margin-bottom:9px;}
+  .modal .autherr{color:var(--bad);font-size:.82rem;margin-top:2px;min-height:1em;}
+  .modal .linkline{margin-top:12px;font-size:.82rem;color:var(--ink-faint);text-align:center;}
+  .modal .linkbtn{background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;padding:0 3px;font-size:.82rem;}
+  .projlist{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow:auto;margin:6px 0 2px;}
+  .projrow{display:flex;align-items:center;gap:11px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:11px;padding:11px 13px;cursor:pointer;color:var(--ink);}
+  .projrow:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--surface-2));}
+  .projrow .pi{flex:0 0 auto;width:30px;height:30px;border-radius:8px;background:var(--surface-3);display:grid;place-items:center;font-size:15px;}
+  .projrow .pb{flex:1;min-width:0;}
+  .projrow .pb b{display:block;font-family:var(--f-display),sans-serif;font-weight:600;font-size:.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .projrow .pb span{font-family:var(--f-mono),monospace;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);}
+  .projrow .tag{flex:0 0 auto;font-family:var(--f-mono),monospace;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--good);border:1px solid color-mix(in srgb,var(--good) 45%,var(--line));border-radius:100px;padding:2px 7px;}
+  .projempty{color:var(--ink-faint);font-size:.88rem;text-align:center;padding:22px 8px;}
   .ch-actions{display:flex;gap:8px;align-items:center;}
   .resumed{margin:10px 12px 0;font-family:var(--f-mono),monospace;font-size:10.5px;color:var(--ink-faint);background:var(--surface-2);border:1px dashed var(--line);border-radius:8px;padding:7px 10px;text-align:center;}
   #thread{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:11px;min-height:0;}
@@ -133,6 +151,10 @@
       <div class="brand"><span class="logo">B</span> Bâtisseur</div>
       <span class="k">Parcours complet</span>
       <span class="grow"></span>
+      <button class="topbtn solid" id="loginOpenBtn" type="button" style="display:none;">Se connecter</button>
+      <span class="acctname" id="acctName" style="display:none;"><span class="av" id="acctAv">?</span><span id="acctLabel"></span></span>
+      <button class="topbtn" id="espaceBtn" type="button" style="display:none;">◱ Mon espace</button>
+      <button class="topbtn" id="logoutBtn" type="button" style="display:none;">Se déconnecter</button>
       <button class="newbtn" id="newBtn" type="button">↻ Recommencer</button>
     </div>
 
@@ -205,6 +227,38 @@
       <div class="row">
         <button id="certCancel" type="button">Annuler</button>
         <button id="certGo" class="primary" type="button">Créer mon certificat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connexion / inscription (Palier 4) -->
+  <div class="modal-bg" id="authModal">
+    <div class="modal">
+      <h3 id="authTitle">Se connecter</h3>
+      <p id="authIntro">Retrouvez vos projets sur tous vos appareils, et obtenez un certificat à votre nom.</p>
+      <div class="stack">
+        <input id="authName" type="text" placeholder="Votre nom et prénom" maxlength="80" autocomplete="name" style="display:none;">
+        <input id="authEmail" type="email" placeholder="Adresse e-mail" autocomplete="email">
+        <input id="authPass" type="password" placeholder="Mot de passe (6 caractères minimum)" autocomplete="current-password">
+      </div>
+      <div class="autherr" id="authErr"></div>
+      <div class="row">
+        <button id="authCancel" type="button">Sans compte</button>
+        <button id="authGo" class="primary" type="button">Se connecter</button>
+      </div>
+      <div class="linkline" id="authSwitchLine">Pas encore de compte ? <button class="linkbtn" id="authToggle" type="button">Créer un compte</button></div>
+    </div>
+  </div>
+
+  <!-- Mon espace : la liste des projets du compte (Palier 4) -->
+  <div class="modal-bg" id="espaceModal">
+    <div class="modal wide">
+      <h3>◱ Mon espace</h3>
+      <p>Vos projets, enregistrés sur votre compte. Cliquez pour en ouvrir un, ou démarrez-en un nouveau.</p>
+      <div class="projlist" id="projList"></div>
+      <div class="row">
+        <button id="espaceClose" type="button">Fermer</button>
+        <button id="espaceNew" class="primary" type="button">+ Nouveau projet</button>
       </div>
     </div>
   </div>
@@ -366,7 +420,7 @@
 
     // Certificat : petite fenêtre pour saisir le nom, puis ouverture du certificat imprimable.
     const certModal = $("certModal"), certName = $("certName");
-    function openCert(){ if(!convId) return; certModal.classList.add("show"); setTimeout(()=>certName.focus(),50); }
+    function openCert(){ if(!convId) return; if(me && me.name && !certName.value) certName.value = me.name; certModal.classList.add("show"); setTimeout(()=>certName.focus(),50); }
     function closeCert(){ certModal.classList.remove("show"); }
     function goCert(){
       const name = certName.value.trim();
@@ -386,9 +440,134 @@
       try{ const r = await fetch("/api/config"); const d = await r.json(); canPublish = !!d.canPublish; }catch(e){ canPublish = false; }
     }
 
+    // ===== Comptes & espace membre (Palier 4) =====
+    let me = null, authMode = "login";
+    const loginOpenBtn = $("loginOpenBtn"), acctName = $("acctName"), acctAv = $("acctAv"), acctLabel = $("acctLabel");
+    const espaceBtn = $("espaceBtn"), logoutBtn = $("logoutBtn");
+    const authModal = $("authModal"), authTitle = $("authTitle"), authIntro = $("authIntro");
+    const authName = $("authName"), authEmail = $("authEmail"), authPass = $("authPass"), authErr = $("authErr");
+    const authGo = $("authGo"), authToggle = $("authToggle"), authSwitchLine = $("authSwitchLine");
+    const espaceModal = $("espaceModal"), projList = $("projList");
+
+    function renderAccount(){
+      if(me){
+        loginOpenBtn.style.display = "none";
+        acctName.style.display = "inline-flex";
+        acctLabel.textContent = me.name;
+        acctAv.textContent = (me.name || "?").trim().charAt(0).toUpperCase() || "?";
+        espaceBtn.style.display = "inline-block";
+        logoutBtn.style.display = "inline-block";
+      } else {
+        loginOpenBtn.style.display = "inline-block";
+        acctName.style.display = "none";
+        espaceBtn.style.display = "none";
+        logoutBtn.style.display = "none";
+      }
+    }
+    async function loadMe(){
+      try{ const r = await fetch("/api/auth/me"); const d = await r.json(); me = d.user || null; }
+      catch(e){ me = null; }
+      renderAccount();
+    }
+
+    function setAuthMode(mode){
+      authMode = mode;
+      authErr.textContent = "";
+      if(mode === "register"){
+        authTitle.textContent = "Créer un compte";
+        authIntro.textContent = "Un compte enregistre vos projets et met votre nom sur le certificat.";
+        authName.style.display = "block";
+        authGo.textContent = "Créer mon compte";
+        authPass.setAttribute("autocomplete","new-password");
+        authSwitchLine.innerHTML = 'Déjà un compte ? ';
+      } else {
+        authTitle.textContent = "Se connecter";
+        authIntro.textContent = "Retrouvez vos projets sur tous vos appareils.";
+        authName.style.display = "none";
+        authGo.textContent = "Se connecter";
+        authPass.setAttribute("autocomplete","current-password");
+        authSwitchLine.innerHTML = 'Pas encore de compte ? ';
+      }
+      const btn = document.createElement("button");
+      btn.className = "linkbtn"; btn.type = "button";
+      btn.textContent = mode === "register" ? "Se connecter" : "Créer un compte";
+      btn.addEventListener("click", ()=> setAuthMode(mode === "register" ? "login" : "register"));
+      authSwitchLine.appendChild(btn);
+    }
+    function openAuth(mode){ setAuthMode(mode || "login"); authModal.classList.add("show"); setTimeout(()=>authEmail.focus(),50); }
+    function closeAuth(){ authModal.classList.remove("show"); authErr.textContent=""; authName.value=authEmail.value=authPass.value=""; }
+
+    async function submitAuth(){
+      const email = authEmail.value.trim(), pass = authPass.value, name = authName.value.trim();
+      authErr.textContent = "";
+      if(!email || !pass){ authErr.textContent = "Renseignez l'e-mail et le mot de passe."; return; }
+      authGo.disabled = true; const prev = authGo.textContent; authGo.textContent = "…";
+      try{
+        const url = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+        const body = authMode === "register" ? { email, password: pass, name } : { email, password: pass };
+        const r = await fetch(url, { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body) });
+        const d = await r.json();
+        if(!r.ok){ authErr.textContent = d.error || "Impossible pour le moment."; return; }
+        me = d.user; renderAccount(); closeAuth();
+        bubble("👤 Connecté(e) en tant que " + me.name + ". Vos prochains projets seront enregistrés dans « Mon espace ».","ai");
+      }catch(e){ authErr.textContent = "Impossible de joindre le serveur."; }
+      finally{ authGo.disabled = false; authGo.textContent = prev; }
+    }
+
+    async function doLogout(){
+      try{ await fetch("/api/auth/logout",{method:"POST"}); }catch(e){}
+      me = null; renderAccount();
+      bubble("Vous êtes déconnecté(e). Vos projets restent enregistrés dans votre espace.","ai");
+    }
+
+    // Mon espace : liste des projets
+    async function openEspace(){
+      espaceModal.classList.add("show");
+      projList.innerHTML = '<div class="projempty">Chargement…</div>';
+      try{
+        const r = await fetch("/api/projects");
+        const d = await r.json();
+        if(!r.ok){ projList.innerHTML = '<div class="projempty">'+(d.error||"Erreur")+'</div>'; return; }
+        renderProjects(d.projects || []);
+      }catch(e){ projList.innerHTML = '<div class="projempty">Impossible de joindre le serveur.</div>'; }
+    }
+    function closeEspace(){ espaceModal.classList.remove("show"); }
+    function renderProjects(list){
+      projList.innerHTML = "";
+      if(!list.length){ projList.innerHTML = '<div class="projempty">Aucun projet pour l\'instant. Démarrez-en un nouveau !</div>'; return; }
+      list.forEach(p => {
+        const row = document.createElement("button");
+        row.className = "projrow"; row.type = "button";
+        const stepName = (STEP_LABELS[p.step] || STEP_LABELS[0]).label;
+        const tag = p.publishedUrl ? '<span class="tag">en ligne</span>' : (p.hasSite ? '<span class="tag" style="color:var(--warm);border-color:color-mix(in srgb,var(--warm) 45%,var(--line))">site prêt</span>' : '');
+        row.innerHTML = '<span class="pi">'+(p.hasSite?'🖥':'💬')+'</span><span class="pb"><b></b><span>Étape : '+stepName+'</span></span>'+tag;
+        row.querySelector("b").textContent = p.title;
+        row.addEventListener("click", ()=> openProject(p.id));
+        projList.appendChild(row);
+      });
+    }
+    async function openProject(id){
+      closeEspace();
+      setSavedId(id); convId = id;
+      const ok = await resume(id);
+      if(!ok){ bubble("⚠ Impossible d'ouvrir ce projet.","err"); }
+    }
+
+    loginOpenBtn.addEventListener("click", ()=> openAuth("login"));
+    logoutBtn.addEventListener("click", doLogout);
+    espaceBtn.addEventListener("click", openEspace);
+    authGo.addEventListener("click", submitAuth);
+    $("authCancel").addEventListener("click", closeAuth);
+    authModal.addEventListener("click",(e)=>{ if(e.target===authModal) closeAuth(); });
+    [authEmail,authPass,authName].forEach(el=> el.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); submitAuth(); } }));
+    $("espaceClose").addEventListener("click", closeEspace);
+    $("espaceNew").addEventListener("click", ()=>{ closeEspace(); clearSavedId(); convId=null; startNew(); });
+    espaceModal.addEventListener("click",(e)=>{ if(e.target===espaceModal) closeEspace(); });
+
     (async function init(){
       renderRail();
       await loadConfig();
+      await loadMe();
       const saved = getSavedId();
       if(saved && await resume(saved)) return;
       clearSavedId(); startNew();

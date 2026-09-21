@@ -175,6 +175,49 @@ automatiquement sur la base dès que `SUPABASE_URL` et `SUPABASE_KEY` sont prés
 > La clé `service_role` a tous les droits : elle vit **uniquement** côté serveur
 > (jamais dans le navigateur ni dans le code public). Elle est déjà utilisée ainsi ici.
 
+## Comptes & espace membre (Palier 4)
+
+Un apprenant peut **créer un compte** (bouton **« Se connecter »** en haut à droite).
+Une fois connecté :
+
+- ses **projets sont enregistrés sur son compte** et retrouvables depuis n'importe
+  quel appareil — dans **« ◱ Mon espace »** (la liste de ses projets, avec l'étape en
+  cours et le statut « site prêt » / « en ligne ») ;
+- ses projets deviennent **privés** : l'aperçu, le téléchargement et le certificat ne
+  sont accessibles qu'à lui (les autres comptes reçoivent un refus) ;
+- son **certificat porte automatiquement son nom** de compte.
+
+Les comptes sont **optionnels** : sans se connecter, on construit exactement comme avant
+(le projet reste anonyme, retenu par le navigateur). Rien ne casse si personne ne crée
+de compte.
+
+**Comment ça marche (sans dépendance) :** les mots de passe ne sont **jamais** stockés en
+clair — ils sont hachés avec `crypto.scrypt` (intégré à Node). La session est un **jeton
+aléatoire** conservé côté serveur (base de données ou fichier) et déposé dans un cookie
+`HttpOnly`. Comme le reste, ça bascule tout seul sur Supabase si la base est configurée,
+sinon sur un fichier local (`data/accounts.json`).
+
+**Si vous utilisez Supabase (Palier 3),** ajoutez les **deux tables** des comptes dans
+**SQL Editor** :
+
+```sql
+create table if not exists users (
+  id text primary key,
+  email text unique,
+  name text,
+  pass text,
+  created_at timestamptz default now()
+);
+create table if not exists sessions (
+  token text primary key,
+  user_id text,
+  created_at timestamptz default now()
+);
+```
+
+Aucune variable d'environnement supplémentaire n'est nécessaire : la fonctionnalité
+s'appuie sur la base déjà branchée (ou sur les fichiers locaux à défaut).
+
 ## Mettre à jour la plateforme déjà en ligne
 
 Le service Render est relié à votre dépôt GitHub. Pour publier une nouvelle version :
