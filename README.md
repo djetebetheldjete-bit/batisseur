@@ -262,6 +262,23 @@ On change de composition en cliquant **« ↻ Recommencer »**.
 Rien de nouveau à installer ni à configurer : ces fonctionnalités ne changent pas le moteur,
 elles guident seulement l'assistant. Les anciens projets restent compatibles.
 
+### Panier & réservation interactifs (côté visiteur)
+
+Les volets **boutique** et **rendez-vous** sont **interactifs** pour le visiteur du site :
+
+- **Boutique** — un vrai **panier** : le visiteur ajoute des produits, le **total se calcule**
+  tout seul, et le bouton **« Commander »** prépare un message **pré-rempli** avec la commande,
+  envoyé par **WhatsApp** (si un numéro figure sur le site) ou par **email**.
+- **Rendez-vous** — le formulaire (prestation, date, heure, coordonnées) prépare une **demande
+  pré-remplie** envoyée de la même façon.
+
+Comment c'est fiable : la plateforme **injecte automatiquement** un petit script d'interactivité
+(fixe et testé) dans ces sites ; l'assistant, lui, ne produit que du HTML avec des attributs
+`data-bat-…`. Il n'écrit jamais de JavaScript lui-même — c'est ce qui évite les bugs. Ça reste
+**100 % côté visiteur** : aucun paiement en ligne, aucune base de données, aucune donnée
+enregistrée sur un serveur — la commande/demande part vers le vendeur par email ou WhatsApp.
+Ça fonctionne sur le site **publié** (fichier statique) comme dans l'aperçu.
+
 ## Espace formateur & gestion des apprenants
 
 Bâtisseur devient un **outil de formation géré** : vous inscrivez vos apprenants, vous leur

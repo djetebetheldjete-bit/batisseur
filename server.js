@@ -85,7 +85,7 @@ FORMAT DE SORTIE — LE PLUS IMPORTANT :
 - UN SEUL bloc de code par réponse.
 
 CONTRAINTES TECHNIQUES :
-- 100 % HTML + CSS. AUCUN JavaScript. AUCUNE image ni police externe, AUCUN fichier externe.
+- 100 % HTML + CSS. Tu n'écris TOI-MÊME AUCUN JavaScript. (Pour une boutique ou des rendez-vous, la plateforme ajoute automatiquement un petit script d'interactivité : tu fournis seulement le HTML avec les attributs « data-bat-… » indiqués.) AUCUNE image ni police externe, AUCUN fichier externe.
 - Responsive, impeccable sur mobile. Dans le <style> : html{scroll-behavior:smooth;}.
 
 RUBRIQUES LIBRES :
@@ -96,6 +96,111 @@ RUBRIQUES LIBRES :
 ESPACES MÉDIAS — DEMANDE AVANT DE SUPPOSER :
 - Quand un espace n'est pas clair (zone d'image, galerie, document…), tu DEMANDES d'abord à la personne à quoi il sert : « des photos », « du texte », ou « des documents (PDF / Word / PowerPoint) » — puis tu poses le bon espace réservé.
 - Pour une image : un cadre réservé propre avec une légende. Pour un document : une zone qui annonce le document à venir. Tu n'inventes jamais d'image externe.`;
+
+// --- KIT D'INTERACTIVITÉ (Panier / Réservation) ---------------------------
+// Petit script vanilla, FIXE et testé, injecté par la plateforme (jamais écrit par
+// le modèle) dans les sites « boutique » / « rendez-vous ». Le modèle ne fournit que
+// le HTML déclaratif (attributs data-bat-…). Le panier calcule le total ; « Commander »
+// / « Demander » préparent un message pré-rempli (WhatsApp si un numéro est présent,
+// sinon email mailto:). 100 % côté visiteur, aucune dépendance, aucun backend.
+const INTERACTIVE_KIT = `<!-- BAT-KIT:START -->
+<script>
+(function(){
+  try{
+    var NL=String.fromCharCode(10);
+    var q=function(s,r){return (r||document).querySelector(s);};
+    var qa=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};
+    function esc(s){var d=document.createElement("div");d.textContent=(s==null?"":s);return d.innerHTML;}
+    var curEl=q("[data-bat-currency]");
+    var CUR=(curEl&&curEl.getAttribute("data-bat-currency"))||"euros";
+    function money(n){return (Math.round(n*100)/100).toFixed(2).replace(".",",")+" "+CUR;}
+    function contact(){
+      var email=null,wa=null,e1=q("[data-bat-order-email]");
+      if(e1) email=e1.getAttribute("data-bat-order-email");
+      if(!email){var m=q('a[href^="mailto:"]'); if(m) email=m.getAttribute("href").slice(7).split("?")[0];}
+      var w1=q("[data-bat-whatsapp]");
+      if(w1) wa=w1.getAttribute("data-bat-whatsapp");
+      if(!wa){var w=q('a[href*="wa.me/"]'); if(w){var mm=w.getAttribute("href").match(/wa\\.me\\/([0-9]+)/); if(mm) wa=mm[1];}}
+      return {email:email||null, wa:(wa?String(wa).replace(/[^0-9]/g,""):null)};
+    }
+    function send(subject, body){
+      var c=contact();
+      if(c.wa){window.open("https://wa.me/"+c.wa+"?text="+encodeURIComponent(subject+NL+NL+body),"_blank");return true;}
+      if(c.email){window.location.href="mailto:"+c.email+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(body);return true;}
+      return false;
+    }
+    // ---- Panier (boutique) ----
+    var cart={};
+    function ensureBox(){
+      if(q("[data-bat-cart]")) return;
+      if(!q("[data-bat-add]")) return;
+      var d=document.createElement("div");
+      d.setAttribute("data-bat-cart","");
+      d.style.cssText="position:fixed;right:16px;bottom:16px;max-width:320px;width:calc(100% - 32px);background:#fff;color:#111;border:1px solid #ddd;border-radius:12px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:9999;font-size:14px";
+      document.body.appendChild(d);
+    }
+    function render(){
+      var boxes=qa("[data-bat-cart]"); if(!boxes.length) return;
+      var names=Object.keys(cart), total=0, html="";
+      html+='<div style="font-weight:700;margin-bottom:6px">Votre panier</div>';
+      if(!names.length){ html+='<div style="opacity:.7">Il est encore vide.</div>'; }
+      else{
+        names.forEach(function(n){var it=cart[n];total+=it.price*it.qty;
+          var k=encodeURIComponent(n);
+          html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.08)">'
+            +'<span>'+esc(n)+'</span><span style="display:flex;align-items:center;gap:6px">'
+            +'<button type="button" data-bat-dec="'+k+'" style="width:24px;height:24px;border-radius:6px;border:1px solid #ccc;background:#f4f4f4;cursor:pointer">-</button>'
+            +'<b>'+it.qty+'</b>'
+            +'<button type="button" data-bat-inc="'+k+'" style="width:24px;height:24px;border-radius:6px;border:1px solid #ccc;background:#f4f4f4;cursor:pointer">+</button>'
+            +'<span style="min-width:78px;text-align:right">'+money(it.price*it.qty)+'</span></span></div>';
+        });
+        html+='<div style="display:flex;justify-content:space-between;font-weight:800;margin-top:8px"><span>Total</span><span>'+money(total)+'</span></div>';
+        html+='<button type="button" data-bat-order style="margin-top:10px;width:100%;padding:11px;border:none;border-radius:8px;background:#147C8C;color:#fff;font-size:15px;cursor:pointer">Commander</button>';
+      }
+      boxes.forEach(function(b){b.innerHTML=html;});
+    }
+    function add(name,price){ if(!cart[name]) cart[name]={price:price,qty:0}; cart[name].qty++; render(); }
+    document.addEventListener("click",function(e){
+      var t=e.target&&e.target.closest?e.target.closest("[data-bat-add],[data-bat-inc],[data-bat-dec],[data-bat-order]"):null;
+      if(!t) return;
+      if(t.hasAttribute("data-bat-add")){e.preventDefault();
+        var n=t.getAttribute("data-name")||t.getAttribute("data-bat-name")||"Article";
+        var p=parseFloat(String(t.getAttribute("data-price")||t.getAttribute("data-bat-price")||"0").replace(",","."))||0;
+        add(n,p);
+      } else if(t.hasAttribute("data-bat-inc")){var a=decodeURIComponent(t.getAttribute("data-bat-inc")); if(cart[a]){cart[a].qty++;render();}}
+      else if(t.hasAttribute("data-bat-dec")){var b=decodeURIComponent(t.getAttribute("data-bat-dec")); if(cart[b]){cart[b].qty--; if(cart[b].qty<=0) delete cart[b]; render();}}
+      else if(t.hasAttribute("data-bat-order")){e.preventDefault();
+        var ns=Object.keys(cart); if(!ns.length) return; var tot=0;
+        var lines=ns.map(function(n){var it=cart[n];tot+=it.price*it.qty;return "- "+n+" x"+it.qty+" : "+money(it.price*it.qty);});
+        var body="Bonjour, je souhaite commander :"+NL+lines.join(NL)+NL+NL+"Total : "+money(tot);
+        if(!send("Nouvelle commande", body)){var box=q("[data-bat-cart]"); if(box){var pre=document.createElement("pre"); pre.style.cssText="white-space:pre-wrap;background:#f4f4f4;color:#111;padding:10px;border-radius:8px;margin-top:8px"; pre.textContent="Envoyez-nous ce récapitulatif :"+NL+body; box.appendChild(pre);}}
+      }
+    });
+    // ---- Réservation (rendez-vous) ----
+    qa("form[data-bat-booking]").forEach(function(f){
+      f.addEventListener("submit",function(e){e.preventDefault();
+        var data=[]; qa("input,select,textarea",f).forEach(function(el){ if(!el.name||!el.value) return; var lab=el.getAttribute("data-label")||el.name; data.push(lab+" : "+el.value); });
+        if(!data.length) return;
+        var body="Bonjour, je souhaite demander un rendez-vous :"+NL+data.join(NL);
+        if(!send("Demande de rendez-vous", body)){var p=document.createElement("p"); p.textContent="Merci ! Envoyez-nous ces informations pour confirmer votre demande."; f.appendChild(p);}
+      });
+    });
+    ensureBox(); render();
+  }catch(e){}
+})();
+</script>
+<!-- BAT-KIT:END -->`;
+
+const KIT_RE = /\s*<!-- BAT-KIT:START -->[\s\S]*?<!-- BAT-KIT:END -->/g;
+function stripKit(html) { return html ? html.replace(KIT_RE, "").replace(/\n{3,}/g, "\n\n").trim() : html; }
+function injectKit(html, mods) {
+  if (!html) return html;
+  html = stripKit(html);
+  const wants = mods.includes("boutique") || mods.includes("rdv");
+  if (!wants) return html;
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, "\n" + INTERACTIVE_KIT + "\n</body>");
+  return html + "\n" + INTERACTIVE_KIT;
+}
 
 // --- VOLETS DU PROJET (Paliers 5 & 6) : un projet combine un ou plusieurs volets ---
 // Version « vitrine intelligente » : catalogue / prestations joliment présentés,
@@ -114,11 +219,14 @@ const MODULES = {
     context: "un volet BOUTIQUE EN LIGNE (vitrine) : présenter des produits à vendre",
     build: `
 
-=== VOLET BOUTIQUE EN LIGNE (vitrine) ===
-- Prévois une rubrique « Boutique » / « Nos produits » : une GRILLE de produits. Chaque produit = une carte avec un cadre image réservé (placeholder propre), un NOM, une courte description et un PRIX bien visible.
-- Ajoute une rubrique « Comment commander » qui explique la marche à suivre, avec un moyen de contact CLIQUABLE (email/téléphone/WhatsApp) et, si un email est connu, un formulaire de commande simple en HTML (nom, produit souhaité, quantité, message) dont le bouton envoie vers cet email via un lien mailto:. SANS JavaScript.
-- N'invente NI paiement en ligne NI panier qui calcule un total : à ce stade la commande se fait par contact. Reste strictement 100% HTML/CSS.
-- Mets en avant un bouton d'action « Commander » / « Nous contacter ».`
+=== VOLET BOUTIQUE EN LIGNE (panier interactif) ===
+- Rubrique « Boutique » / « Nos produits » : une GRILLE de produits. Chaque produit = une carte avec un cadre image réservé (placeholder propre), un NOM, une courte description, un PRIX, et un bouton d'ajout au panier EXACTEMENT sous cette forme :
+  <button data-bat-add data-name="Nom du produit" data-price="49.90">Ajouter au panier</button>
+  (data-price est un NOMBRE seul, sans symbole ; point ou virgule décimale.)
+- Place UNE seule fois, dans la rubrique boutique, le conteneur du panier : <div data-bat-cart></div>. La plateforme y affiche automatiquement le panier, le TOTAL calculé, et un bouton « Commander » qui prépare la commande pré-remplie.
+- Indique la devise si ce n'est pas l'euro, avec un attribut sur n'importe quel élément : data-bat-currency="FCFA" (par défaut : euros).
+- Donne un moyen de recevoir les commandes : un lien email <a href="mailto:contact@exemple.com">…</a> ET/OU un numéro WhatsApp <a href="https://wa.me/2250700000000">…</a>. Le bouton « Commander » utilisera WhatsApp si un numéro est présent, sinon l'email. N'invente pas de paiement en ligne.
+- Tu n'écris AUCUN JavaScript : seulement ce HTML déclaratif.`
   },
   rdv: {
     label: "Prise de rendez-vous", short: "Rendez-vous", emoji: "📅",
@@ -126,11 +234,21 @@ const MODULES = {
     context: "un volet PRISE DE RENDEZ-VOUS (vitrine) : présenter des prestations et faciliter la demande de rendez-vous",
     build: `
 
-=== VOLET PRISE DE RENDEZ-VOUS (vitrine) ===
-- Prévois une rubrique « Prestations » / « Services » : chaque prestation = un nom, une courte description, et sa DURÉE et son PRIX quand c'est pertinent.
-- Ajoute une rubrique « Horaires » (jours et heures d'ouverture) et une rubrique « Demander un rendez-vous » avec un formulaire simple en HTML (nom, téléphone/email, prestation souhaitée, date et heure souhaitées, message). Si un email est connu, le bouton envoie vers cet email via un lien mailto:. SANS JavaScript.
-- N'invente NI agenda interactif NI disponibilités en temps réel : à ce stade la demande se fait par le formulaire/contact. Reste strictement 100% HTML/CSS.
-- Mets en avant un bouton « Prendre rendez-vous ».`
+=== VOLET PRISE DE RENDEZ-VOUS (demande interactive) ===
+- Rubrique « Prestations » / « Services » : chaque prestation = un nom, une courte description, sa DURÉE et son PRIX quand c'est pertinent.
+- Rubrique « Horaires » (jours et heures d'ouverture).
+- Rubrique « Demander un rendez-vous » : un formulaire EXACTEMENT sous cette forme (la plateforme intercepte l'envoi et prépare la demande pré-remplie) :
+  <form data-bat-booking>
+    <select name="Prestation"> … une option par prestation … </select>
+    <input name="Date" type="date">
+    <input name="Heure" type="time">
+    <input name="Nom" type="text" placeholder="Votre nom">
+    <input name="Contact" type="text" placeholder="Téléphone ou email">
+    <textarea name="Message" placeholder="Message (facultatif)"></textarea>
+    <button type="submit">Demander le rendez-vous</button>
+  </form>
+- Donne un moyen de recevoir les demandes : lien email <a href="mailto:contact@exemple.com">…</a> ET/OU WhatsApp <a href="https://wa.me/2250700000000">…</a> (WhatsApp prioritaire s'il est présent).
+- N'invente pas d'agenda en temps réel. Tu n'écris AUCUN JavaScript : seulement ce HTML déclaratif.`
   }
 };
 const MODULE_ORDER = ["presentation", "boutique", "rdv"];
@@ -467,7 +585,8 @@ ${modulesContext(mods)}`;
     system += SINGLE_INSTRUCTION;
     const focus = modulesBuild(mods); if (focus) system += focus;
     // On injecte le CODE RÉEL du site actuel : Claude part de l'existant, pas de sa mémoire.
-    const current = await readSite(conv.id);
+    // (On retire le kit d'interactivité de sa vue : il est géré par la plateforme.)
+    const current = stripKit(await readSite(conv.id));
     if (current) {
       system += `
 
@@ -486,6 +605,7 @@ ${current}
   let siteUpdated = false;
   let message = ex.message;
 
+  if (isBuild && ex.html) ex.html = injectKit(ex.html, mods);
   if (isBuild && ex.html && await writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
   if (!message || !message.trim()) message = siteUpdated ? "✓ J'ai mis à jour votre site — regardez l'aperçu." : (ex.html ? "✓ C'est fait." : reply);
 
