@@ -83,6 +83,7 @@
   .modal .autherr{color:var(--bad);font-size:.82rem;margin-top:2px;min-height:1em;}
   .modal .linkline{margin-top:12px;font-size:.82rem;color:var(--ink-faint);text-align:center;}
   .modal .linkbtn{background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;padding:0 3px;font-size:.82rem;}
+  .modal .linkline a{color:var(--accent);font-weight:600;}
   .projlist{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow:auto;margin:6px 0 2px;}
   .projrow{display:flex;align-items:center;gap:11px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:11px;padding:11px 13px;cursor:pointer;color:var(--ink);}
   .projrow:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--surface-2));}
@@ -261,6 +262,7 @@
         <button id="certCancel" type="button">Annuler</button>
         <button id="certGo" class="primary" type="button">Créer mon certificat</button>
       </div>
+      <div class="linkline">Les certificats sont vérifiables sur <a href="/verifier" target="_blank" rel="noopener">/verifier</a>.</div>
     </div>
   </div>
 

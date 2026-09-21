@@ -131,11 +131,27 @@ la voie manuelle « Télécharger + Netlify Drop »).
 ## Certificat de réussite
 
 À la fin du parcours (dernière étape atteinte), un bouton **« 🎓 Mon certificat »**
-apparaît en haut de la discussion. L'apprenant saisit son nom, et un **certificat de
-réussite** à la charte Bâtisseur s'ouvre, prêt à **imprimer ou enregistrer en PDF**
-(bouton en haut de la page). Il porte le nom, la date, un numéro unique, et — si le
-site a été publié — son adresse en ligne. C'est une attestation de la formation
-Bâtisseur (pas un diplôme officiel accrédité).
+apparaît en haut de la discussion. Un **certificat de réussite** à la charte Bâtisseur
+s'ouvre, prêt à **imprimer ou enregistrer en PDF** (bouton en haut de la page). Il porte
+le **nom du compte** (nom vérifié, on ne peut pas émettre un certificat au nom d'un
+autre), la date, un numéro unique, et — si le site a été publié — son adresse en ligne.
+C'est une attestation de la formation Bâtisseur (pas un diplôme officiel accrédité).
+
+**Certificat vérifiable.** Chaque certificat émis est enregistré, et le certificat imprime
+un lien **`/verifier`**. N'importe qui peut aller sur cette page publique, saisir le numéro
+(ex. `BÂT-1A2B3C4D`) et obtenir la confirmation : nom, date, session, et lien du site. La
+recherche est tolérante (casse, accents, tirets). Cela permet à un tiers (employeur, etc.)
+de confirmer l'authenticité d'un certificat.
+
+> **Si vous utilisez Supabase**, créez la table des certificats (dans **SQL Editor**) :
+>
+> ```sql
+> create table if not exists certificates (
+>   num text primary key,
+>   data jsonb,
+>   created_at timestamptz default now()
+> );
+> ```
 
 ## Mémoire durable — base de données (Palier 3)
 

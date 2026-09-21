@@ -798,6 +798,22 @@ async function handleAdminUpdate(req, res) {
 function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 const MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
+// --- Registre des certificats (pour la vérification publique) ---
+const CERTS_FILE = path.join(DATA_DIR, "certificates.json");
+// Clé de recherche robuste : majuscules, sans accents ni séparateurs (BÂT-1A2B → BAT1A2B).
+function normalizeNum(s) { return String(s || "").toUpperCase().normalize("NFD").replace(/[^A-Z0-9]/g, ""); }
+function loadCerts() { try { return JSON.parse(fs.readFileSync(CERTS_FILE, "utf8")); } catch (e) { return {}; } }
+function saveCerts(o) { try { fs.writeFileSync(CERTS_FILE, JSON.stringify(o, null, 2)); } catch (e) { console.error("saveCerts:", e); } }
+async function getCertificate(key) {
+  if (!key) return null;
+  if (USE_DB) { try { const r = await sb(`/certificates?num=eq.${encodeURIComponent(key)}&select=data`); return (r && r[0]) ? r[0].data : null; } catch (e) { console.error("getCertificate:", e.message); return null; } }
+  return loadCerts()[key] || null;
+}
+async function saveCertificate(rec) {
+  if (USE_DB) { try { await sb(`/certificates?on_conflict=num`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify([{ num: rec.key, data: rec, created_at: new Date().toISOString() }]) }); } catch (e) { console.error("saveCertificate:", e.message); } return; }
+  const o = loadCerts(); o[rec.key] = rec; saveCerts(o);
+}
+
 // GET /api/certificate?id=...&name=...
 async function handleCertificate(req, res) {
   const u = new URL(req.url, "http://localhost");
@@ -808,11 +824,24 @@ async function handleCertificate(req, res) {
   if (!owns(cu, conv)) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Ce projet appartient à un autre compte."); }
   if (conv.userId && !canView(cu)) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Accès non autorisé pour le moment."); }
   // Le nom du compte fait foi ; sinon, le nom saisi ; sinon un libellé neutre.
+  // Le nom du compte fait foi (empêche d'émettre un certificat au nom d'un autre).
   let name = (conv.ownerName || u.searchParams.get("name") || "").trim().slice(0, 80);
   if (!name) name = "Apprenant(e)";
   const now = new Date();
-  const dateStr = `${now.getDate()} ${MOIS[now.getMonth()]} ${now.getFullYear()}`;
   const num = "BÂT-" + String(id).replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase();
+  const key = normalizeNum(num);
+
+  // Enregistrement au registre (pour la vérification), en gardant la 1re date d'émission.
+  const existing = await getCertificate(key);
+  const issuedAt = (existing && existing.issuedAt) || now.toISOString();
+  const issued = new Date(issuedAt);
+  const dateStr = `${issued.getDate()} ${MOIS[issued.getMonth()]} ${issued.getFullYear()}`;
+  let cohort = null;
+  if (conv.userId) { try { const owner = await getUserById(conv.userId); cohort = (owner && owner.cohort) ? owner.cohort : null; } catch (e) {} }
+  await saveCertificate({ key, number: num, name, cohort, projectId: conv.id, userId: conv.userId || null, url: conv.publishedUrl || null, date: dateStr, issuedAt });
+
+  const proto = String(req.headers["x-forwarded-proto"] || "http").split(",")[0];
+  const verifyUrl = `${proto}://${req.headers.host}/verifier`;
   const online = conv.publishedUrl ? `<div class="online">Projet en ligne : <span>${escapeHtml(conv.publishedUrl)}</span></div>` : "";
 
   const html = `<!doctype html>
@@ -840,6 +869,8 @@ async function handleCertificate(req, res) {
   .online span{ color:#0C5866; }
   .meta{ display:flex; gap:64px; margin-top:34px; color:#6B7A90; font-size:12.5px; }
   .meta b{ display:block; color:#0E1B2E; font-size:15px; font-family:Georgia,serif; margin-top:3px; }
+  .verify{ margin-top:20px; font-size:11px; color:#8394a8; }
+  .verify b{ color:#0C5866; font-weight:700; }
   @media print{ body{ background:#fff; padding:0; } .sheet{ box-shadow:none; width:100%; height:100vh; } .print{ display:none; } }
 </style></head>
 <body>
@@ -856,10 +887,96 @@ async function handleCertificate(req, res) {
       <div>Délivré le<b>${dateStr}</b></div>
       <div>Certificat n°<b>${num}</b></div>
     </div>
+    <div class="verify">Authenticité vérifiable sur <b>${escapeHtml(verifyUrl)}</b> — indiquez le n° <b>${escapeHtml(num)}</b></div>
   </div></div>
 </body></html>`;
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   res.end(html);
+}
+
+// GET /api/verify?num=... : vérification publique d'un certificat
+async function handleVerifyApi(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const key = normalizeNum(u.searchParams.get("num"));
+  const rec = key ? await getCertificate(key) : null;
+  if (!rec) return sendJson(res, 200, { valid: false });
+  sendJson(res, 200, { valid: true, number: rec.number, name: rec.name, date: rec.date, cohort: rec.cohort || null, url: rec.url || null });
+}
+
+// GET /verifier : page publique de vérification d'un certificat
+function handleVerifyPage(req, res) {
+  const page = `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vérifier un certificat — Bâtisseur</title>
+<style>
+  *{ box-sizing:border-box; }
+  body{ margin:0; min-height:100vh; font-family:"Segoe UI",system-ui,Arial,sans-serif; background:#eef1f6; color:#0E1B2E; display:flex; align-items:flex-start; justify-content:center; padding:32px 16px; }
+  @media(prefers-color-scheme:dark){ body{ background:#0A121D; color:#E9EFF6; } }
+  .card{ width:100%; max-width:520px; background:#fff; border:1px solid #d8dfe9; border-radius:16px; padding:26px; box-shadow:0 12px 44px rgba(14,27,46,.10); }
+  @media(prefers-color-scheme:dark){ .card{ background:#101E30; border-color:#223449; } }
+  .brand{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .logo{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#147C8C,#D98A2B); color:#06121c; font-weight:800; font-size:19px; display:grid; place-items:center; }
+  .brand b{ font-family:Georgia,serif; font-size:20px; }
+  h1{ font-size:1.15rem; margin:6px 0 4px; }
+  p.lead{ color:#6B7A90; font-size:.9rem; margin:0 0 18px; }
+  form{ display:flex; gap:8px; }
+  input{ flex:1; padding:12px 14px; border:1px solid #c6cfdb; border-radius:10px; font-size:1rem; background:#fff; color:#0E1B2E; }
+  @media(prefers-color-scheme:dark){ input{ background:#15263B; border-color:#2E4460; color:#E9EFF6; } }
+  button{ border:none; background:#147C8C; color:#fff; font-weight:600; border-radius:10px; padding:0 18px; font-size:.95rem; cursor:pointer; }
+  button:hover{ filter:brightness(1.06); }
+  .result{ margin-top:18px; border-radius:12px; padding:16px 18px; display:none; }
+  .result.ok{ display:block; background:rgba(46,139,111,.10); border:1px solid rgba(46,139,111,.45); }
+  .result.no{ display:block; background:rgba(192,57,43,.08); border:1px solid rgba(192,57,43,.4); }
+  .result h2{ margin:0 0 8px; font-size:1rem; }
+  .result .who{ font-family:Georgia,serif; font-size:1.5rem; margin:2px 0 6px; }
+  .result .row{ font-size:.9rem; color:#33445C; margin-top:3px; }
+  @media(prefers-color-scheme:dark){ .result .row{ color:#AFBED2; } }
+  .result a{ color:#0C5866; }
+  .foot{ margin-top:18px; font-size:.78rem; color:#8394a8; text-align:center; }
+</style></head>
+<body>
+  <div class="card">
+    <div class="brand"><span class="logo">B</span><b>Bâtisseur</b></div>
+    <h1>Vérifier un certificat</h1>
+    <p class="lead">Saisissez le numéro figurant sur le certificat (ex. BÂT-1A2B3C4D) pour confirmer son authenticité.</p>
+    <form id="f">
+      <input id="num" placeholder="Numéro du certificat" autocomplete="off" autocapitalize="characters">
+      <button type="submit">Vérifier</button>
+    </form>
+    <div class="result" id="res"></div>
+    <div class="foot">Formation Bâtisseur — attestation de réussite (non accréditée par l'État).</div>
+  </div>
+  <script>
+    const res = document.getElementById("res"), num = document.getElementById("num");
+    function esc(s){ const d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
+    async function check(){
+      const v = num.value.trim();
+      if(!v){ return; }
+      res.className="result"; res.style.display="none";
+      try{
+        const r = await fetch("/api/verify?num=" + encodeURIComponent(v));
+        const d = await r.json();
+        if(d.valid){
+          res.className="result ok";
+          res.innerHTML = '<h2>✅ Certificat authentique</h2>'
+            + '<div class="who">' + esc(d.name) + '</div>'
+            + '<div class="row">a complété le parcours de création de site web Bâtisseur.</div>'
+            + '<div class="row">Délivré le <b>' + esc(d.date) + '</b> · N° <b>' + esc(d.number) + '</b></div>'
+            + (d.cohort ? '<div class="row">Session : ' + esc(d.cohort) + '</div>' : '')
+            + (d.url ? '<div class="row">Projet en ligne : <a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.url) + '</a></div>' : '');
+        } else {
+          res.className="result no";
+          res.innerHTML = '<h2>❌ Aucun certificat trouvé</h2><div class="row">Ce numéro ne correspond à aucun certificat délivré. Vérifiez la saisie.</div>';
+        }
+      }catch(e){ res.className="result no"; res.innerHTML='<div class="row">Vérification impossible pour le moment.</div>'; }
+    }
+    document.getElementById("f").addEventListener("submit",(e)=>{ e.preventDefault(); check(); });
+    const q = new URLSearchParams(location.search).get("num");
+    if(q){ num.value=q; check(); }
+  </script>
+</body></html>`;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(page);
 }
 
 const server = http.createServer((req, res) => {
@@ -877,6 +994,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/admin/learner/update") return handleAdminUpdate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/certificate")) return handleCertificate(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/verify")) return handleVerifyApi(req, res);
+  if (req.method === "GET" && req.url.startsWith("/verifier")) return handleVerifyPage(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);
   if (req.method === "GET" && req.url.startsWith("/preview/")) return servePreview(req, res);
