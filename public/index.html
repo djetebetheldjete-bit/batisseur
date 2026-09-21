@@ -63,6 +63,17 @@
   .quickbtn{font-family:var(--f-display),sans-serif;font-weight:600;font-size:.82rem;border:none;background:var(--warm);color:#1a1206;border-radius:9px;padding:8px 12px;cursor:pointer;white-space:nowrap;}
   .quickbtn:hover{filter:brightness(1.05);}
   .quickbtn:disabled{opacity:.5;cursor:default;}
+  .certbtn{font-family:var(--f-display),sans-serif;font-weight:600;font-size:.82rem;border:none;background:var(--warm);color:#1a1206;border-radius:9px;padding:8px 12px;cursor:pointer;white-space:nowrap;}
+  .certbtn:hover{filter:brightness(1.05);}
+  .modal-bg{position:fixed;inset:0;background:rgba(14,27,46,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:16px;}
+  .modal-bg.show{display:flex;}
+  .modal{background:var(--surface);border:1px solid var(--line);border-radius:14px;max-width:420px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  .modal h3{font-family:var(--f-display),sans-serif;margin:0 0 6px;color:var(--ink);font-size:1.05rem;}
+  .modal p{margin:0 0 14px;color:var(--ink-faint);font-size:.86rem;}
+  .modal input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--ink);font-family:inherit;font-size:.95rem;}
+  .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+  .modal button{font-family:var(--f-display),sans-serif;font-weight:600;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:.85rem;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);}
+  .modal button.primary{border:none;background:var(--accent);color:#fff;}
   .ch-actions{display:flex;gap:8px;align-items:center;}
   .resumed{margin:10px 12px 0;font-family:var(--f-mono),monospace;font-size:10.5px;color:var(--ink-faint);background:var(--surface-2);border:1px dashed var(--line);border-radius:8px;padding:7px 10px;text-align:center;}
   #thread{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:11px;min-height:0;}
@@ -147,6 +158,7 @@
         <div class="ch-head">
           <div class="st" id="stepLabel">Comprendre le projet<small id="stepSub">Orientation</small></div>
           <div class="ch-actions">
+            <button class="certbtn" id="certBtn" type="button" style="display:none;">🎓 Mon certificat</button>
             <button class="nextbtn" id="nextBtn" type="button" disabled>Étape suivante →</button>
           </div>
         </div>
@@ -185,6 +197,18 @@
     </div>
   </div>
 
+  <div class="modal-bg" id="certModal">
+    <div class="modal">
+      <h3>🎓 Votre certificat</h3>
+      <p>Indiquez le nom à faire figurer sur le certificat de réussite.</p>
+      <input id="certName" type="text" placeholder="Votre nom et prénom" maxlength="80" autocomplete="name">
+      <div class="row">
+        <button id="certCancel" type="button">Annuler</button>
+        <button id="certGo" class="primary" type="button">Créer mon certificat</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const STEP_LABELS = [
       { label: "Comprendre le projet", sub: "Orientation" },
@@ -201,7 +225,7 @@
 
     const $ = (id) => document.getElementById(id);
     const thread = $("thread"), form = $("form"), input = $("input"), sendBtn = $("send");
-    const newBtn = $("newBtn"), nextBtn = $("nextBtn"), resumedNote = $("resumed");
+    const newBtn = $("newBtn"), nextBtn = $("nextBtn"), resumedNote = $("resumed"), certBtn = $("certBtn");
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
     const pubBtn = $("pubBtn"), pubLink = $("pubLink");
@@ -228,6 +252,7 @@
       stepSub.textContent = STEP_LABELS[step].sub;
       nextBtn.disabled = step >= LAST;
       nextBtn.textContent = step >= LAST ? "Parcours terminé ✓" : "Étape suivante →";
+      certBtn.style.display = (convId && step >= LAST) ? "inline-block" : "none";
     }
 
     function reloadPreview(){
@@ -338,6 +363,21 @@
     newBtn.addEventListener("click",()=>{ clearSavedId(); convId=null; startNew(); });
     nextBtn.addEventListener("click", goNext);
     pubBtn.addEventListener("click", doPublish);
+
+    // Certificat : petite fenêtre pour saisir le nom, puis ouverture du certificat imprimable.
+    const certModal = $("certModal"), certName = $("certName");
+    function openCert(){ if(!convId) return; certModal.classList.add("show"); setTimeout(()=>certName.focus(),50); }
+    function closeCert(){ certModal.classList.remove("show"); }
+    function goCert(){
+      const name = certName.value.trim();
+      window.open("/api/certificate?id=" + encodeURIComponent(convId) + "&name=" + encodeURIComponent(name), "_blank");
+      closeCert();
+    }
+    certBtn.addEventListener("click", openCert);
+    $("certCancel").addEventListener("click", closeCert);
+    $("certGo").addEventListener("click", goCert);
+    certName.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); goCert(); } });
+    certModal.addEventListener("click",(e)=>{ if(e.target===certModal) closeCert(); });
 
     $("devToggle").addEventListener("click",(e)=>{ const b=e.target.closest("button"); if(!b) return; document.querySelectorAll("#devToggle button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); device.classList.toggle("mobile", b.dataset.dev==="mobile"); });
     $("tabs").addEventListener("click",(e)=>{ const b=e.target.closest("button"); if(!b) return; document.querySelectorAll("#tabs button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); document.querySelectorAll(".pane[data-pane]").forEach(p=>p.classList.toggle("show", p.dataset.pane===b.dataset.tab)); });

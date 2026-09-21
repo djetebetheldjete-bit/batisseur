@@ -128,6 +128,53 @@ la voie manuelle « Télécharger + Netlify Drop »).
 > `xxxx.netlify.app`). L'offre gratuite a des limites de volume : pour beaucoup
 > d'apprenants, prévoir une formule adaptée le moment venu.
 
+## Certificat de réussite
+
+À la fin du parcours (dernière étape atteinte), un bouton **« 🎓 Mon certificat »**
+apparaît en haut de la discussion. L'apprenant saisit son nom, et un **certificat de
+réussite** à la charte Bâtisseur s'ouvre, prêt à **imprimer ou enregistrer en PDF**
+(bouton en haut de la page). Il porte le nom, la date, un numéro unique, et — si le
+site a été publié — son adresse en ligne. C'est une attestation de la formation
+Bâtisseur (pas un diplôme officiel accrédité).
+
+## Mémoire durable — base de données (Palier 3)
+
+Par défaut, l'app stocke les conversations et les sites en **fichiers locaux** : sur un
+hébergement gratuit, ils sont **remis à zéro** quand le service redémarre. En branchant
+**Supabase** (gratuit pour démarrer), tout est **conservé durablement**. L'app bascule
+automatiquement sur la base dès que `SUPABASE_URL` et `SUPABASE_KEY` sont présents
+(sinon elle reste en fichiers — rien ne casse).
+
+**Pour l'activer (une fois) :**
+
+1. Créez un projet sur **supabase.com**.
+2. Dans **SQL Editor**, exécutez ce script pour créer les deux tables :
+
+   ```sql
+   create table if not exists conversations (
+     id text primary key,
+     data jsonb,
+     updated_at timestamptz default now()
+   );
+   create table if not exists sites (
+     id text primary key,
+     html text,
+     updated_at timestamptz default now()
+   );
+   ```
+
+3. Dans **Project Settings → API**, copiez :
+   - **Project URL** → variable `SUPABASE_URL`
+   - la clé **`service_role`** (secrète) → variable `SUPABASE_KEY`
+4. Ajoutez ces deux variables à la plateforme :
+   - en local : dans `.env` ;
+   - sur Render : *Environment* → *Add Environment Variable* (× 2).
+5. Enregistrez. Render redéploie. Au démarrage, la console indique
+   `Mémoire : base de données (Supabase)`.
+
+> La clé `service_role` a tous les droits : elle vit **uniquement** côté serveur
+> (jamais dans le navigateur ni dans le code public). Elle est déjà utilisée ainsi ici.
+
 ## Mettre à jour la plateforme déjà en ligne
 
 Le service Render est relié à votre dépôt GitHub. Pour publier une nouvelle version :

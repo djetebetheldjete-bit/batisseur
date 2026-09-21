@@ -39,6 +39,10 @@ const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const PORT = process.env.PORT || 3000;
 // Jeton d'hébergement (Palier 2) : la plateforme publie les sites des apprenants à leur place.
 const NETLIFY_TOKEN = process.env.NETLIFY_TOKEN;
+// Base de données (Palier 3) : mémoire durable. Si absente, on retombe sur les fichiers locaux.
+const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const USE_DB = !!(SUPABASE_URL && SUPABASE_KEY);
 
 // --- Les étapes (build:true = étape qui produit / modifie le site) ---
 const STEPS = [
@@ -107,16 +111,43 @@ function siteDir(id) { return validId(id) ? path.join(SITES_DIR, id) : null; }
 function siteFile(id) { const d = siteDir(id); return d ? path.join(d, "index.html") : null; }
 function safeFile(name) { return /^[A-Za-z0-9_-]+\.html$/.test(name) ? name : null; }
 
-function loadConv(id) { const p = convPath(id); if (!p) return null; try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { return null; } }
-function saveConv(conv) { const p = convPath(conv.id); if (!p) return; try { fs.writeFileSync(p, JSON.stringify(conv, null, 2)); } catch (e) { console.error("Sauvegarde :", e); } }
+// --- Accès Supabase (API REST, aucune dépendance) ---
+async function sb(pathPart, opts = {}) {
+  const res = await fetch(SUPABASE_URL + "/rest/v1" + pathPart, Object.assign({}, opts, {
+    headers: Object.assign({ apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY, "Content-Type": "application/json" }, opts.headers || {})
+  }));
+  const text = await res.text();
+  let data; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+  if (!res.ok) { const e = new Error("Base de données : erreur " + res.status + (data && data.message ? " — " + data.message : "")); e.status = res.status; throw e; }
+  return data;
+}
+
+// --- Stockage : base de données si configurée, sinon fichiers locaux ---
+async function loadConv(id) {
+  if (!validId(id)) return null;
+  if (USE_DB) { try { const r = await sb(`/conversations?id=eq.${encodeURIComponent(id)}&select=data`); return (r && r[0]) ? r[0].data : null; } catch (e) { console.error("loadConv:", e.message); return null; } }
+  const p = convPath(id); try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { return null; }
+}
+async function saveConv(conv) {
+  if (USE_DB) { try { await sb(`/conversations?on_conflict=id`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify([{ id: conv.id, data: conv, updated_at: new Date().toISOString() }]) }); } catch (e) { console.error("saveConv:", e.message); } return; }
+  const p = convPath(conv.id); if (!p) return; try { fs.writeFileSync(p, JSON.stringify(conv, null, 2)); } catch (e) { console.error("Sauvegarde :", e); }
+}
 
 // --- Le site : lecture / écriture (une seule page = index.html) ---
-function readSite(id) { const f = siteFile(id); if (!f) return null; try { return fs.readFileSync(f, "utf8"); } catch (e) { return null; } }
-function hasSite(id) { const f = siteFile(id); try { return !!f && fs.existsSync(f); } catch (e) { return false; } }
-function writeSite(id, html) {
-  const dir = siteDir(id); if (!dir || !html) return false;
+async function readSite(id) {
+  if (!validId(id)) return null;
+  if (USE_DB) { try { const r = await sb(`/sites?id=eq.${encodeURIComponent(id)}&select=html`); return (r && r[0]) ? r[0].html : null; } catch (e) { console.error("readSite:", e.message); return null; } }
+  const f = siteFile(id); if (!f) return null; try { return fs.readFileSync(f, "utf8"); } catch (e) { return null; }
+}
+async function hasSite(id) {
+  if (USE_DB) { return !!(await readSite(id)); }
+  const f = siteFile(id); try { return !!f && fs.existsSync(f); } catch (e) { return false; }
+}
+async function writeSite(id, html) {
+  if (!validId(id) || !html) return false;
+  if (USE_DB) { try { await sb(`/sites?on_conflict=id`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify([{ id, html, updated_at: new Date().toISOString() }]) }); return true; } catch (e) { console.error("writeSite:", e.message); return false; } }
+  const dir = siteDir(id); if (!dir) return false;
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
-  // une seule page : on nettoie d'éventuelles anciennes pages puis on écrit index.html
   try { fs.readdirSync(dir).forEach((f) => { if (f.endsWith(".html") && f !== "index.html") fs.unlinkSync(path.join(dir, f)); }); } catch (e) {}
   try { fs.writeFileSync(path.join(dir, "index.html"), html); return true; } catch (e) { return false; }
 }
@@ -195,7 +226,7 @@ async function produceCurrent(conv) {
   if (isBuild) {
     system += SINGLE_INSTRUCTION;
     // On injecte le CODE RÉEL du site actuel : Claude part de l'existant, pas de sa mémoire.
-    const current = readSite(conv.id);
+    const current = await readSite(conv.id);
     if (current) {
       system += `
 
@@ -214,13 +245,13 @@ ${current}
   let siteUpdated = false;
   let message = ex.message;
 
-  if (isBuild && ex.html && writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
+  if (isBuild && ex.html && await writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
   if (!message || !message.trim()) message = siteUpdated ? "✓ J'ai mis à jour votre site — regardez l'aperçu." : (ex.html ? "✓ C'est fait." : reply);
 
-  // Historique LÉGER : on ne stocke que le TEXTE (jamais le code). Le fichier = source de vérité.
+  // Historique LÉGER : on ne stocke que le TEXTE (jamais le code). La base/fichier = source de vérité.
   conv.messages.push({ role: "assistant", content: message });
   conv.updatedAt = new Date().toISOString();
-  saveConv(conv);
+  await saveConv(conv);
   return { reply: message, siteUpdated };
 }
 
@@ -240,7 +271,7 @@ async function handleChat(req, res) {
   if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
   try {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
-    const conv = loadConv(p.id);
+    const conv = await loadConv(p.id);
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
     if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
     conv.messages.push({ role: "user", content: p.message });
@@ -254,7 +285,7 @@ async function handleNext(req, res) {
   if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
   try {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
-    const conv = loadConv(p.id);
+    const conv = await loadConv(p.id);
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
     const current = conv.step || 0;
     if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
@@ -266,53 +297,36 @@ async function handleNext(req, res) {
 }
 
 // GET /api/download?id=... : télécharge le site (index.html) en pièce jointe
-function handleDownload(req, res) {
+async function handleDownload(req, res) {
   const u = new URL(req.url, "http://localhost");
-  const id = u.searchParams.get("id");
-  const f = siteFile(id);
-  if (!f || !fs.existsSync(f)) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Site introuvable — construisez-le d'abord."); }
-  fs.readFile(f, (err, content) => {
-    if (err) { res.writeHead(500); return res.end("Erreur de lecture."); }
-    res.writeHead(200, {
-      "content-type": "text/html; charset=utf-8",
-      "content-disposition": 'attachment; filename="index.html"'
-    });
-    res.end(content);
+  const html = await readSite(u.searchParams.get("id"));
+  if (!html) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Site introuvable — construisez-le d'abord."); }
+  res.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "content-disposition": 'attachment; filename="index.html"'
   });
+  res.end(html);
 }
 
 // GET /api/conversation?id=...
-function handleGetConversation(req, res) {
+async function handleGetConversation(req, res) {
   const u = new URL(req.url, "http://localhost");
-  const conv = loadConv(u.searchParams.get("id"));
+  const conv = await loadConv(u.searchParams.get("id"));
   if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
-  sendJson(res, 200, { id: conv.id, step: conv.step || 0, hasSite: hasSite(conv.id), publishedUrl: conv.publishedUrl || null, messages: conv.messages.filter((m) => !m.hidden) });
+  sendJson(res, 200, { id: conv.id, step: conv.step || 0, hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, messages: conv.messages.filter((m) => !m.hidden) });
 }
 
-// GET /preview/<id>/<fichier> : sert le site généré
-function servePreview(req, res) {
+// GET /preview/<id>/<fichier> : sert le site généré (une seule page)
+async function servePreview(req, res) {
   const parts = decodeURIComponent(req.url.split("?")[0]).split("/").filter(Boolean); // ["preview", id, file?]
-  const id = parts[1]; const file = parts[2] || "index.html";
-  const dir = siteDir(id); const name = safeFile(file);
-  if (!dir || !name) { res.writeHead(404); return res.end("Introuvable"); }
-  const fp = path.join(dir, name);
-  if (!fp.startsWith(dir)) { res.writeHead(403); return res.end("Interdit"); }
-  fs.readFile(fp, (err, content) => {
-    if (err) {
-      // Filet : tout mène à l'accueil (une seule page).
-      const idx = path.join(dir, "index.html");
-      if (name !== "index.html" && fs.existsSync(idx)) {
-        return fs.readFile(idx, (e2, c2) => {
-          res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-          res.end(e2 ? "Introuvable" : c2);
-        });
-      }
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      return res.end("<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui,sans-serif;color:#6B7A90;display:grid;place-items:center;height:88vh;text-align:center;padding:20px\">Le site n'est pas encore construit.<br>Arrivez à l'étape « Créer la base ».</body>");
-    }
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(content);
-  });
+  const id = parts[1];
+  if (!validId(id)) { res.writeHead(404); return res.end("Introuvable"); }
+  let html = null;
+  try { html = await readSite(id); } catch (e) { html = null; }
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  if (html) return res.end(html);
+  // Filet : le site n'existe pas encore.
+  res.end("<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui,sans-serif;color:#6B7A90;display:grid;place-items:center;height:88vh;text-align:center;padding:20px\">Le site n'est pas encore construit.<br>Arrivez à l'étape « Créer la base ».</body>");
 }
 
 function serveStatic(req, res) {
@@ -343,7 +357,7 @@ async function netlify(path, opts = {}) {
 // Publie (ou met à jour) le site d'une conversation, renvoie l'adresse publique.
 async function publishSite(conv) {
   if (!NETLIFY_TOKEN) { const e = new Error("La publication n'est pas encore configurée sur cette plateforme."); e.status = 501; throw e; }
-  const html = readSite(conv.id);
+  const html = await readSite(conv.id);
   if (!html) { const e = new Error("Aucun site à publier : construisez d'abord votre site."); e.status = 400; throw e; }
   const buf = Buffer.from(html, "utf8");
   const sha1 = crypto.createHash("sha1").update(buf).digest("hex");
@@ -353,7 +367,7 @@ async function publishSite(conv) {
     const site = await netlify("/sites", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     conv.netlifySiteId = site.id;
     conv.publishedUrl = site.ssl_url || site.url;
-    saveConv(conv);
+    await saveConv(conv);
   }
 
   // 2) Créer un déploiement en annonçant le fichier par son empreinte (sha1).
@@ -376,7 +390,7 @@ async function publishSite(conv) {
     try { const d = await netlify(`/deploys/${deploy.id}`); state = d.state; if (d.ssl_url) url = d.ssl_url; } catch (e) { break; }
   }
   if (url) conv.publishedUrl = conv.publishedUrl || url;
-  saveConv(conv);
+  await saveConv(conv);
   return { url: conv.publishedUrl, state };
 }
 
@@ -384,7 +398,7 @@ async function publishSite(conv) {
 async function handlePublish(req, res) {
   try {
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
-    const conv = loadConv(p.id);
+    const conv = await loadConv(p.id);
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
     const out = await publishSite(conv);
     sendJson(res, 200, out);
@@ -394,12 +408,77 @@ async function handlePublish(req, res) {
 // GET /api/config : ce que le client a besoin de savoir (ex. si la publication est dispo).
 function handleConfig(req, res) { sendJson(res, 200, { canPublish: !!NETLIFY_TOKEN }); }
 
+// --- CERTIFICAT (simple) : une belle page imprimable en PDF ---
+function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+const MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+
+// GET /api/certificate?id=...&name=...
+async function handleCertificate(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const id = u.searchParams.get("id");
+  const conv = await loadConv(id);
+  if (!conv) { res.writeHead(404, { "content-type": "text/html; charset=utf-8" }); return res.end("Conversation introuvable."); }
+  let name = (u.searchParams.get("name") || "").trim().slice(0, 80);
+  if (!name) name = "Apprenant(e)";
+  const now = new Date();
+  const dateStr = `${now.getDate()} ${MOIS[now.getMonth()]} ${now.getFullYear()}`;
+  const num = "BÂT-" + String(id).replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase();
+  const online = conv.publishedUrl ? `<div class="online">Projet en ligne : <span>${escapeHtml(conv.publishedUrl)}</span></div>` : "";
+
+  const html = `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Certificat — Bâtisseur</title>
+<style>
+  @page{ size:A4 landscape; margin:0; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",Arial,sans-serif; background:#eef1f6; display:flex; justify-content:center; padding:24px; }
+  .print{ position:fixed; top:16px; right:16px; background:#147C8C; color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; box-shadow:0 4px 14px rgba(20,124,140,.35); }
+  .print:hover{ filter:brightness(1.06); }
+  .sheet{ width:1040px; max-width:100%; aspect-ratio:1.414/1; background:#fff; position:relative; box-shadow:0 12px 44px rgba(14,27,46,.16); }
+  .frame{ position:absolute; inset:22px; border:2px solid #147C8C; }
+  .frame:before{ content:""; position:absolute; inset:8px; border:1px solid #D98A2B; }
+  .inner{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:6% 9%; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .logo{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#147C8C,#D98A2B); color:#06121c; font-weight:800; font-size:20px; display:flex; align-items:center; justify-content:center; }
+  .brand b{ font-family:Georgia,serif; font-size:20px; color:#0E1B2E; }
+  .kicker{ letter-spacing:.34em; text-transform:uppercase; color:#147C8C; font-size:12px; font-weight:700; margin:22px 0 4px; }
+  h1{ font-family:Georgia,serif; font-size:42px; color:#0E1B2E; margin:0; }
+  .sub{ color:#4a5a70; font-size:15px; margin-top:14px; }
+  .name{ font-family:Georgia,serif; font-size:38px; color:#0C5866; margin:14px auto 4px; border-bottom:2px solid #D8DFE9; padding:0 30px 10px; }
+  .desc{ color:#1c2b3f; font-size:16px; max-width:66ch; margin:16px auto 0; line-height:1.55; }
+  .online{ margin-top:12px; font-size:13px; color:#4a5a70; }
+  .online span{ color:#0C5866; }
+  .meta{ display:flex; gap:64px; margin-top:34px; color:#6B7A90; font-size:12.5px; }
+  .meta b{ display:block; color:#0E1B2E; font-size:15px; font-family:Georgia,serif; margin-top:3px; }
+  @media print{ body{ background:#fff; padding:0; } .sheet{ box-shadow:none; width:100%; height:100vh; } .print{ display:none; } }
+</style></head>
+<body>
+  <button class="print" onclick="window.print()">🖨 Imprimer / Enregistrer en PDF</button>
+  <div class="sheet"><div class="frame"></div><div class="inner">
+    <div class="brand"><span class="logo">B</span><b>Bâtisseur</b></div>
+    <div class="kicker">Certificat de réussite</div>
+    <h1>Parcours de création de site web</h1>
+    <div class="sub">Ce certificat atteste que</div>
+    <div class="name">${escapeHtml(name)}</div>
+    <div class="desc">a suivi et complété le parcours Bâtisseur, et a créé son propre site web en dialoguant avec l'assistant — de l'idée jusqu'à la mise en ligne.</div>
+    ${online}
+    <div class="meta">
+      <div>Délivré le<b>${dateStr}</b></div>
+      <div>Certificat n°<b>${num}</b></div>
+    </div>
+  </div></div>
+</body></html>`;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/start") return handleStart(req, res);
   if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
   if (req.method === "POST" && req.url === "/api/publish") return handlePublish(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/certificate")) return handleCertificate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);
   if (req.method === "GET" && req.url.startsWith("/preview/")) return servePreview(req, res);
@@ -411,7 +490,9 @@ server.listen(PORT, () => {
   console.log(`\n  Bâtisseur — parcours complet (v1.5) en marche.`);
   console.log(`  Ouvrez  http://localhost:${PORT}`);
   console.log(`  Étapes : ${STEPS.map((s) => s.label).join("  →  ")}`);
-  console.log(`  Modèle : ${MODEL}\n`);
+  console.log(`  Modèle : ${MODEL}`);
+  console.log(`  Mémoire : ${USE_DB ? "base de données (Supabase)" : "fichiers locaux"}`);
+  console.log(`  Publication : ${NETLIFY_TOKEN ? "activée" : "désactivée"}\n`);
 });
 
 // --- Auto-test hors ligne : node server.js --selftest ---
