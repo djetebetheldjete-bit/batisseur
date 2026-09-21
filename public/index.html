@@ -89,6 +89,11 @@
   .dlbtn{font-family:var(--f-mono),monospace;font-size:11px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface));color:var(--accent-deep);border-radius:8px;padding:5px 10px;cursor:pointer;white-space:nowrap;text-decoration:none;}
   .dlbtn:hover{background:var(--accent);color:#fff;}
   @media(prefers-color-scheme:dark){.dlbtn{color:var(--accent);}}
+  .pubbtn{font-family:var(--f-mono),monospace;font-size:11px;border:none;background:var(--good);color:#fff;border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap;}
+  .pubbtn:hover{filter:brightness(1.06);}
+  .pubbtn:disabled{opacity:.6;cursor:default;}
+  .publink{font-family:var(--f-mono),monospace;font-size:11px;border:1px solid var(--good);color:var(--good);border-radius:8px;padding:5px 10px;text-decoration:none;white-space:nowrap;}
+  .publink:hover{background:var(--good);color:#fff;}
   .pv-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   .pv-stage{flex:1;min-height:0;overflow:auto;padding:14px;display:flex;justify-content:center;align-items:flex-start;}
   .device{width:100%;height:100%;background:#fff;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;box-shadow:0 8px 28px rgba(14,27,46,.10);transition:max-width .3s ease;}
@@ -158,6 +163,8 @@
         <div class="pv-head">
           <div class="tt">Aperçu <span class="live" id="liveTag" style="display:none;">en direct</span></div>
           <div class="pv-tools">
+            <button class="pubbtn" id="pubBtn" type="button" style="display:none;" title="Mettre votre site en ligne, avec une adresse à partager">🌐 Publier en ligne</button>
+            <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">🌐 Voir en ligne</a>
             <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">⤓ Télécharger mon site</a>
             <div class="seg" id="devToggle">
               <button data-dev="desktop" class="active" type="button">🖥</button>
@@ -197,9 +204,10 @@
     const newBtn = $("newBtn"), nextBtn = $("nextBtn"), resumedNote = $("resumed");
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
+    const pubBtn = $("pubBtn"), pubLink = $("pubLink");
 
     const STORAGE_KEY = "batisseur_parcours_id";
-    let convId = null, step = 0, siteBuilt = false;
+    let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null;
 
     const getSavedId = () => { try { return localStorage.getItem(STORAGE_KEY); } catch(e){ return null; } };
     const setSavedId = (id) => { try { localStorage.setItem(STORAGE_KEY, id); } catch(e){} };
@@ -232,6 +240,27 @@
       dlBtn.href = "/api/download?id=" + encodeURIComponent(convId);
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
+      if(canPublish){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "↻ Republier" : "🌐 Publier en ligne"; }
+    }
+
+    function showPublished(url){
+      publishedUrl = url;
+      pubLink.href = url; pubLink.style.display = "inline-block";
+      if(canPublish){ pubBtn.style.display = "inline-block"; pubBtn.textContent = "↻ Republier"; }
+    }
+
+    async function doPublish(){
+      if(!convId) return;
+      pubBtn.disabled = true; const prev = pubBtn.textContent; pubBtn.textContent = "Publication…";
+      const typing = bubble("… mise en ligne de votre site (quelques secondes)","ai typing");
+      try{
+        const r = await fetch("/api/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
+        const data = await r.json(); typing.remove();
+        if(!r.ok){ bubble("⚠ "+(data.error||"Publication impossible."),"err"); pubBtn.textContent=prev; pubBtn.disabled=false; return; }
+        showPublished(data.url);
+        bubble("✅ Votre site est en ligne : " + data.url + "\n(Après une modification, cliquez « ↻ Republier » pour mettre à jour.)","ai");
+      }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur.","err"); pubBtn.textContent=prev; }
+      finally{ pubBtn.disabled = false; }
     }
 
     // enlève les blocs de code (pour l'affichage des messages à la reprise)
@@ -244,6 +273,7 @@
     async function startNew(){
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none";
+      pubBtn.style.display="none"; pubLink.style.display="none"; publishedUrl=null;
       renderRail();
       const typing = bubble("…","ai typing"); setBusy(true);
       try{
@@ -269,6 +299,7 @@
           else bubble(stripBlocks(m.content),"ai");
         });
         if(data.hasSite) reloadPreview();
+        if(data.publishedUrl) showPublished(data.publishedUrl);
         renderRail(); resumedNote.style.display="block"; setBusy(false);
         return true;
       }catch(e){ return false; }
@@ -306,12 +337,18 @@
     input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); form.requestSubmit(); } });
     newBtn.addEventListener("click",()=>{ clearSavedId(); convId=null; startNew(); });
     nextBtn.addEventListener("click", goNext);
+    pubBtn.addEventListener("click", doPublish);
 
     $("devToggle").addEventListener("click",(e)=>{ const b=e.target.closest("button"); if(!b) return; document.querySelectorAll("#devToggle button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); device.classList.toggle("mobile", b.dataset.dev==="mobile"); });
     $("tabs").addEventListener("click",(e)=>{ const b=e.target.closest("button"); if(!b) return; document.querySelectorAll("#tabs button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); document.querySelectorAll(".pane[data-pane]").forEach(p=>p.classList.toggle("show", p.dataset.pane===b.dataset.tab)); });
 
+    async function loadConfig(){
+      try{ const r = await fetch("/api/config"); const d = await r.json(); canPublish = !!d.canPublish; }catch(e){ canPublish = false; }
+    }
+
     (async function init(){
       renderRail();
+      await loadConfig();
       const saved = getSavedId();
       if(saved && await resume(saved)) return;
       clearSavedId(); startNew();

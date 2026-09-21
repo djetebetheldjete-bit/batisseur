@@ -37,6 +37,8 @@ loadEnv(path.join(__dirname, ".env"));
 const API_KEY = process.env.ANTHROPIC_API_KEY;
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const PORT = process.env.PORT || 3000;
+// Jeton d'hébergement (Palier 2) : la plateforme publie les sites des apprenants à leur place.
+const NETLIFY_TOKEN = process.env.NETLIFY_TOKEN;
 
 // --- Les étapes (build:true = étape qui produit / modifie le site) ---
 const STEPS = [
@@ -284,7 +286,7 @@ function handleGetConversation(req, res) {
   const u = new URL(req.url, "http://localhost");
   const conv = loadConv(u.searchParams.get("id"));
   if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
-  sendJson(res, 200, { id: conv.id, step: conv.step || 0, hasSite: hasSite(conv.id), messages: conv.messages.filter((m) => !m.hidden) });
+  sendJson(res, 200, { id: conv.id, step: conv.step || 0, hasSite: hasSite(conv.id), publishedUrl: conv.publishedUrl || null, messages: conv.messages.filter((m) => !m.hidden) });
 }
 
 // GET /preview/<id>/<fichier> : sert le site généré
@@ -326,10 +328,78 @@ function serveStatic(req, res) {
   });
 }
 
+// --- PUBLICATION EN LIGNE (Palier 2) : via Netlify, sans compte côté apprenant ---
+const NETLIFY_API = "https://api.netlify.com/api/v1";
+async function netlify(path, opts = {}) {
+  const res = await fetch(NETLIFY_API + path, Object.assign({}, opts, {
+    headers: Object.assign({ "Authorization": "Bearer " + NETLIFY_TOKEN }, opts.headers || {})
+  }));
+  const text = await res.text();
+  let data; try { data = text ? JSON.parse(text) : {}; } catch (e) { data = { raw: text }; }
+  if (!res.ok) { const e = new Error((data && data.message) || ("Hébergeur : erreur " + res.status)); e.status = res.status; throw e; }
+  return data;
+}
+
+// Publie (ou met à jour) le site d'une conversation, renvoie l'adresse publique.
+async function publishSite(conv) {
+  if (!NETLIFY_TOKEN) { const e = new Error("La publication n'est pas encore configurée sur cette plateforme."); e.status = 501; throw e; }
+  const html = readSite(conv.id);
+  if (!html) { const e = new Error("Aucun site à publier : construisez d'abord votre site."); e.status = 400; throw e; }
+  const buf = Buffer.from(html, "utf8");
+  const sha1 = crypto.createHash("sha1").update(buf).digest("hex");
+
+  // 1) Créer le site chez l'hébergeur (une seule fois par conversation).
+  if (!conv.netlifySiteId) {
+    const site = await netlify("/sites", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    conv.netlifySiteId = site.id;
+    conv.publishedUrl = site.ssl_url || site.url;
+    saveConv(conv);
+  }
+
+  // 2) Créer un déploiement en annonçant le fichier par son empreinte (sha1).
+  const deploy = await netlify(`/sites/${conv.netlifySiteId}/deploys`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ files: { "/index.html": sha1 } })
+  });
+
+  // 3) Téléverser le fichier si l'hébergeur ne l'a pas déjà.
+  if ((deploy.required || []).includes(sha1)) {
+    await netlify(`/deploys/${deploy.id}/files/index.html`, {
+      method: "PUT", headers: { "content-type": "application/octet-stream" }, body: buf
+    });
+  }
+
+  // 4) Attendre que le déploiement soit prêt (quelques secondes).
+  let state = deploy.state, url = conv.publishedUrl;
+  for (let i = 0; i < 8 && state !== "ready"; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try { const d = await netlify(`/deploys/${deploy.id}`); state = d.state; if (d.ssl_url) url = d.ssl_url; } catch (e) { break; }
+  }
+  if (url) conv.publishedUrl = conv.publishedUrl || url;
+  saveConv(conv);
+  return { url: conv.publishedUrl, state };
+}
+
+// POST /api/publish
+async function handlePublish(req, res) {
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
+    const conv = loadConv(p.id);
+    if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
+    const out = await publishSite(conv);
+    sendJson(res, 200, out);
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Publication impossible." }); }
+}
+
+// GET /api/config : ce que le client a besoin de savoir (ex. si la publication est dispo).
+function handleConfig(req, res) { sendJson(res, 200, { canPublish: !!NETLIFY_TOKEN }); }
+
 const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/start") return handleStart(req, res);
   if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
+  if (req.method === "POST" && req.url === "/api/publish") return handlePublish(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);
   if (req.method === "GET" && req.url.startsWith("/preview/")) return servePreview(req, res);

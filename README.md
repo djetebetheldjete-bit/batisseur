@@ -106,6 +106,34 @@ le tableau de bord de l'hébergeur.
 > données). L'objectif du Palier 1 est seulement que la plateforme soit *accessible en
 > ligne*.
 
+## Le bouton « Publier en ligne » (Palier 2)
+
+Un bouton **« 🌐 Publier en ligne »** (en haut de l'aperçu) met le site de l'apprenant
+en ligne d'un clic, **sans qu'il crée de compte** : c'est la plateforme qui publie, via
+son propre compte Netlify. Après une modification, « ↻ Republier » met à jour la même
+adresse. Le bouton n'apparaît que si la plateforme est configurée (sinon, l'app propose
+la voie manuelle « Télécharger + Netlify Drop »).
+
+**Pour l'activer (une fois) :**
+
+1. Créez un compte gratuit sur **netlify.com**.
+2. Générez un **jeton d'accès** : User settings → Applications → *Personal access tokens*
+   → **New access token** → copiez-le.
+3. Ajoutez-le à la plateforme comme variable d'environnement **`NETLIFY_TOKEN`** :
+   - en local : dans le fichier `.env` (`NETLIFY_TOKEN=...`) ;
+   - sur Render : *Environment* → *Add Environment Variable* → `NETLIFY_TOKEN`.
+4. Relancez (en local) ou laissez Render redéployer. Le bouton apparaît.
+
+> Les sites des apprenants sont publiés sous **votre** compte Netlify (adresses
+> `xxxx.netlify.app`). L'offre gratuite a des limites de volume : pour beaucoup
+> d'apprenants, prévoir une formule adaptée le moment venu.
+
+## Mettre à jour la plateforme déjà en ligne
+
+Le service Render est relié à votre dépôt GitHub. Pour publier une nouvelle version :
+remplacez les fichiers dans le dossier du dépôt, faites **Commit** puis **Push** (via
+GitHub Desktop) — Render **redéploie tout seul** en une minute.
+
 ## Le test « bout en bout »
 
 1. **Diagnostic** : Claude vous accueille, comprend votre projet (dites par ex.
