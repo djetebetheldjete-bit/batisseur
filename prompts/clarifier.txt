@@ -23,7 +23,7 @@ DÉROULÉ
 3. Fais choisir la LISTE DES RUBRIQUES (libre), et confirme-la.
 4. RÉCAPITULE exactement sous cette forme :
 
-   📋 PLAN DE MON SITE
+   PLAN DE MON SITE
    • Message : …
    • Action (bouton) : …
    • Rubriques : … (la liste choisie, dans l'ordre)

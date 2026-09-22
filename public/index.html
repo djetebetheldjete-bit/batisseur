@@ -130,6 +130,7 @@
   .subrow{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--surface);}
   .submeta{font-family:var(--f-mono),monospace;font-size:10px;letter-spacing:.03em;color:var(--ink-faint);margin-bottom:5px;}
   .subline{font-size:.86rem;color:var(--ink);margin:2px 0;line-height:1.4;}
+  .substatus{flex:0 0 auto;padding:5px 8px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface-2);color:var(--ink);font-size:.78rem;cursor:pointer;height:fit-content;}
   .subdel{flex:0 0 auto;font-family:var(--f-mono),monospace;font-size:10.5px;border:1px solid var(--line);background:var(--surface-2);color:var(--bad);border-radius:7px;padding:5px 9px;cursor:pointer;height:fit-content;}
   .subdel:hover{border-color:var(--bad);}
   .ch-actions{display:flex;gap:8px;align-items:center;}
@@ -193,16 +194,16 @@
       <span class="grow"></span>
       <button class="topbtn solid" id="loginOpenBtn" type="button" style="display:none;">Se connecter</button>
       <span class="acctname" id="acctName" style="display:none;"><span class="av" id="acctAv">?</span><span id="acctLabel"></span></span>
-      <button class="topbtn" id="adminBtn" type="button" style="display:none;">◱ Espace formateur</button>
-      <button class="topbtn" id="espaceBtn" type="button" style="display:none;">◱ Mon espace</button>
+      <button class="topbtn" id="adminBtn" type="button" style="display:none;">Espace formateur</button>
+      <button class="topbtn" id="espaceBtn" type="button" style="display:none;">Mon espace</button>
       <button class="topbtn" id="logoutBtn" type="button" style="display:none;">Se déconnecter</button>
-      <button class="newbtn" id="newBtn" type="button">↻ Recommencer</button>
+      <button class="newbtn" id="newBtn" type="button">Recommencer</button>
     </div>
 
     <div class="tabs" id="tabs">
-      <button data-tab="rail" type="button">◱ Parcours</button>
-      <button data-tab="chat" class="active" type="button">💬 Discussion</button>
-      <button data-tab="preview" type="button">🖥 Aperçu</button>
+      <button data-tab="rail" type="button">Parcours</button>
+      <button data-tab="chat" class="active" type="button">Discussion</button>
+      <button data-tab="preview" type="button">Aperçu</button>
     </div>
 
     <div class="panes">
@@ -222,11 +223,11 @@
           <div class="st" id="stepLabel">Comprendre le projet<small id="stepSub">Orientation</small></div>
           <div class="ch-actions">
             <span class="typebadge" id="typeBadge" style="display:none;"></span>
-            <button class="certbtn" id="certBtn" type="button" style="display:none;">🎓 Mon certificat</button>
+            <button class="certbtn" id="certBtn" type="button" style="display:none;">Mon attestation</button>
             <button class="nextbtn" id="nextBtn" type="button" disabled>Étape suivante →</button>
           </div>
         </div>
-        <div class="resumed" id="resumed" style="display:none;">↩ Reprise de votre parcours en cours.</div>
+        <div class="resumed" id="resumed" style="display:none;">Reprise de votre parcours en cours.</div>
         <div id="thread" aria-live="polite"></div>
         <form id="form">
           <textarea id="input" placeholder="Votre réponse… (ex. « mets le titre en bleu »)" autofocus disabled></textarea>
@@ -239,20 +240,20 @@
         <div class="pv-head">
           <div class="tt">Aperçu <span class="live" id="liveTag" style="display:none;">en direct</span></div>
           <div class="pv-tools">
-            <button class="pubbtn" id="pubBtn" type="button" style="display:none;" title="Mettre votre site en ligne, avec une adresse à partager">🌐 Publier en ligne</button>
-            <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">🌐 Voir en ligne</a>
-            <button class="dlbtn" id="dataBtn" type="button" style="display:none;" title="Voir les commandes / rendez-vous reçus">📋 Données</button>
-            <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">⤓ Télécharger mon site</a>
+            <button class="pubbtn" id="pubBtn" type="button" style="display:none;" title="Mettre votre site en ligne, avec une adresse à partager">Publier en ligne</button>
+            <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">Voir en ligne</a>
+            <button class="dlbtn" id="dataBtn" type="button" style="display:none;" title="Voir les commandes / rendez-vous reçus">Données</button>
+            <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">Télécharger le site</a>
             <div class="seg" id="devToggle">
-              <button data-dev="desktop" class="active" type="button">🖥</button>
-              <button data-dev="mobile" type="button">📱</button>
+              <button data-dev="desktop" class="active" type="button">Ordinateur</button>
+              <button data-dev="mobile" type="button">Mobile</button>
             </div>
           </div>
         </div>
         <div class="pv-stage">
           <div class="device" id="device">
             <div class="placeholder" id="placeholder">
-              <div class="em">🪧</div>
+              <div class="em"></div>
               <p>Votre site apparaîtra ici dès l'étape « Créer la base ». Répondez à la discussion : dès que l'assistant a l'essentiel, il le construit — puis vous modifiez tout ce que vous voulez au fil du chat.</p>
             </div>
             <iframe id="preview" title="Aperçu du site" sandbox="allow-same-origin allow-scripts allow-popups allow-top-navigation-by-user-activation" style="display:none;"></iframe>
@@ -264,7 +265,7 @@
 
   <div class="modal-bg" id="certModal">
     <div class="modal">
-      <h3>🎓 Votre certificat</h3>
+      <h3>Attestation de réussite</h3>
       <p>Indiquez le nom à faire figurer sur le certificat de réussite.</p>
       <input id="certName" type="text" placeholder="Votre nom et prénom" maxlength="80" autocomplete="name">
       <div class="row">
@@ -278,7 +279,7 @@
   <!-- Données reçues (commandes / rendez-vous / messages) -->
   <div class="modal-bg" id="dataModal">
     <div class="modal wide">
-      <h3>📋 Données reçues</h3>
+      <h3>Données reçues</h3>
       <p>Les commandes, rendez-vous et messages envoyés depuis votre site publié apparaissent ici.</p>
       <div id="dataBody"><div class="aempty">Chargement…</div></div>
       <div class="row"><button id="dataClose" type="button">Fermer</button></div>
@@ -288,7 +289,7 @@
   <!-- Espace formateur (gestion des apprenants) -->
   <div class="modal-bg" id="adminModal">
     <div class="modal wide">
-      <h3>◱ Espace formateur</h3>
+      <h3>Espace formateur</h3>
       <p>Inscrivez vos apprenants et attribuez leur session. « Terminé » coupe l'accès à la construction (le projet reste consultable) ; « Actif » le (ré)autorise.</p>
       <div id="adminBody"><div class="aempty">Chargement…</div></div>
       <div class="row"><button id="adminClose" type="button">Fermer</button></div>
@@ -299,7 +300,7 @@
   <div class="modal-bg" id="typeModal">
     <div class="modal wide">
       <h3>Que voulez-vous créer ?</h3>
-      <p>Cochez un ou plusieurs volets. L'assistant construira un seul site qui les réunit. Vous pourrez changer en cliquant « ↻ Recommencer ».</p>
+      <p>Cochez un ou plusieurs volets. L'assistant construira un seul site qui les réunit. Vous pourrez changer en cliquant « Recommencer ».</p>
       <div class="choices" id="typeChoices"></div>
       <div class="row">
         <button id="typeCancel" type="button">Annuler</button>
@@ -331,7 +332,7 @@
   <!-- Mon espace : la liste des projets du compte (Palier 4) -->
   <div class="modal-bg" id="espaceModal">
     <div class="modal wide">
-      <h3>◱ Mon espace</h3>
+      <h3>Mon espace</h3>
       <p>Vos projets, enregistrés sur votre compte. Cliquez pour en ouvrir un, ou démarrez-en un nouveau.</p>
       <div class="projlist" id="projList"></div>
       <div class="row">
@@ -366,7 +367,7 @@
     let chooserSel = new Set(["presentation"]);
 
     function renderTypeBadge(){
-      typeBadge.textContent = modulesEmojiUI(currentModules) + " " + modulesLabelUI(currentModules);
+      typeBadge.textContent = modulesLabelUI(currentModules);
       typeBadge.style.display = convId ? "inline-flex" : "none";
     }
     function paintChoices(){
@@ -379,7 +380,7 @@
         const t = MODULES_UI[key];
         const b = document.createElement("button");
         b.className = "choice"; b.type = "button"; b.dataset.key = key;
-        b.innerHTML = '<span class="chk"></span><span class="pi">'+t.emoji+'</span><span class="pb"><b></b><span></span></span>';
+        b.innerHTML = '<span class="chk"></span><span class="pi">'+(t.short||"?").charAt(0).toUpperCase()+'</span><span class="pb"><b></b><span></span></span>';
         b.querySelector("b").textContent = t.short;
         b.querySelector(".pb > span").textContent = t.tagline;
         b.addEventListener("click", ()=>{
@@ -402,10 +403,10 @@
     let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null, currentModules = ["presentation"];
 
     const MODULES_UI = {
-      presentation: { short: "Présentation", emoji: "🪧",  tagline: "Présenter une activité, un métier, une association." },
-      boutique:     { short: "Boutique",     emoji: "🛍️", tagline: "Montrer des produits avec leurs prix et donner envie de commander." },
-      rdv:          { short: "Rendez-vous",  emoji: "📅", tagline: "Présenter vos prestations et permettre de demander un créneau." },
-      membre:       { short: "Espace membre", emoji: "🔐", tagline: "Vos visiteurs créent un compte et accèdent à un espace privé." }
+      presentation: { short: "Présentation", emoji: "",  tagline: "Présenter une activité, un métier, une association." },
+      boutique:     { short: "Boutique",     emoji: "", tagline: "Montrer des produits avec leurs prix et donner envie de commander." },
+      rdv:          { short: "Rendez-vous",  emoji: "", tagline: "Présenter vos prestations et permettre de demander un créneau." },
+      membre:       { short: "Espace membre", emoji: "", tagline: "Vos visiteurs créent un compte et accèdent à un espace privé." }
     };
     const MODULE_ORDER = ["presentation", "boutique", "rdv", "membre"];
     function normMods(list){ const set = Array.isArray(list) ? list : []; const c = MODULE_ORDER.filter(k => set.includes(k)); return c.length ? c : ["presentation"]; }
@@ -445,14 +446,14 @@
       dlBtn.href = "/api/download?id=" + encodeURIComponent(convId);
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
-      if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "↻ Republier" : "🌐 Publier en ligne"; }
+      if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "Republier" : "Publier en ligne"; }
       dataBtn.style.display = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0 || currentModules.indexOf("membre")>=0) ? "inline-block" : "none";
     }
 
     function showPublished(url){
       publishedUrl = url;
       pubLink.href = url; pubLink.style.display = "inline-block";
-      if(canPublish){ pubBtn.style.display = "inline-block"; pubBtn.textContent = "↻ Republier"; }
+      if(canPublish){ pubBtn.style.display = "inline-block"; pubBtn.textContent = "Republier"; }
     }
 
     async function doPublish(){
@@ -462,10 +463,10 @@
       try{
         const r = await fetch("/api/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ handleAccess(data); bubble("⚠ "+(data.error||"Publication impossible."),"err"); pubBtn.textContent=prev; pubBtn.disabled=false; return; }
+        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Publication impossible."),"err"); pubBtn.textContent=prev; pubBtn.disabled=false; return; }
         showPublished(data.url);
-        bubble("✅ Votre site est en ligne : " + data.url + "\n(Après une modification, cliquez « ↻ Republier » pour mettre à jour.)","ai");
-      }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur.","err"); pubBtn.textContent=prev; }
+        bubble("Votre site est en ligne : " + data.url + "\n(Après une modification, cliquez « Republier » pour mettre à jour.)","ai");
+      }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); pubBtn.textContent=prev; }
       finally{ pubBtn.disabled = false; }
     }
 
@@ -486,11 +487,11 @@
       try{
         const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({modules:currentModules})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ handleAccess(data); bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); return; }
+        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); return; }
         convId=data.id; step=data.step||0; if(data.modules) currentModules=normMods(data.modules); setSavedId(convId); renderRail(); renderTypeBadge();
         bubble(data.reply||"","ai");
         if(data.siteUpdated) reloadPreview();
-      }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur. Est-il bien lancé ?","err"); }
+      }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur. Est-il bien lancé ?","err"); }
       finally{ setBusy(false); }
     }
 
@@ -518,9 +519,9 @@
       try{
         const r = await fetch("/api/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId,message})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ handleAccess(data); bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); }
+        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); }
         else { bubble(data.reply||"","ai"); if(data.siteUpdated) reloadPreview(); }
-      }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur.","err"); }
+      }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); }
       finally{ setBusy(false); }
     }
 
@@ -532,11 +533,11 @@
       try{
         const r = await fetch("/api/next",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ handleAccess(data); bubble("⚠ "+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
+        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
         step = data.step; renderRail();
         if(data.reply) bubble(data.reply,"ai");
         if(data.siteUpdated) reloadPreview();
-      }catch(e){ typing.remove(); bubble("⚠ Impossible de joindre le serveur.","err"); nextBtn.disabled=(step>=LAST); }
+      }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); nextBtn.disabled=(step>=LAST); }
       finally{ setBusy(false); }
     }
 
@@ -593,7 +594,7 @@
       let el = document.getElementById("accessBanner");
       if(me && me.status === "finished" && !me.isAdmin){
         if(!el){ el = document.createElement("div"); el.id = "accessBanner"; el.className = "accessbanner finished"; resumedNote.parentNode.insertBefore(el, resumedNote); }
-        el.textContent = "🎓 Formation terminée — vous pouvez consulter et télécharger vos projets, mais plus les modifier.";
+        el.textContent = "Formation terminée — vous pouvez consulter et télécharger vos projets, mais plus les modifier.";
         el.style.display = "block";
       } else if(el){ el.style.display = "none"; }
     }
@@ -640,9 +641,9 @@
       dlBtn.style.display="none"; dataBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none";
       buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
       let msg;
-      if(kind==="none") msg="👋 Bienvenue sur Bâtisseur. Connectez-vous ou créez un compte pour commencer votre formation.";
-      else if(kind==="pending") msg="⏳ Votre inscription est bien reçue. Elle est en attente de validation par le formateur — vous aurez accès au parcours dès qu'elle sera validée.";
-      else if(kind==="finished") msg="🎓 Votre formation est terminée. Ouvrez « Mon espace » pour revoir et télécharger vos projets. Pour reprendre la construction, demandez à votre formateur de vous réautoriser.";
+      if(kind==="none") msg="Bienvenue sur Bâtisseur. Connectez-vous ou créez un compte pour commencer votre formation.";
+      else if(kind==="pending") msg="Votre inscription est bien reçue. Elle est en attente de validation par le formateur — vous aurez accès au parcours dès qu'elle sera validée.";
+      else if(kind==="finished") msg="Votre formation est terminée. Ouvrez « Mon espace » pour revoir et télécharger vos projets. Pour reprendre la construction, demandez à votre formateur de vous réautoriser.";
       else msg="Accès non disponible pour le moment.";
       bubble(msg,"ai");
     }
@@ -662,8 +663,8 @@
     }
     function notifyBlocked(){
       if(!me){ openAuth("login"); return; }
-      if(me.status==="pending") bubble("⏳ Votre inscription est en attente de validation par le formateur.","ai");
-      else if(me.status==="finished") bubble("🎓 Formation terminée : demandez à votre formateur de vous réautoriser pour construire à nouveau.","ai");
+      if(me.status==="pending") bubble("Votre inscription est en attente de validation par le formateur.","ai");
+      else if(me.status==="finished") bubble("Formation terminée : demandez à votre formateur de vous réautoriser pour construire à nouveau.","ai");
     }
     function handleAccess(data){
       if(data && data.accessStatus && me){ me.status = data.accessStatus; renderAccount(); refreshLock(); }
@@ -741,7 +742,7 @@
         const stepName = (STEP_LABELS[p.step] || STEP_LABELS[0]).label;
         const mods = normMods(p.modules);
         const tag = p.publishedUrl ? '<span class="tag">en ligne</span>' : (p.hasSite ? '<span class="tag" style="color:var(--warm);border-color:color-mix(in srgb,var(--warm) 45%,var(--line))">site prêt</span>' : '');
-        row.innerHTML = '<span class="pi">'+modulesEmojiUI(mods)+'</span><span class="pb"><b></b><span>'+modulesLabelUI(mods)+' · Étape : '+stepName+'</span></span>'+tag;
+        row.innerHTML = '<span class="pi">'+escHtml(modulesLabelUI(mods).charAt(0).toUpperCase())+'</span><span class="pb"><b></b><span>'+escHtml(modulesLabelUI(mods))+' · Étape : '+stepName+'</span></span>'+tag;
         row.querySelector("b").textContent = p.title;
         row.addEventListener("click", ()=> openProject(p.id));
         projList.appendChild(row);
@@ -751,7 +752,7 @@
       closeEspace();
       setSavedId(id); convId = id;
       const ok = await resume(id);
-      if(!ok){ bubble("⚠ Impossible d'ouvrir ce projet.","err"); }
+      if(!ok){ bubble("Impossible d'ouvrir ce projet.","err"); }
     }
 
     // ===== Espace formateur (admin) =====
@@ -882,7 +883,7 @@
     }
     function renderPayload(data){
       const box=document.createElement("div"); data=data||{};
-      function membreLine(){ if(data._membre){ const m=document.createElement("div"); m.className="subline"; m.style.color="var(--accent-deep)"; m.innerHTML="👤 <b>Membre :</b> "+escHtml(data._membre); box.appendChild(m); } }
+      function membreLine(){ if(data._membre){ const m=document.createElement("div"); m.className="subline"; m.style.color="var(--accent-deep)"; m.innerHTML="<b>Membre :</b> "+escHtml(data._membre); box.appendChild(m); } }
       try{
         if(Array.isArray(data.articles)){
           data.articles.forEach(function(a){ const l=document.createElement("div"); l.className="subline"; l.textContent="• "+a.produit+" × "+a.quantite+(a.prix!=null?"  ("+a.prix+")":""); box.appendChild(l); });
@@ -924,9 +925,12 @@
           const meta=document.createElement("div"); meta.className="submeta";
           try{ meta.textContent=new Date(s.createdAt).toLocaleString("fr-FR"); }catch(e){ meta.textContent=s.createdAt||""; }
           info.appendChild(meta); info.appendChild(renderPayload(s.data));
+          const st=document.createElement("select"); st.className="substatus";
+          [["nouveau","Nouveau"],["en_cours","En cours"],["pret","Prêt"],["termine","Terminé"]].forEach(function(o){ const op=document.createElement("option"); op.value=o[0]; op.textContent=o[1]; if((s.status||"nouveau")===o[0]) op.selected=true; st.appendChild(op); });
+          st.addEventListener("change", function(){ setSubStatus(s.id, st.value); });
           const del=document.createElement("button"); del.className="subdel"; del.type="button"; del.textContent="Supprimer";
           del.addEventListener("click", function(){ deleteSub(s.id); });
-          row.appendChild(info); row.appendChild(del); wrap.appendChild(row);
+          row.appendChild(info); row.appendChild(st); row.appendChild(del); wrap.appendChild(row);
         });
         dataBody.appendChild(wrap);
       });
@@ -934,6 +938,9 @@
     async function deleteSub(id){
       try{ await fetch("/api/submissions/delete",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,projectId:convId})}); }catch(e){}
       await loadData();
+    }
+    async function setSubStatus(id, status){
+      try{ await fetch("/api/submissions/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,projectId:convId,status:status})}); }catch(e){}
     }
 
     loginOpenBtn.addEventListener("click", ()=> openAuth("login"));

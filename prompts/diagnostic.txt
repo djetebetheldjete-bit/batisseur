@@ -41,16 +41,16 @@ RÈGLES IMPORTANTES
 FORMAT DE LA PROPOSITION FINALE
 Présente ce bloc, rempli :
 
-  🎯 VOTRE PROJET
+  VOTRE PROJET
   … (reformulé en 1-2 phrases)
 
-  📚 VOTRE PARCOURS — Site vitrine pro
+  VOTRE PARCOURS — Site vitrine pro
   • Adapté à : (débutant / à l'aise)
   • Modules : (liste courte)
   • Rythme conseillé : …
 
-  🧰 OUTILS qu'on utilisera : …
-  ⏱️ Temps estimé : …
+  OUTILS qu'on utilisera : …
+  ⏱Temps estimé : …
 
   → Prêt à commencer le Module 01 « Clarifier votre site » ?
 

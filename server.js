@@ -96,6 +96,7 @@ FORMAT DE SORTIE — LE PLUS IMPORTANT :
 - UN SEUL bloc de code par réponse.
 
 CONTRAINTES TECHNIQUES :
+- Style sobre et professionnel : n'ajoute pas d'émojis dans le site, sauf demande explicite de la personne.
 - 100 % HTML + CSS. Tu n'écris TOI-MÊME AUCUN JavaScript. (Pour une boutique ou des rendez-vous, la plateforme ajoute automatiquement un petit script d'interactivité : tu fournis seulement le HTML avec les attributs « data-bat-… » indiqués.) AUCUNE image ni police externe, AUCUN fichier externe.
 - Responsive, impeccable sur mobile. Dans le <style> : html{scroll-behavior:smooth;}.
 
@@ -175,7 +176,7 @@ const INTERACTIVE_KIT = `<script>
         var lock=sec.nextElementSibling && sec.nextElementSibling.hasAttribute && sec.nextElementSibling.hasAttribute("data-bat-lock") ? sec.nextElementSibling : null;
         if(member){ if(sec.getAttribute("data-bat-disp")!=null){ sec.style.display=sec.getAttribute("data-bat-disp")||""; } else { sec.style.display=""; } if(lock) lock.parentNode.removeChild(lock); }
         else { if(sec.getAttribute("data-bat-disp")==null){ sec.setAttribute("data-bat-disp", sec.style.display||""); } sec.style.display="none";
-          if(!lock){ var n=document.createElement("div"); n.setAttribute("data-bat-lock",""); n.style.cssText="text-align:center;color:#6B7A90;padding:22px;border:1px dashed #ccc;border-radius:10px;margin:10px 0"; n.textContent="🔒 Contenu réservé aux membres — connectez-vous pour y accéder."; sec.parentNode.insertBefore(n, sec.nextSibling); } }
+          if(!lock){ var n=document.createElement("div"); n.setAttribute("data-bat-lock",""); n.style.cssText="text-align:center;color:#6B7A90;padding:22px;border:1px dashed #ccc;border-radius:10px;margin:10px 0"; n.textContent="Contenu réservé aux membres — connectez-vous pour y accéder."; sec.parentNode.insertBefore(n, sec.nextSibling); } }
       });
     }
     function fval(box,name){ var el=box.querySelector('[data-bat-field="'+name+'"]'); return el?el.value.trim():""; }
@@ -291,13 +292,13 @@ function injectKit(html, mods, conv, baseUrl) {
 // JavaScript. Un projet peut RÉUNIR plusieurs volets dans une seule page cohérente.
 const MODULES = {
   presentation: {
-    label: "Présentation", short: "Présentation", emoji: "🪧",
+    label: "Présentation", short: "Présentation", emoji: "",
     tagline: "Présenter une activité, un métier, une association.",
     context: "un volet PRÉSENTATION (site vitrine) : présenter l'activité, inspirer confiance et inciter au contact",
     build: ""
   },
   boutique: {
-    label: "Boutique en ligne", short: "Boutique", emoji: "🛍️",
+    label: "Boutique en ligne", short: "Boutique", emoji: "",
     tagline: "Montrer des produits avec leurs prix et donner envie de commander.",
     context: "un volet BOUTIQUE EN LIGNE (vitrine) : présenter des produits à vendre",
     build: `
@@ -313,7 +314,7 @@ const MODULES = {
 - Tu n'écris AUCUN JavaScript : seulement ce HTML déclaratif.`
   },
   rdv: {
-    label: "Prise de rendez-vous", short: "Rendez-vous", emoji: "📅",
+    label: "Prise de rendez-vous", short: "Rendez-vous", emoji: "",
     tagline: "Présenter vos prestations et permettre de demander un créneau.",
     context: "un volet PRISE DE RENDEZ-VOUS (vitrine) : présenter des prestations et faciliter la demande de rendez-vous",
     build: `
@@ -338,7 +339,7 @@ const MODULES = {
 - N'invente pas d'agenda en temps réel. Tu n'écris AUCUN JavaScript : seulement ce HTML déclaratif.`
   },
   membre: {
-    label: "Espace membre", short: "Espace membre", emoji: "🔐",
+    label: "Espace membre", short: "Espace membre", emoji: "",
     tagline: "Permettre aux visiteurs de créer un compte et d'accéder à un espace privé.",
     context: "un volet ESPACE MEMBRE : les visiteurs créent un compte, se connectent, et accèdent à des sections réservées",
     build: `
@@ -383,6 +384,20 @@ function modulesLabel(mods) {
   if (mods.length === 1 && mods[0] === "presentation") return "Site vitrine";
   return mods.map((k) => MODULES[k].short).join(" + ");
 }
+
+// --- Ce que l'assistant peut PROPOSER (fonctions « application ») ---
+// Injecté dans les étapes de discussion pour que l'assistant suggère de lui-même,
+// en langage simple, les possibilités « appli » quand le projet s'y prête.
+const PLATFORM_CAPABILITIES = `
+
+=== CE QUE TU PEUX PROPOSER À LA PERSONNE (fonctions « application ») ===
+Bâtisseur ne fait pas que des sites vitrines : c'est aussi un créateur d'applications simples. Quand le projet de la personne s'y prête (vendre, prendre des commandes, proposer un service, gérer une communauté, un abonnement, un club…), PROPOSE-LUI spontanément, en langage clair et sans jargon, les possibilités adaptées :
+- Une BOUTIQUE avec panier (le total se calcule tout seul) : les commandes sont ENREGISTRÉES et la personne les retrouve dans son tableau de bord, avec un SUIVI (nouveau, en cours, prêt, terminé).
+- Une PRISE DE RENDEZ-VOUS : les demandes sont enregistrées et suivies de la même façon.
+- Un ESPACE MEMBRE : les visiteurs créent un compte, se connectent, et accèdent à des sections réservées.
+- Les commandes, rendez-vous et messages arrivent automatiquement dans un tableau de bord « Données ».
+- Bientôt : rendre le site INSTALLABLE comme une appli sur le téléphone, l'UPLOAD de fichiers, et le PAIEMENT en ligne.
+Explique ces possibilités comme des idées concrètes (« on pourrait ajouter… »), sans forcer. Si une fonction demande un volet qui n'est pas activé (Boutique, Rendez-vous, Espace membre), invite gentiment la personne à cliquer « Recommencer » et à cocher le ou les volets voulus (on peut en combiner plusieurs).`;
 
 const DATA_DIR = path.join(__dirname, "data");
 const SITES_DIR = path.join(DATA_DIR, "sites");
@@ -708,6 +723,10 @@ async function produceCurrent(conv, baseUrl) {
 
 === CONTEXTE DU PROJET ===
 ${modulesContext(mods)}`;
+  // Étapes de discussion : l'assistant propose de lui-même les fonctions « appli ».
+  if (!isBuild) system += PLATFORM_CAPABILITIES;
+  // Ton professionnel imposé sur toutes les étapes.
+  system += "\n\n=== TON ===\nAdopte un ton professionnel, clair et sobre. N'emploie pas d'émojis dans tes messages.";
   if (isBuild) {
     system += SINGLE_INSTRUCTION;
     const focus = modulesBuild(mods); if (focus) system += focus;
@@ -1218,7 +1237,7 @@ async function handleCertificate(req, res) {
   @media print{ body{ background:#fff; padding:0; } .sheet{ box-shadow:none; width:100%; height:100vh; } .print{ display:none; } }
 </style></head>
 <body>
-  <button class="print" onclick="window.print()">🖨 Imprimer / Enregistrer en PDF</button>
+  <button class="print" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
   <div class="sheet"><div class="frame"></div><div class="inner">
     <div class="brand"><span class="logo">B</span><b>Bâtisseur</b></div>
     <div class="kicker">Certificat de réussite</div>
@@ -1302,7 +1321,7 @@ function handleVerifyPage(req, res) {
         const d = await r.json();
         if(d.valid){
           res.className="result ok";
-          res.innerHTML = '<h2>✅ Certificat authentique</h2>'
+          res.innerHTML = '<h2>Certificat authentique</h2>'
             + '<div class="who">' + esc(d.name) + '</div>'
             + '<div class="row">a complété le parcours de création de site web Bâtisseur.</div>'
             + '<div class="row">Délivré le <b>' + esc(d.date) + '</b> · N° <b>' + esc(d.number) + '</b></div>'
@@ -1310,7 +1329,7 @@ function handleVerifyPage(req, res) {
             + (d.url ? '<div class="row">Projet en ligne : <a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.url) + '</a></div>' : '');
         } else {
           res.className="result no";
-          res.innerHTML = '<h2>❌ Aucun certificat trouvé</h2><div class="row">Ce numéro ne correspond à aucun certificat délivré. Vérifiez la saisie.</div>';
+          res.innerHTML = '<h2>Aucun certificat trouvé</h2><div class="row">Ce numéro ne correspond à aucun certificat délivré. Vérifiez la saisie.</div>';
         }
       }catch(e){ res.className="result no"; res.innerHTML='<div class="row">Vérification impossible pour le moment.</div>'; }
     }
@@ -1331,17 +1350,22 @@ function handleVerifyPage(req, res) {
 const SUBS_FILE = path.join(DATA_DIR, "submissions.json");
 function loadSubs() { try { return JSON.parse(fs.readFileSync(SUBS_FILE, "utf8")); } catch (e) { return []; } }
 function saveSubs(a) { try { fs.writeFileSync(SUBS_FILE, JSON.stringify(a, null, 2)); } catch (e) { console.error("saveSubs:", e); } }
+const SUB_STATUSES = ["nouveau", "en_cours", "pret", "termine"];
 async function addSubmission(rec) {
-  if (USE_DB) { try { await sb(`/submissions`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([{ id: rec.id, project_id: rec.projectId, collection: rec.collection, data: rec.data, created_at: rec.createdAt }]) }); } catch (e) { console.error("addSubmission:", e.message); } return; }
+  if (USE_DB) { try { await sb(`/submissions`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([{ id: rec.id, project_id: rec.projectId, collection: rec.collection, data: rec.data, status: rec.status || "nouveau", created_at: rec.createdAt }]) }); } catch (e) { console.error("addSubmission:", e.message); } return; }
   const a = loadSubs(); a.push(rec); saveSubs(a);
 }
 async function listSubmissions(projectId) {
-  if (USE_DB) { try { const r = await sb(`/submissions?project_id=eq.${encodeURIComponent(projectId)}&select=*&order=created_at.desc`); return (r || []).map((x) => ({ id: x.id, projectId: x.project_id, collection: x.collection, data: x.data, createdAt: x.created_at })); } catch (e) { return []; } }
-  return loadSubs().filter((s) => s.projectId === projectId).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  if (USE_DB) { try { const r = await sb(`/submissions?project_id=eq.${encodeURIComponent(projectId)}&select=*&order=created_at.desc`); return (r || []).map((x) => ({ id: x.id, projectId: x.project_id, collection: x.collection, data: x.data, status: x.status || "nouveau", createdAt: x.created_at })); } catch (e) { return []; } }
+  return loadSubs().filter((s) => s.projectId === projectId).map((s) => Object.assign({ status: "nouveau" }, s)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 async function deleteSubmission(id, projectId) {
   if (USE_DB) { try { await sb(`/submissions?id=eq.${encodeURIComponent(id)}&project_id=eq.${encodeURIComponent(projectId)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); } catch (e) {} return; }
   saveSubs(loadSubs().filter((s) => !(s.id === id && s.projectId === projectId)));
+}
+async function updateSubmissionStatus(id, projectId, status) {
+  if (USE_DB) { try { await sb(`/submissions?id=eq.${encodeURIComponent(id)}&project_id=eq.${encodeURIComponent(projectId)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status }) }); } catch (e) {} return; }
+  const a = loadSubs(); a.forEach((s) => { if (s.id === id && s.projectId === projectId) s.status = status; }); saveSubs(a);
 }
 
 // Limiteur de débit en mémoire (anti-abus) + en-têtes CORS pour l'écriture publique.
@@ -1376,7 +1400,7 @@ async function handleSubmit(req, res) {
     });
     // Si l'envoi vient d'un membre connecté, on le rattache (visible par le propriétaire).
     if (p.token) { try { const m = await appSessionUser(p.token, app); if (m) clean._membre = m.email; } catch (e) {} }
-    await addSubmission({ id: crypto.randomUUID(), projectId: app, collection, data: clean, createdAt: new Date().toISOString() });
+    await addSubmission({ id: crypto.randomUUID(), projectId: app, collection, data: clean, status: "nouveau", createdAt: new Date().toISOString() });
     sendJsonCors(res, 200, { ok: true });
   } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
 }
@@ -1400,6 +1424,18 @@ async function handleSubmissionDelete(req, res) {
   const cu = await currentUser(req);
   if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
   await deleteSubmission(p.id, p.projectId);
+  sendJson(res, 200, { ok: true });
+}
+
+// POST /api/submissions/status  { id, projectId, status }
+async function handleSubmissionStatus(req, res) {
+  const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
+  if (!SUB_STATUSES.includes(p.status)) return sendJson(res, 400, { error: "Statut invalide." });
+  const conv = await loadConv(p.projectId);
+  if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
+  await updateSubmissionStatus(p.id, p.projectId, p.status);
   sendJson(res, 200, { ok: true });
 }
 
@@ -1536,6 +1572,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/app-users")) return handleAppUsersList(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/submissions")) return handleSubmissions(req, res);
   if (req.method === "POST" && req.url === "/api/submissions/delete") return handleSubmissionDelete(req, res);
+  if (req.method === "POST" && req.url === "/api/submissions/status") return handleSubmissionStatus(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/certificate")) return handleCertificate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/verify")) return handleVerifyApi(req, res);

@@ -392,9 +392,24 @@ un bouton **« 📋 Données »** (en haut de l'aperçu) — liste, détail, sup
 >   project_id text,
 >   collection text,
 >   data jsonb,
+>   status text default 'nouveau',
 >   created_at timestamptz default now()
 > );
 > ```
+>
+> Si la table `submissions` existait déjà (avant le suivi de statut), ajoutez la colonne :
+>
+> ```sql
+> alter table submissions add column if not exists status text default 'nouveau';
+> ```
+
+**Suivi de statut.** Chaque commande / rendez-vous / message a un statut que le propriétaire fait
+évoluer d'un menu, dans « 📋 Données » : **Nouveau → En cours → Prêt → Terminé**.
+
+**L'assistant propose les fonctions « appli ».** Pendant la discussion, quand le projet s'y prête
+(vendre, prendre des commandes, un service, une communauté), l'assistant suggère de lui-même, en
+langage simple, les possibilités adaptées (boutique + commandes suivies, rendez-vous, espace
+membre…) et invite à cocher le bon volet.
 
 ## Applications web — espace membre (Niveau 2, Étape B)
 
