@@ -139,11 +139,70 @@ const INTERACTIVE_KIT = `<script>
       if(c.email){window.location.href="mailto:"+c.email+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(body);return true;}
       return false;
     }
+    var APP=(window.__BAT&&window.__BAT.app)||"";
+    function apiBase(){ return (window.__BAT&&window.__BAT.base)||""; }
+    function api(pth){ return apiBase()+pth; }
+    function tok(){ try{ return localStorage.getItem("battok_"+APP); }catch(e){ return null; } }
+    function setTok(t){ try{ if(t) localStorage.setItem("battok_"+APP,t); else localStorage.removeItem("battok_"+APP); }catch(e){} }
     // Enregistrement sur la plateforme (le propriétaire retrouve tout dans son espace).
     function postApp(collection, data){
-      try{ var c=window.__BAT; if(!c||!c.app||!c.api) return;
-        fetch(c.api,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({app:c.app,collection:collection,data:data})}).catch(function(){});
+      try{ if(!APP||!apiBase()) return;
+        fetch(api("/submit"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({app:APP,collection:collection,data:data,token:tok()||undefined})}).catch(function(){});
       }catch(e){}
+    }
+    // ---- Espace membre (comptes visiteurs) ----
+    var member=null, authMode="login";
+    var INP='width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:8px;margin:4px 0;font-size:14px;box-sizing:border-box;color:#111;background:#fff';
+    var BTN1='margin-top:6px;width:100%;padding:10px;border:none;border-radius:8px;background:#147C8C;color:#fff;font-size:15px;cursor:pointer';
+    var BTN2='padding:7px 12px;border:1px solid #ccc;border-radius:8px;background:#f4f4f4;color:#111;cursor:pointer';
+    function inp(field,ph,type){ return '<input data-bat-field="'+field+'" type="'+type+'" placeholder="'+ph+'" style="'+INP+'">'; }
+    function renderAuth(){
+      var boxes=qa("[data-bat-auth]"); if(!boxes.length) return; var html;
+      if(member){
+        html='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span>Connecté : <b>'+esc(member.name)+'</b></span><button type="button" data-bat-do="logout" style="'+BTN2+'">Se déconnecter</button></div>';
+      } else {
+        var isReg=authMode==="register";
+        html='<div style="max-width:340px"><div style="font-weight:700;margin-bottom:6px">'+(isReg?"Créer un compte":"Se connecter")+'</div>'
+          +(isReg?inp("name","Votre nom","text"):"")+inp("email","Adresse e-mail","email")+inp("pass","Mot de passe","password")
+          +'<div data-bat-autherr style="color:#c0392b;font-size:13px;min-height:16px;margin:4px 0"></div>'
+          +'<button type="button" data-bat-do="'+(isReg?"register":"login")+'" style="'+BTN1+'">'+(isReg?"Créer mon compte":"Se connecter")+'</button>'
+          +'<div style="font-size:13px;margin-top:8px">'+(isReg?"Déjà un compte ? ":"Pas encore de compte ? ")+'<a href="#" data-bat-do="switch" style="color:#147C8C;font-weight:600">'+(isReg?"Se connecter":"Créer un compte")+'</a></div></div>';
+      }
+      boxes.forEach(function(b){ b.innerHTML=html; });
+    }
+    function toggleMembers(){
+      qa("[data-bat-members]").forEach(function(sec){
+        var lock=sec.nextElementSibling && sec.nextElementSibling.hasAttribute && sec.nextElementSibling.hasAttribute("data-bat-lock") ? sec.nextElementSibling : null;
+        if(member){ if(sec.getAttribute("data-bat-disp")!=null){ sec.style.display=sec.getAttribute("data-bat-disp")||""; } else { sec.style.display=""; } if(lock) lock.parentNode.removeChild(lock); }
+        else { if(sec.getAttribute("data-bat-disp")==null){ sec.setAttribute("data-bat-disp", sec.style.display||""); } sec.style.display="none";
+          if(!lock){ var n=document.createElement("div"); n.setAttribute("data-bat-lock",""); n.style.cssText="text-align:center;color:#6B7A90;padding:22px;border:1px dashed #ccc;border-radius:10px;margin:10px 0"; n.textContent="🔒 Contenu réservé aux membres — connectez-vous pour y accéder."; sec.parentNode.insertBefore(n, sec.nextSibling); } }
+      });
+    }
+    function fval(box,name){ var el=box.querySelector('[data-bat-field="'+name+'"]'); return el?el.value.trim():""; }
+    function doAuth(kind, box){
+      var email=fval(box,"email"), pass=fval(box,"pass"), name=fval(box,"name");
+      var errEl=box.querySelector("[data-bat-autherr]"); if(errEl) errEl.textContent="";
+      var body={ app:APP, email:email, password:pass }; if(kind==="register") body.name=name;
+      fetch(api(kind==="register"?"/auth/register":"/auth/login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
+        .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+        .then(function(x){ if(!x.ok){ if(errEl) errEl.textContent=x.d.error||"Impossible pour le moment."; return; } setTok(x.d.token); member=x.d.user; renderAuth(); toggleMembers(); })
+        .catch(function(){ if(errEl) errEl.textContent="Connexion impossible."; });
+    }
+    function doLogout(){ var t=tok(); setTok(null); member=null; renderAuth(); toggleMembers(); try{ fetch(api("/auth/logout"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:t})}).catch(function(){}); }catch(e){} }
+    document.addEventListener("click",function(e){
+      var t=e.target&&e.target.closest?e.target.closest("[data-bat-do]"):null; if(!t) return;
+      var act=t.getAttribute("data-bat-do");
+      if(act==="switch"){ e.preventDefault(); authMode=(authMode==="register"?"login":"register"); renderAuth(); }
+      else if(act==="logout"){ e.preventDefault(); doLogout(); }
+      else if(act==="login"||act==="register"){ e.preventDefault(); var box=t.closest("[data-bat-auth]"); if(box) doAuth(act, box); }
+    });
+    function initMembers(){
+      if(!qa("[data-bat-auth]").length && !qa("[data-bat-members]").length) return;
+      var t=tok();
+      if(!t){ renderAuth(); toggleMembers(); return; }
+      fetch(api("/auth/me"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({app:APP,token:t})})
+        .then(function(r){ return r.json(); }).then(function(d){ member=d.user||null; if(!member) setTok(null); renderAuth(); toggleMembers(); })
+        .catch(function(){ renderAuth(); toggleMembers(); });
     }
     // ---- Panier (boutique) ----
     var cart={};
@@ -208,7 +267,7 @@ const INTERACTIVE_KIT = `<script>
     }
     qa("form[data-bat-booking]").forEach(function(f){ wireForm(f, "rendez-vous", "Demande de rendez-vous", "je souhaite demander un rendez-vous :"); });
     qa("form[data-bat-contact]").forEach(function(f){ wireForm(f, "message", "Nouveau message", "voici mon message :"); });
-    ensureBox(); render();
+    ensureBox(); render(); initMembers();
   }catch(e){}
 })();
 </script>`;
@@ -218,9 +277,9 @@ function stripKit(html) { return html ? html.replace(KIT_RE, "").replace(/\n{3,}
 function injectKit(html, mods, conv, baseUrl) {
   if (!html) return html;
   html = stripKit(html);
-  const wants = mods.includes("boutique") || mods.includes("rdv");
+  const wants = mods.includes("boutique") || mods.includes("rdv") || mods.includes("membre") || /data-bat-(auth|members|booking|contact|add)/i.test(html);
   if (!wants) return html;
-  const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',api:' + JSON.stringify((baseUrl || "") + "/api/app/submit") + '};</script>';
+  const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',base:' + JSON.stringify((baseUrl || "") + "/api/app") + '};</script>';
   const block = "\n<!-- BAT-KIT:START -->\n" + cfg + "\n" + INTERACTIVE_KIT + "\n<!-- BAT-KIT:END -->\n";
   if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, block + "</body>");
   return html + block;
@@ -277,9 +336,20 @@ const MODULES = {
 - Donne un moyen de recevoir les demandes : lien email <a href="mailto:contact@exemple.com">…</a> ET/OU WhatsApp <a href="https://wa.me/2250700000000">…</a> (WhatsApp prioritaire s'il est présent).
 - Chaque demande est aussi ENREGISTRÉE automatiquement pour le propriétaire (rien à ajouter de ta part).
 - N'invente pas d'agenda en temps réel. Tu n'écris AUCUN JavaScript : seulement ce HTML déclaratif.`
+  },
+  membre: {
+    label: "Espace membre", short: "Espace membre", emoji: "🔐",
+    tagline: "Permettre aux visiteurs de créer un compte et d'accéder à un espace privé.",
+    context: "un volet ESPACE MEMBRE : les visiteurs créent un compte, se connectent, et accèdent à des sections réservées",
+    build: `
+
+=== VOLET ESPACE MEMBRE (comptes des visiteurs) ===
+- Ajoute UNE seule fois, à un endroit visible (ex. rubrique « Espace membre »), le bloc de connexion : <div data-bat-auth></div>. La plateforme y affiche automatiquement « Créer un compte / Se connecter », puis, une fois connecté, le nom du membre et un bouton « Se déconnecter ». Tu n'ajoutes aucun formulaire de connexion toi-même.
+- Marque les SECTIONS réservées aux membres avec l'attribut data-bat-members (ex. <section id="prive" data-bat-members> … </section>). La plateforme les masque automatiquement tant que le visiteur n'est pas connecté, et affiche à la place un message l'invitant à se connecter.
+- Tu n'écris AUCUN JavaScript : seulement ce HTML déclaratif.`
   }
 };
-const MODULE_ORDER = ["presentation", "boutique", "rdv"];
+const MODULE_ORDER = ["presentation", "boutique", "rdv", "membre"];
 
 // Normalise une sélection de volets (tableau moderne, ou ancien champ projectType).
 function normalizeModules(mods, legacyType) {
@@ -1304,6 +1374,8 @@ async function handleSubmit(req, res) {
       else if (typeof v === "object" && v !== null) { try { v = JSON.parse(JSON.stringify(v)); } catch (e) { v = null; } }
       clean[kk] = v;
     });
+    // Si l'envoi vient d'un membre connecté, on le rattache (visible par le propriétaire).
+    if (p.token) { try { const m = await appSessionUser(p.token, app); if (m) clean._membre = m.email; } catch (e) {} }
     await addSubmission({ id: crypto.randomUUID(), projectId: app, collection, data: clean, createdAt: new Date().toISOString() });
     sendJsonCors(res, 200, { ok: true });
   } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
@@ -1331,8 +1403,115 @@ async function handleSubmissionDelete(req, res) {
   sendJson(res, 200, { ok: true });
 }
 
+// --- COMPTES DES VISITEURS d'une application (Étape B) ---
+// Séparés des comptes Bâtisseur. Un compte appartient à UNE application (isolé).
+// Authentification par jeton (stocké côté site dans le navigateur), pas de cookie
+// tiers (le site publié est sur un autre domaine).
+const APP_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 60;
+const APPUSERS_FILE = path.join(DATA_DIR, "app_users.json");
+function loadAppUsers() { try { return JSON.parse(fs.readFileSync(APPUSERS_FILE, "utf8")); } catch (e) { return { users: {}, sessions: {} }; } }
+function saveAppUsers(a) { try { fs.writeFileSync(APPUSERS_FILE, JSON.stringify(a, null, 2)); } catch (e) { console.error("saveAppUsers:", e); } }
+async function findAppUser(appId, email) {
+  const e = normEmail(email);
+  if (USE_DB) { try { const r = await sb(`/app_users?app_id=eq.${encodeURIComponent(appId)}&email=eq.${encodeURIComponent(e)}&select=*`); return (r && r[0]) || null; } catch (err) { return null; } }
+  return Object.values(loadAppUsers().users).find((u) => u.app_id === appId && u.email === e) || null;
+}
+async function getAppUserById(id) {
+  if (!id) return null;
+  if (USE_DB) { try { const r = await sb(`/app_users?id=eq.${encodeURIComponent(id)}&select=*`); return (r && r[0]) || null; } catch (e) { return null; } }
+  return loadAppUsers().users[id] || null;
+}
+async function createAppUser(appId, email, name, password) {
+  const e = normEmail(email);
+  const user = { id: crypto.randomUUID(), app_id: appId, email: e, name: String(name || "").trim().slice(0, 80) || e.split("@")[0], pass: hashPassword(password), created_at: new Date().toISOString() };
+  if (USE_DB) { await sb(`/app_users`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([user]) }); }
+  else { const a = loadAppUsers(); a.users[user.id] = user; saveAppUsers(a); }
+  return user;
+}
+async function createAppSession(appId, userId) {
+  const token = crypto.randomBytes(32).toString("hex"); const created_at = new Date().toISOString();
+  if (USE_DB) { await sb(`/app_sessions`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([{ token, app_id: appId, user_id: userId, created_at }]) }); }
+  else { const a = loadAppUsers(); a.sessions[token] = { userId, appId, at: Date.now() }; saveAppUsers(a); }
+  return token;
+}
+async function deleteAppSession(token) {
+  if (!token) return;
+  if (USE_DB) { try { await sb(`/app_sessions?token=eq.${encodeURIComponent(token)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); } catch (e) {} return; }
+  const a = loadAppUsers(); if (a.sessions[token]) { delete a.sessions[token]; saveAppUsers(a); }
+}
+async function appSessionUser(token, appId) {
+  if (!token) return null;
+  if (USE_DB) {
+    try {
+      const r = await sb(`/app_sessions?token=eq.${encodeURIComponent(token)}&select=user_id,app_id,created_at`);
+      const s = r && r[0]; if (!s) return null;
+      if (appId && s.app_id !== appId) return null;
+      if (Date.now() - new Date(s.created_at).getTime() > APP_SESSION_TTL_MS) { await deleteAppSession(token); return null; }
+      return await getAppUserById(s.user_id);
+    } catch (e) { return null; }
+  }
+  const a = loadAppUsers(); const s = a.sessions[token]; if (!s) return null;
+  if (appId && s.appId !== appId) return null;
+  if (Date.now() - (s.at || 0) > APP_SESSION_TTL_MS) { delete a.sessions[token]; saveAppUsers(a); return null; }
+  return a.users[s.userId] || null;
+}
+function publicAppUser(u) { return u ? { id: u.id, name: u.name, email: u.email } : null; }
+async function listAppUsers(appId) {
+  if (USE_DB) { try { return (await sb(`/app_users?app_id=eq.${encodeURIComponent(appId)}&select=id,name,email,created_at&order=created_at.desc`)) || []; } catch (e) { return []; } }
+  return Object.values(loadAppUsers().users).filter((u) => u.app_id === appId).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+}
+function reqIp(req) { return (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim()) || (req.socket && req.socket.remoteAddress) || "?"; }
+
+// POST /api/app/auth/register  { app, email, name, password }
+async function handleAppRegister(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJsonCors(res, 400, { error: "Requête invalide." }); }
+    const app = p.app; if (!validId(app)) return sendJsonCors(res, 400, { error: "Application inconnue." });
+    if (!rateOk("auth:" + app + ":" + reqIp(req), 25, 10 * 60 * 1000)) return sendJsonCors(res, 429, { error: "Trop de tentatives. Réessayez plus tard." });
+    const email = normEmail(p.email); if (!validEmail(email)) return sendJsonCors(res, 400, { error: "Adresse e-mail invalide." });
+    if (typeof p.password !== "string" || p.password.length < 6) return sendJsonCors(res, 400, { error: "Mot de passe : 6 caractères minimum." });
+    const conv = await loadConv(app); if (!conv) return sendJsonCors(res, 404, { error: "Application introuvable." });
+    if (await findAppUser(app, email)) return sendJsonCors(res, 409, { error: "Un compte existe déjà avec cette adresse." });
+    const user = await createAppUser(app, email, p.name, p.password);
+    const token = await createAppSession(app, user.id);
+    sendJsonCors(res, 200, { token, user: publicAppUser(user) });
+  } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
+}
+// POST /api/app/auth/login  { app, email, password }
+async function handleAppLogin(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJsonCors(res, 400, { error: "Requête invalide." }); }
+    const app = p.app; if (!validId(app)) return sendJsonCors(res, 400, { error: "Application inconnue." });
+    if (!rateOk("auth:" + app + ":" + reqIp(req), 25, 10 * 60 * 1000)) return sendJsonCors(res, 429, { error: "Trop de tentatives. Réessayez plus tard." });
+    const user = await findAppUser(app, p.email);
+    if (!user || !verifyPassword(p.password, user.pass)) return sendJsonCors(res, 401, { error: "E-mail ou mot de passe incorrect." });
+    const token = await createAppSession(app, user.id);
+    sendJsonCors(res, 200, { token, user: publicAppUser(user) });
+  } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
+}
+// POST /api/app/auth/me  { app, token }
+async function handleAppMe(req, res) {
+  try { let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {} const u = await appSessionUser(p.token, p.app); sendJsonCors(res, 200, { user: publicAppUser(u) }); }
+  catch (e) { sendJsonCors(res, 200, { user: null }); }
+}
+// POST /api/app/auth/logout  { token }
+async function handleAppLogout(req, res) {
+  try { let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {} await deleteAppSession(p.token); } catch (e) {}
+  sendJsonCors(res, 200, { ok: true });
+}
+// GET /api/app-users?id=<projet>  (propriétaire : liste des membres)
+async function handleAppUsersList(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const id = u.searchParams.get("id");
+  const conv = await loadConv(id); if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
+  const members = (await listAppUsers(id)).map((m) => ({ name: m.name, email: m.email, createdAt: m.created_at }));
+  sendJson(res, 200, { members });
+}
+
 const server = http.createServer((req, res) => {
-  if (req.method === "OPTIONS" && req.url.startsWith("/api/app/submit")) { res.writeHead(204, corsHeaders()); return res.end(); }
+  if (req.method === "OPTIONS" && req.url.startsWith("/api/app/")) { res.writeHead(204, corsHeaders()); return res.end(); }
   if (req.method === "POST" && req.url === "/api/start") return handleStart(req, res);
   if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
@@ -1350,6 +1529,11 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/admin/cohort/update") return handleAdminCohortUpdate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cohorts")) return handleCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/app/submit") return handleSubmit(req, res);
+  if (req.method === "POST" && req.url === "/api/app/auth/register") return handleAppRegister(req, res);
+  if (req.method === "POST" && req.url === "/api/app/auth/login") return handleAppLogin(req, res);
+  if (req.method === "POST" && req.url === "/api/app/auth/me") return handleAppMe(req, res);
+  if (req.method === "POST" && req.url === "/api/app/auth/logout") return handleAppLogout(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/app-users")) return handleAppUsersList(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/submissions")) return handleSubmissions(req, res);
   if (req.method === "POST" && req.url === "/api/submissions/delete") return handleSubmissionDelete(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);

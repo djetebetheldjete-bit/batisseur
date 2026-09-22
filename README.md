@@ -396,8 +396,43 @@ un bouton **« 📋 Données »** (en haut de l'aperçu) — liste, détail, sup
 > );
 > ```
 
-Suite prévue (voir le document de plan) : **Étape B** — comptes des visiteurs (espace client) ;
-**Étape C** — générateur d'applications sur mesure.
+## Applications web — espace membre (Niveau 2, Étape B)
+
+Deuxième brique : les **visiteurs** d'un site créé peuvent **créer un compte et se connecter**
+(espace client), et accéder à des **sections réservées**.
+
+- Nouveau volet **« 🔐 Espace membre »** au choix, au démarrage d'un projet (combinable).
+- L'assistant ajoute un bloc de connexion `<div data-bat-auth></div>` (la plateforme y affiche
+  « Créer un compte / Se connecter », puis le nom du membre + « Se déconnecter »), et marque les
+  sections privées avec `data-bat-members` (masquées tant qu'on n'est pas connecté).
+- **Comptes isolés par application** : un même e-mail peut exister sur deux sites différents ;
+  un compte d'un site ne donne aucun accès à un autre.
+- **Sans cookie tiers** : l'authentification du visiteur utilise un jeton stocké dans son
+  navigateur (adapté aux sites publiés sur un autre domaine).
+- Les **commandes / rendez-vous** passés par un membre connecté lui sont **rattachés** (visibles
+  dans « 📋 Données »), et le propriétaire voit la **liste de ses membres**.
+
+> **Si vous utilisez Supabase**, créez les deux tables (dans **SQL Editor**) :
+>
+> ```sql
+> create table if not exists app_users (
+>   id text primary key,
+>   app_id text,
+>   email text,
+>   name text,
+>   pass text,
+>   created_at timestamptz default now()
+> );
+> create table if not exists app_sessions (
+>   token text primary key,
+>   app_id text,
+>   user_id text,
+>   created_at timestamptz default now()
+> );
+> ```
+
+Suite prévue (voir le document de plan) : **Étape C** — générateur d'applications sur mesure
+(écrans reliés au moteur de données).
 
 ## Mettre à jour la plateforme déjà en ligne
 

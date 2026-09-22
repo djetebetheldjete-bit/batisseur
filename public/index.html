@@ -404,9 +404,10 @@
     const MODULES_UI = {
       presentation: { short: "Présentation", emoji: "🪧",  tagline: "Présenter une activité, un métier, une association." },
       boutique:     { short: "Boutique",     emoji: "🛍️", tagline: "Montrer des produits avec leurs prix et donner envie de commander." },
-      rdv:          { short: "Rendez-vous",  emoji: "📅", tagline: "Présenter vos prestations et permettre de demander un créneau." }
+      rdv:          { short: "Rendez-vous",  emoji: "📅", tagline: "Présenter vos prestations et permettre de demander un créneau." },
+      membre:       { short: "Espace membre", emoji: "🔐", tagline: "Vos visiteurs créent un compte et accèdent à un espace privé." }
     };
-    const MODULE_ORDER = ["presentation", "boutique", "rdv"];
+    const MODULE_ORDER = ["presentation", "boutique", "rdv", "membre"];
     function normMods(list){ const set = Array.isArray(list) ? list : []; const c = MODULE_ORDER.filter(k => set.includes(k)); return c.length ? c : ["presentation"]; }
     function modulesLabelUI(mods){ mods = normMods(mods); if(mods.length===1 && mods[0]==="presentation") return "Site vitrine"; return mods.map(k => MODULES_UI[k].short).join(" + "); }
     function modulesEmojiUI(mods){ return normMods(mods).map(k => MODULES_UI[k].emoji).join(""); }
@@ -445,7 +446,7 @@
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
       if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "↻ Republier" : "🌐 Publier en ligne"; }
-      dataBtn.style.display = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0) ? "inline-block" : "none";
+      dataBtn.style.display = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0 || currentModules.indexOf("membre")>=0) ? "inline-block" : "none";
     }
 
     function showPublished(url){
@@ -873,26 +874,46 @@
     async function loadData(){
       dataBody.innerHTML='<div class="aempty">Chargement…</div>';
       try{
-        const r=await fetch("/api/submissions?id="+encodeURIComponent(convId)); const d=await r.json();
-        if(!r.ok){ dataBody.innerHTML='<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; }
-        renderData(d.submissions||[]);
+        const [sr, mr] = await Promise.all([ fetch("/api/submissions?id="+encodeURIComponent(convId)), fetch("/api/app-users?id="+encodeURIComponent(convId)) ]);
+        const sd=await sr.json(); const md=await mr.json().catch(()=>({members:[]}));
+        if(!sr.ok){ dataBody.innerHTML='<div class="aempty">'+(sd.error||"Erreur")+'</div>'; return; }
+        renderData(sd.submissions||[], (md.members||[]));
       }catch(e){ dataBody.innerHTML='<div class="aempty">Impossible de joindre le serveur.</div>'; }
     }
     function renderPayload(data){
-      const box=document.createElement("div");
+      const box=document.createElement("div"); data=data||{};
+      function membreLine(){ if(data._membre){ const m=document.createElement("div"); m.className="subline"; m.style.color="var(--accent-deep)"; m.innerHTML="👤 <b>Membre :</b> "+escHtml(data._membre); box.appendChild(m); } }
       try{
-        if(data && Array.isArray(data.articles)){
+        if(Array.isArray(data.articles)){
           data.articles.forEach(function(a){ const l=document.createElement("div"); l.className="subline"; l.textContent="• "+a.produit+" × "+a.quantite+(a.prix!=null?"  ("+a.prix+")":""); box.appendChild(l); });
           const t=document.createElement("div"); t.className="subline"; t.style.fontWeight="700"; t.textContent="Total : "+(data.total!=null?data.total:"")+" "+(data.devise||""); box.appendChild(t);
-          return box;
+          membreLine(); return box;
         }
-        Object.keys(data||{}).forEach(function(k){ const l=document.createElement("div"); l.className="subline"; l.innerHTML="<b>"+escHtml(k)+" :</b> "+escHtml(typeof data[k]==="object"?JSON.stringify(data[k]):data[k]); box.appendChild(l); });
+        Object.keys(data).forEach(function(k){ if(k.charAt(0)==="_") return; const l=document.createElement("div"); l.className="subline"; l.innerHTML="<b>"+escHtml(k)+" :</b> "+escHtml(typeof data[k]==="object"?JSON.stringify(data[k]):data[k]); box.appendChild(l); });
+        membreLine();
       }catch(e){ box.textContent=JSON.stringify(data); }
       return box;
     }
-    function renderData(list){
+    function renderData(list, members){
       dataBody.innerHTML="";
-      if(!list.length){ dataBody.innerHTML='<div class="aempty">Aucune donnée pour le moment. Publiez votre site et partagez-le : les commandes et rendez-vous reçus apparaîtront ici.</div>'; return; }
+      members = members || [];
+      if(members.length){
+        const mh=document.createElement("div"); mh.className="asection"; mh.textContent="Membres inscrits ("+members.length+")"; dataBody.appendChild(mh);
+        const mw=document.createElement("div"); mw.className="llist";
+        members.forEach(function(m){
+          const row=document.createElement("div"); row.className="subrow";
+          const info=document.createElement("div"); info.style.flex="1"; info.style.minWidth="0";
+          const b=document.createElement("div"); b.className="subline"; b.style.fontWeight="700"; b.textContent=m.name||m.email;
+          const meta=document.createElement("div"); meta.className="submeta"; meta.textContent=m.email + (m.createdAt?(" · inscrit le "+(function(){try{return new Date(m.createdAt).toLocaleDateString("fr-FR");}catch(e){return "";}})()):"");
+          info.appendChild(b); info.appendChild(meta); row.appendChild(info); mw.appendChild(row);
+        });
+        dataBody.appendChild(mw);
+      }
+      if(!list.length){
+        if(!members.length) dataBody.innerHTML='<div class="aempty">Aucune donnée pour le moment. Publiez votre site et partagez-le : les commandes, rendez-vous et inscriptions apparaîtront ici.</div>';
+        else { const e=document.createElement("div"); e.className="aempty"; e.textContent="Aucune commande ni rendez-vous pour le moment."; dataBody.appendChild(e); }
+        return;
+      }
       const groups={}; list.forEach(function(s){ (groups[s.collection]=groups[s.collection]||[]).push(s); });
       Object.keys(groups).forEach(function(col){
         const h=document.createElement("div"); h.className="asection"; h.textContent=subLabel(col)+" ("+groups[col].length+")"; dataBody.appendChild(h);
