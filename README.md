@@ -28,6 +28,25 @@
 > `uploads` (voir `schema.sql`) ; endpoints publics `/api/app/upload` (dépôt) et privé
 > `/api/upload` (téléchargement réservé au propriétaire). Toujours **sans dépendance npm**.
 
+> **Paiement en ligne (Wave)**
+> Le propriétaire d'un projet active le paiement depuis le bouton **« Paiement »** (en haut de
+> l'aperçu). Deux modes, au choix :
+> - **Lien Wave par apprenant** (recommandé, sans secret) : la personne colle **son propre lien
+>   de paiement Wave**. Un bouton « Payer avec Wave » apparaît sur la boutique ; le bouton
+>   « Commander » propose le règlement. La personne confirme l'encaissement dans son app Wave.
+>   Aucune clé, aucune configuration technique.
+> - **API Wave centralisée** (optionnel) : la plateforme crée une session Wave Checkout et redirige
+>   le client. Les commandes payées sont marquées **« Payé »** dans le tableau de bord (via webhook).
+>   Ce mode nécessite, **côté plateforme uniquement**, les variables d'environnement Render
+>   `WAVE_API_KEY` (clé secrète Wave) et, pour la confirmation automatique, `WAVE_WEBHOOK_SECRET`
+>   (le webhook pointe vers `POST /api/wave/webhook`, signature HMAC vérifiée). Sans `WAVE_API_KEY`,
+>   seul le mode « lien » est proposé.
+>
+> L'assistant peut aussi placer un bouton de paiement dans une page : `<a data-bat-pay data-amount="5000">Payer</a>`.
+> La clé secrète reste **exclusivement** dans les variables Render — jamais dans la discussion ni
+> dans le code des sites. **Aucune dépendance npm**, **aucun changement de base** (la configuration
+> de paiement est stockée sur le projet).
+
 > **Nouveautés v1.5 — fiabilité**
 > - **Une seule structure** : le site est une page unique (le mode « Plusieurs pages » a été
 >   retiré). Plus de bascule qui fait tout perdre ou beuguer.

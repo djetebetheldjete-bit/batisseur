@@ -71,6 +71,9 @@
   .certbtn:hover{filter:brightness(1.05);}
   .modal-bg{position:fixed;inset:0;background:rgba(14,27,46,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:16px;}
   .modal-bg.show{display:flex;}
+  .payopt{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:14px;}
+  .payopt input{margin-top:3px;}
+  .payopt small{color:var(--ink-soft);}
   .modal{background:var(--surface);border:1px solid var(--line);border-radius:14px;max-width:420px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
   .modal h3{font-family:var(--f-display),sans-serif;margin:0 0 6px;color:var(--ink);font-size:1.05rem;}
   .modal p{margin:0 0 14px;color:var(--ink-faint);font-size:.86rem;}
@@ -246,6 +249,7 @@
             <label class="pwachk" id="pwaWrap" style="display:none;" title="Le site pourra être installé comme une application sur le téléphone (icône sur l'écran d'accueil, ouverture en plein écran)."><input type="checkbox" id="pwaChk"> Installable sur téléphone</label>
             <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">Voir en ligne</a>
             <button class="dlbtn" id="dataBtn" type="button" style="display:none;" title="Voir les commandes / rendez-vous reçus">Données</button>
+            <button class="dlbtn" id="payBtn" type="button" style="display:none;" title="Configurer le paiement en ligne (Wave)">Paiement</button>
             <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">Télécharger le site</a>
             <div class="seg" id="devToggle">
               <button data-dev="desktop" class="active" type="button">Ordinateur</button>
@@ -286,6 +290,25 @@
       <p>Les commandes, rendez-vous et messages envoyés depuis votre site publié apparaissent ici.</p>
       <div id="dataBody"><div class="aempty">Chargement…</div></div>
       <div class="row"><button id="dataClose" type="button">Fermer</button></div>
+    </div>
+  </div>
+
+  <!-- Configuration du paiement en ligne (Wave) -->
+  <div class="modal-bg" id="payModal">
+    <div class="modal">
+      <h3>Paiement en ligne</h3>
+      <p>Proposez à vos clients de régler en ligne avec Wave. Choisissez la méthode qui vous convient — aucun mot de passe ni clé à coller ici.</p>
+      <div class="stack">
+        <label class="payopt"><input type="radio" name="paymode" value="none"> <span><b>Aucun paiement en ligne</b><br><small>Les commandes arrivent par message / WhatsApp, comme aujourd'hui.</small></span></label>
+        <label class="payopt"><input type="radio" name="paymode" value="link"> <span><b>Mon lien de paiement Wave</b> (recommandé)<br><small>Collez votre lien Wave : un bouton « Payer avec Wave » s'affiche sur votre site. Vous confirmez l'encaissement dans votre application Wave.</small></span></label>
+        <input id="payLink" type="url" placeholder="https://pay.wave.com/…  (votre lien Wave)" maxlength="400" style="display:none;">
+        <label class="payopt" id="payApiOpt"><input type="radio" name="paymode" value="api"> <span><b>Paiement automatique (API centralisée)</b><br><small id="payApiNote">Encaissement automatique sur le compte Wave de la plateforme.</small></span></label>
+      </div>
+      <div class="autherr" id="payErr"></div>
+      <div class="row">
+        <button id="payClose" type="button">Fermer</button>
+        <button id="payGo" class="primary" type="button">Enregistrer</button>
+      </div>
     </div>
   </div>
 
@@ -366,6 +389,8 @@
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
     const pubBtn = $("pubBtn"), pubLink = $("pubLink"), pwaChk = $("pwaChk"), pwaWrap = $("pwaWrap");
     const dataBtn = $("dataBtn"), dataModal = $("dataModal"), dataBody = $("dataBody");
+    const payBtn = $("payBtn"), payModal = $("payModal"), payLink = $("payLink"), payErr = $("payErr"), payApiOpt = $("payApiOpt"), payApiNote = $("payApiNote");
+    let waveApi = false, paymentCfg = { mode:"none", link:"", currency:"XOF" };
     const typeBadge = $("typeBadge"), typeModal = $("typeModal"), typeChoices = $("typeChoices");
     let chooserSel = new Set(["presentation"]);
 
@@ -450,7 +475,9 @@
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
       if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "Republier" : "Publier en ligne"; pwaWrap.style.display = "inline-flex"; }
-      dataBtn.style.display = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0 || currentModules.indexOf("membre")>=0) ? "inline-block" : "none";
+      const showData = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0 || currentModules.indexOf("membre")>=0);
+      dataBtn.style.display = showData ? "inline-block" : "none";
+      payBtn.style.display = (showData && !buildLocked) ? "inline-block" : "none";
     }
 
     function showPublished(url){
@@ -486,7 +513,7 @@
     async function startNew(mods){
       currentModules = normMods(mods);
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
-      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none";
+      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none"; payBtn.style.display="none";
       pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       renderRail(); renderTypeBadge();
       const typing = bubble("…","ai typing"); setBusy(true);
@@ -513,6 +540,7 @@
           else bubble(stripBlocks(m.content),"ai");
         });
         pwaChk.checked = !!data.pwa;
+        if(data.payment) paymentCfg = data.payment;
         if(data.hasSite) reloadPreview();
         if(data.publishedUrl) showPublished(data.publishedUrl);
         renderRail(); resumedNote.style.display="block"; setBusy(false);
@@ -560,6 +588,42 @@
     $("dataClose").addEventListener("click", closeData);
     dataModal.addEventListener("click",(e)=>{ if(e.target===dataModal) closeData(); });
 
+    function payModeSel(){ const r=document.querySelector('input[name="paymode"]:checked'); return r?r.value:"none"; }
+    function payReflect(){ payLink.style.display = (payModeSel()==="link") ? "block" : "none"; }
+    async function openPay(){
+      if(!convId) return;
+      payErr.textContent="";
+      payApiOpt.style.opacity = waveApi ? "1" : ".5";
+      payApiOpt.querySelector("input").disabled = !waveApi;
+      payApiNote.textContent = waveApi ? "Encaissement automatique sur le compte Wave de la plateforme, avec confirmation du paiement." : "Non activé sur cette plateforme (réservé à l'administrateur).";
+      try{ const r=await fetch("/api/payment?id="+encodeURIComponent(convId)); const d=await r.json(); if(r.ok&&d.payment){ paymentCfg=d.payment; } }catch(e){}
+      const mode=(paymentCfg&&paymentCfg.mode)||"none";
+      const radio=document.querySelector('input[name="paymode"][value="'+mode+'"]'); if(radio) radio.checked=true; else document.querySelector('input[name="paymode"][value="none"]').checked=true;
+      payLink.value=(paymentCfg&&paymentCfg.link)||"";
+      payReflect(); payModal.classList.add("show");
+    }
+    function closePay(){ payModal.classList.remove("show"); }
+    async function savePay(){
+      const mode=payModeSel(); payErr.textContent="";
+      const bodyReq={ id:convId, mode:mode };
+      if(mode==="link"){ const link=payLink.value.trim(); if(!/^https:\/\//i.test(link)){ payErr.textContent="Indiquez un lien commençant par https://"; return; } bodyReq.link=link; }
+      const go=$("payGo"); go.disabled=true; const prev=go.textContent; go.textContent="Enregistrement…";
+      try{
+        const r=await fetch("/api/payment/config",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(bodyReq)});
+        const d=await r.json();
+        if(!r.ok){ handleAccess(d); payErr.textContent=d.error||"Enregistrement impossible."; go.disabled=false; go.textContent=prev; return; }
+        paymentCfg=d.payment||paymentCfg;
+        closePay();
+        bubble(mode==="none"?"Paiement en ligne désactivé.":(mode==="link"?"Paiement Wave activé : un bouton « Payer avec Wave » s'affichera sur votre site après publication.":"Paiement automatique Wave activé."),"ai");
+      }catch(e){ payErr.textContent="Impossible de joindre le serveur."; }
+      finally{ go.disabled=false; go.textContent=prev; }
+    }
+    payBtn.addEventListener("click", openPay);
+    $("payClose").addEventListener("click", closePay);
+    $("payGo").addEventListener("click", savePay);
+    payModal.addEventListener("click",(e)=>{ if(e.target===payModal) closePay(); });
+    document.querySelectorAll('input[name="paymode"]').forEach(r=>r.addEventListener("change", payReflect));
+
     // Certificat : petite fenêtre pour saisir le nom, puis ouverture du certificat imprimable.
     const certModal = $("certModal"), certName = $("certName");
     function openCert(){ if(!convId) return; if(me && me.name && !certName.value) certName.value = me.name; certModal.classList.add("show"); setTimeout(()=>certName.focus(),50); }
@@ -579,7 +643,7 @@
     $("tabs").addEventListener("click",(e)=>{ const b=e.target.closest("button"); if(!b) return; document.querySelectorAll("#tabs button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); document.querySelectorAll(".pane[data-pane]").forEach(p=>p.classList.toggle("show", p.dataset.pane===b.dataset.tab)); });
 
     async function loadConfig(){
-      try{ const r = await fetch("/api/config"); const d = await r.json(); canPublish = !!d.canPublish; }catch(e){ canPublish = false; }
+      try{ const r = await fetch("/api/config"); const d = await r.json(); canPublish = !!d.canPublish; waveApi = !!d.waveApi; }catch(e){ canPublish = false; waveApi = false; }
     }
 
     // ===== Comptes & espace membre (Palier 4) =====
@@ -645,7 +709,7 @@
       thread.innerHTML=""; resumedNote.style.display="none"; showAccessBanner();
       step=0; siteBuilt=false; renderRail();
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none";
+      dlBtn.style.display="none"; dataBtn.style.display="none"; payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none";
       buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
       let msg;
       if(kind==="none") msg="Bienvenue sur Bâtisseur. Connectez-vous ou créez un compte pour commencer votre formation.";
@@ -892,6 +956,7 @@
     function renderPayload(data, projectId){
       const box=document.createElement("div"); data=data||{};
       function membreLine(){ if(data._membre){ const m=document.createElement("div"); m.className="subline"; m.style.color="var(--accent-deep)"; m.innerHTML="<b>Membre :</b> "+escHtml(data._membre); box.appendChild(m); } }
+      function paidLine(){ if(data._paye){ const pl=document.createElement("div"); pl.className="subline"; pl.style.cssText="color:var(--good);font-weight:700"; pl.textContent="Payé ✓"; box.appendChild(pl); } }
       function filesLine(){
         if(!Array.isArray(data.fichiers) || !data.fichiers.length) return;
         const wrap=document.createElement("div"); wrap.className="subline";
@@ -910,10 +975,10 @@
         if(Array.isArray(data.articles)){
           data.articles.forEach(function(a){ const l=document.createElement("div"); l.className="subline"; l.textContent="• "+a.produit+" × "+a.quantite+(a.prix!=null?"  ("+a.prix+")":""); box.appendChild(l); });
           const t=document.createElement("div"); t.className="subline"; t.style.fontWeight="700"; t.textContent="Total : "+(data.total!=null?data.total:"")+" "+(data.devise||""); box.appendChild(t);
-          filesLine(); membreLine(); return box;
+          filesLine(); paidLine(); membreLine(); return box;
         }
         Object.keys(data).forEach(function(k){ if(k.charAt(0)==="_"||k==="fichiers") return; const l=document.createElement("div"); l.className="subline"; l.innerHTML="<b>"+escHtml(k)+" :</b> "+escHtml(typeof data[k]==="object"?JSON.stringify(data[k]):data[k]); box.appendChild(l); });
-        filesLine(); membreLine();
+        filesLine(); paidLine(); membreLine();
       }catch(e){ box.textContent=JSON.stringify(data); }
       return box;
     }

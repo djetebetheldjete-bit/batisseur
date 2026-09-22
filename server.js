@@ -51,6 +51,12 @@ const MODEL_LIGHT = process.env.ANTHROPIC_MODEL_LIGHT || MODEL;
 const PORT = process.env.PORT || 3000;
 // Jeton d'hébergement (Palier 2) : la plateforme publie les sites des apprenants à leur place.
 const NETLIFY_TOKEN = process.env.NETLIFY_TOKEN;
+// Paiement en ligne (Wave) — mode « API centralisée » optionnel. La clé secrète reste
+// UNIQUEMENT ici (variable d'environnement), jamais dans le chat ni dans le code des sites.
+// Sans cette clé, seul le mode « lien de paiement par apprenant » est disponible.
+const WAVE_API_KEY = process.env.WAVE_API_KEY || "";
+const WAVE_API_BASE = process.env.WAVE_API_BASE || "https://api.wave.com";
+const WAVE_WEBHOOK_SECRET = process.env.WAVE_WEBHOOK_SECRET || "";
 // Base de données (Palier 3) : mémoire durable. Si absente, on retombe sur les fichiers locaux.
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
@@ -116,6 +122,10 @@ FICHIERS JOINTS (optionnel, sur demande) :
 - Types acceptés : images, PDF, documents Word / Excel / PowerPoint, texte. Taille maximale : 3 Mo par fichier. Le propriétaire retrouve les fichiers reçus dans son tableau de bord « Données ».
 - Pour un formulaire de commande simple avec pièce jointe (ex. un imprimeur qui reçoit un fichier à imprimer), utilise un <form data-bat-form data-bat-collection="commande"> contenant les champs voulus et le champ fichier ci-dessus.
 
+PAIEMENT EN LIGNE (Wave, optionnel) :
+- Le paiement s'active depuis le bouton « Paiement » de l'aperçu (la personne y colle son lien Wave) ; tu n'as RIEN à coder pour la boutique : le bouton « Commander » gère automatiquement le paiement quand il est activé.
+- Si la personne veut un bouton « Payer » à un endroit précis (montant fixe, don, acompte), place un lien déclaratif : <a data-bat-pay data-amount="5000">Payer</a>. « data-amount » est facultatif (montant en francs, sans décimale pour le FCFA). La plateforme s'occupe du reste ; tu n'écris aucun JavaScript.
+
 RUBRIQUES LIBRES :
 - Le menu reflète EXACTEMENT les rubriques voulues (Accueil, Services, Réalisations, À propos, Contact, Tarifs, Blog, FAQ, Équipe, Galerie, Horaires… ce que la personne veut).
 - Tu peux à tout moment AJOUTER, RENOMMER, RÉORDONNER ou SUPPRIMER une rubrique sur demande, puis tu renvoies la page entière.
@@ -157,7 +167,28 @@ const INTERACTIVE_KIT = `<script>
       return false;
     }
     var APP=(window.__BAT&&window.__BAT.app)||"";
+    var PAY=(window.__BAT&&window.__BAT.pay)||{mode:"none"};
     function apiBase(){ return (window.__BAT&&window.__BAT.base)||""; }
+    // Bouton « Payer avec Wave » (mode lien) : ouvre le lien du propriétaire, montant affiché.
+    function waveLinkButton(amount){
+      var a=document.createElement("a");
+      a.href=PAY.link; a.target="_blank"; a.rel="noopener";
+      a.textContent="Payer avec Wave"+(amount?(" ("+money(amount)+")"):"");
+      a.style.cssText="display:inline-block;margin-top:10px;padding:11px 16px;border-radius:8px;background:#1DC3F0;color:#062a33;font-weight:700;text-decoration:none";
+      return a;
+    }
+    // Déclenche le paiement selon le mode configuré. done(node, err) reçoit un bouton (lien) ou une erreur.
+    function startPayment(amount, reference, done){
+      if(PAY.mode==="link" && PAY.link){ done(waveLinkButton(amount), null); return true; }
+      if(PAY.mode==="api" && APP && apiBase()){
+        fetch(api("/pay"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({app:APP,amount:amount,currency:PAY.currency||"XOF",reference:reference})})
+          .then(function(r){ return r.json().catch(function(){return {};}); })
+          .then(function(j){ if(j&&j.url){ window.location.href=j.url; } else { done(null,(j&&j.error)||"Paiement indisponible pour le moment."); } })
+          .catch(function(){ done(null,"Service de paiement injoignable."); });
+        return true;
+      }
+      return false;
+    }
     function api(pth){ return apiBase()+pth; }
     function tok(){ try{ return localStorage.getItem("battok_"+APP); }catch(e){ return null; } }
     function setTok(t){ try{ if(t) localStorage.setItem("battok_"+APP,t); else localStorage.removeItem("battok_"+APP); }catch(e){} }
@@ -264,10 +295,30 @@ const INTERACTIVE_KIT = `<script>
       else if(t.hasAttribute("data-bat-order")){e.preventDefault();
         var ns=Object.keys(cart); if(!ns.length) return; var tot=0; var items=[];
         var lines=ns.map(function(n){var it=cart[n];tot+=it.price*it.qty; items.push({produit:n, quantite:it.qty, prix:it.price}); return "- "+n+" x"+it.qty+" : "+money(it.price*it.qty);});
-        postApp("commande", { articles:items, total: Math.round(tot*100)/100, devise: CUR });
+        var total=Math.round(tot*100)/100;
+        var payRef=(PAY.mode==="api")?("bat."+APP+"."+Math.random().toString(16).slice(2,10)):null;
+        var order={ articles:items, total:total, devise:CUR }; if(payRef) order._ref=payRef;
+        postApp("commande", order);
+        var box=q("[data-bat-cart]");
+        function note(txt){ if(box){ var pre=document.createElement("pre"); pre.style.cssText="white-space:pre-wrap;background:#f4f4f4;color:#111;padding:10px;border-radius:8px;margin-top:8px"; pre.textContent=txt; box.appendChild(pre); } }
+        function payErr(msg){ if(box){ var p2=document.createElement("div"); p2.style.cssText="margin-top:8px;color:#c0392b;font-size:14px"; p2.textContent=msg; box.appendChild(p2); } }
         var body="Bonjour, je souhaite commander :"+NL+lines.join(NL)+NL+NL+"Total : "+money(tot);
-        if(!send("Nouvelle commande", body)){var box=q("[data-bat-cart]"); if(box){var pre=document.createElement("pre"); pre.style.cssText="white-space:pre-wrap;background:#f4f4f4;color:#111;padding:10px;border-radius:8px;margin-top:8px"; pre.textContent="Merci ! Votre commande a bien été envoyée."+NL+NL+body; box.appendChild(pre);}}
+        // Paiement en ligne si configuré, sinon commande par email/WhatsApp comme avant.
+        var handled=startPayment(total, payRef, function(node, err){ if(node && box){ box.appendChild(node); } if(err) payErr(err); });
+        if(!handled){ if(!send("Nouvelle commande", body)){ note("Merci ! Votre commande a bien été envoyée."+NL+NL+body); } }
+        else if(PAY.mode==="link"){ if(!send("Nouvelle commande", body)){ note("Merci ! Votre commande est enregistrée. Réglez avec le bouton Wave ci-dessous."); } }
       }
+    });
+    // Bouton de paiement déclaratif : <a data-bat-pay data-amount="5000">Payer</a>
+    qa("[data-bat-pay]").forEach(function(el){
+      if(PAY.mode==="none"){ el.style.display="none"; return; }
+      if(PAY.mode==="link" && PAY.link){ if(el.tagName==="A"){ el.setAttribute("href",PAY.link); el.setAttribute("target","_blank"); el.setAttribute("rel","noopener"); } else { el.addEventListener("click",function(ev){ ev.preventDefault(); window.open(PAY.link,"_blank"); }); } return; }
+      el.addEventListener("click",function(ev){ ev.preventDefault();
+        var amt=parseFloat(String(el.getAttribute("data-amount")||"0").replace(",","."))||0;
+        var ref="bat."+APP+"."+Math.random().toString(16).slice(2,10);
+        if(amt>0) postApp("commande", { total:amt, devise:(PAY.currency||CUR), _ref:ref, source:"bouton" });
+        startPayment(amt, ref, function(node, err){ if(err){ var d=document.createElement("div"); d.style.cssText="margin-top:6px;color:#c0392b;font-size:14px"; d.textContent=err; el.parentNode.insertBefore(d, el.nextSibling); } });
+      });
     });
     // ---- Fichiers joints (upload par le visiteur) ----
     var FILE_MAX = 3 * 1024 * 1024;
@@ -321,9 +372,16 @@ function stripKit(html) { return html ? html.replace(KIT_RE, "").replace(/\n{3,}
 function injectKit(html, mods, conv, baseUrl) {
   if (!html) return html;
   html = stripKit(html);
-  const wants = mods.includes("boutique") || mods.includes("rdv") || mods.includes("membre") || /data-bat-(auth|members|booking|contact|add|form|file)/i.test(html);
+  const wants = mods.includes("boutique") || mods.includes("rdv") || mods.includes("membre") || /data-bat-(auth|members|booking|contact|add|form|file|pay)/i.test(html);
   if (!wants) return html;
-  const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',base:' + JSON.stringify((baseUrl || "") + "/api/app") + '};</script>';
+  const pc = (conv && conv.payment) || {};
+  const payCfg = {
+    mode: (pc.mode === "link" || pc.mode === "api") ? pc.mode : "none",
+    link: pc.mode === "link" ? (pc.link || "") : "",
+    currency: pc.currency || "XOF",
+    apiReady: pc.mode === "api" && !!WAVE_API_KEY
+  };
+  const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',base:' + JSON.stringify((baseUrl || "") + "/api/app") + ',pay:' + JSON.stringify(payCfg) + '};</script>';
   const block = "\n<!-- BAT-KIT:START -->\n" + cfg + "\n" + INTERACTIVE_KIT + "\n<!-- BAT-KIT:END -->\n";
   if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, block + "</body>");
   return html + block;
@@ -441,7 +499,7 @@ Bâtisseur ne fait pas que des sites vitrines : c'est aussi un créateur d'appli
 - Les commandes, rendez-vous et messages arrivent automatiquement dans un tableau de bord « Données ».
 - Une APPLICATION INSTALLABLE : au moment de la publication, la personne peut cocher « Installable sur téléphone » pour que son site s'installe comme une vraie appli (icône sur l'écran d'accueil, ouverture en plein écran, fonctionne même hors connexion). La plateforme s'occupe de tout automatiquement — rien à écrire.
 - L'ENVOI DE FICHIERS : un visiteur peut joindre une photo, un PDF ou un document à une commande, un rendez-vous ou un message (par exemple un imprimeur qui reçoit le fichier à imprimer, un artisan qui reçoit une photo du projet). Le propriétaire retrouve les fichiers dans son tableau de bord « Données ». Il suffit d'ajouter un champ fichier au formulaire — la plateforme gère tout.
-- Bientôt : le PAIEMENT en ligne.
+- LE PAIEMENT EN LIGNE (Wave) : la personne peut activer le paiement depuis le bouton « Paiement » (en haut de l'aperçu) en collant SON lien de paiement Wave — un bouton « Payer avec Wave » apparaît alors sur sa boutique, et le bouton « Commander » propose le règlement. Les commandes payées sont signalées « Payé » dans le tableau de bord. La configuration se fait par ce bouton (jamais dans la discussion, jamais de clé à coller ici). Tu peux aussi, sur demande, ajouter un bouton de paiement dans une page : <a data-bat-pay data-amount="5000">Payer</a> (data-amount facultatif).
 Explique ces possibilités comme des idées concrètes (« on pourrait ajouter… »), sans forcer. Si une fonction demande un volet qui n'est pas activé (Boutique, Rendez-vous, Espace membre), invite gentiment la personne à cliquer « Recommencer » et à cocher le ou les volets voulus (on peut en combiner plusieurs).`;
 
 const DATA_DIR = path.join(__dirname, "data");
@@ -887,7 +945,7 @@ async function handleGetConversation(req, res) {
   const cu = await currentUser(req);
   if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
   if (conv.userId && !canView(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
-  sendJson(res, 200, { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) });
+  sendJson(res, 200, { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) });
 }
 
 // GET /preview/<id>/<fichier> : sert le site généré (une seule page)
@@ -903,6 +961,10 @@ async function servePreview(req, res) {
   }
   let html = null;
   try { html = await readSite(id); } catch (e) { html = null; }
+  // Rafraîchit le kit avec l'état ACTUEL du projet (paiement, volets) : ainsi une
+  // configuration modifiée après la construction (ex. activation du paiement) est
+  // reflétée immédiatement, sans reconstruire le site.
+  if (html && conv) { try { html = injectKit(html, convModules(conv), conv, reqBase(req)); } catch (e) {} }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   if (html) return res.end(html);
   // Filet : le site n'existe pas encore.
@@ -922,6 +984,137 @@ function serveStatic(req, res) {
   });
 }
 
+// --- PAIEMENT EN LIGNE (Wave) -------------------------------------------------
+// Deux modes, au choix du propriétaire du projet (jamais de secret dans le chat) :
+//  - "link" : le propriétaire colle SON lien de paiement Wave ; le site affiche un
+//    bouton « Payer avec Wave » qui ouvre ce lien. Aucune clé, aucune intégration.
+//  - "api"  : la plateforme crée une session Wave Checkout (clé WAVE_API_KEY côté
+//    serveur) et redirige le client vers l'app Wave. Confirmation possible par webhook.
+function publicPayment(conv) {
+  const pc = (conv && conv.payment) || {};
+  const mode = (pc.mode === "link" || pc.mode === "api") ? pc.mode : "none";
+  return { mode, link: mode === "link" ? (pc.link || "") : "", currency: pc.currency || "XOF", apiAvailable: !!WAVE_API_KEY };
+}
+function validPayLink(u) {
+  u = String(u || "").trim();
+  if (!u) return "";
+  if (!/^https:\/\//i.test(u)) return null;         // HTTPS obligatoire
+  if (u.length > 400) return null;
+  // On accepte tout lien HTTPS ; on recommande un lien Wave, sans l'imposer.
+  return u;
+}
+
+// GET /api/payment?id=<projet> — le propriétaire lit la configuration de paiement
+async function handleGetPayment(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const conv = await loadConv(u.searchParams.get("id"));
+  if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
+  sendJson(res, 200, { payment: publicPayment(conv), waveApi: !!WAVE_API_KEY });
+}
+
+// POST /api/payment/config { id, mode, link, currency } — le propriétaire configure
+async function handleSetPayment(req, res) {
+  const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const conv = await loadConv(p.id);
+  if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+  if (!canBuild(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
+  const mode = (p.mode === "link" || p.mode === "api") ? p.mode : "none";
+  const payment = { mode: mode, currency: (String(p.currency || "XOF").replace(/[^A-Z]/gi, "").slice(0, 3).toUpperCase() || "XOF") };
+  if (mode === "link") {
+    const link = validPayLink(p.link);
+    if (link === null) return sendJson(res, 400, { error: "Le lien doit commencer par https://" });
+    if (!link) return sendJson(res, 400, { error: "Indiquez votre lien de paiement Wave." });
+    payment.link = link;
+  }
+  if (mode === "api" && !WAVE_API_KEY) return sendJson(res, 400, { error: "Le paiement par API n'est pas activé sur cette plateforme." });
+  conv.payment = payment;
+  await saveConv(conv);
+  sendJson(res, 200, { payment: publicPayment(conv) });
+}
+
+// POST /api/app/pay { app, amount, currency, reference } — public : crée une session Wave (mode API)
+async function handlePay(req, res) {
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJsonCors(res, 400, { error: "Requête invalide." }); }
+    const app = p.app;
+    if (!validId(app)) return sendJsonCors(res, 400, { error: "Application inconnue." });
+    const ip = (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim()) || (req.socket && req.socket.remoteAddress) || "?";
+    if (!rateOk("pay:" + app + ":" + ip, 15, 10 * 60 * 1000)) return sendJsonCors(res, 429, { error: "Trop de tentatives. Réessayez dans quelques minutes." });
+    const conv = await loadConv(app);
+    if (!conv) return sendJsonCors(res, 404, { error: "Application introuvable." });
+    const pc = conv.payment || {};
+    if (pc.mode !== "api") return sendJsonCors(res, 400, { error: "Le paiement par API n'est pas activé pour ce site." });
+    if (!WAVE_API_KEY) return sendJsonCors(res, 501, { error: "Paiement non configuré sur la plateforme." });
+    const currency = (pc.currency || "XOF").toUpperCase();
+    let amount = Number(p.amount);
+    if (!isFinite(amount) || amount <= 0) return sendJsonCors(res, 400, { error: "Montant invalide." });
+    // XOF : pas de décimales.
+    amount = currency === "XOF" ? String(Math.round(amount)) : String(Math.round(amount * 100) / 100);
+    // La référence encode l'identifiant complet du projet, pour le rattachement par webhook.
+    // Le kit peut fournir la sienne (déjà enregistrée avec la commande) ; sinon on en crée une.
+    let ref = String(p.reference || "");
+    if (!(ref.indexOf("bat." + app + ".") === 0 && ref.length <= 120 && /^[a-zA-Z0-9._-]+$/.test(ref))) {
+      ref = "bat." + app + "." + crypto.randomBytes(4).toString("hex");
+    }
+    const base = conv.publishedUrl || (reqBase(req));
+    const okUrl = base + (base.indexOf("?") >= 0 ? "&" : "?") + "paiement=ok";
+    const koUrl = base + (base.indexOf("?") >= 0 ? "&" : "?") + "paiement=echec";
+    let session;
+    try {
+      const r = await fetch(WAVE_API_BASE + "/v1/checkout/sessions", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + WAVE_API_KEY, "content-type": "application/json" },
+        body: JSON.stringify({ amount: amount, currency: currency, success_url: okUrl, error_url: koUrl, client_reference: ref })
+      });
+      const t = await r.text(); try { session = t ? JSON.parse(t) : {}; } catch (e) { session = {}; }
+      if (!r.ok) return sendJsonCors(res, 502, { error: "Le service de paiement a refusé la demande." });
+    } catch (e) { return sendJsonCors(res, 502, { error: "Service de paiement injoignable." }); }
+    const url = session && (session.wave_launch_url || session.launch_url);
+    if (!url) return sendJsonCors(res, 502, { error: "Réponse de paiement invalide." });
+    sendJsonCors(res, 200, { url: url, reference: ref, sessionId: session.id || null });
+  } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
+}
+
+// POST /api/wave/webhook — Wave notifie le paiement ; on marque la commande payée.
+async function handleWaveWebhook(req, res) {
+  const raw = await readBody(req);
+  if (!WAVE_WEBHOOK_SECRET) { res.writeHead(501); return res.end("webhook désactivé"); }
+  // Vérification de signature HMAC (en-tête « Wave-Signature »).
+  const sig = String(req.headers["wave-signature"] || req.headers["x-wave-signature"] || "");
+  let okSig = false;
+  try {
+    const expected = crypto.createHmac("sha256", WAVE_WEBHOOK_SECRET).update(raw).digest("hex");
+    const a = Buffer.from(expected); const b = Buffer.from(sig.replace(/^sha256=/, ""));
+    okSig = a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch (e) { okSig = false; }
+  if (!okSig) { res.writeHead(401); return res.end("signature invalide"); }
+  let evt = {}; try { evt = JSON.parse(raw || "{}"); } catch (e) {}
+  const type = evt && evt.type;
+  const data = (evt && evt.data) || {};
+  const ref = data.client_reference || "";
+  const status = String((data.payment_status || data.status || type || "")).toLowerCase();
+  if (/complete|success|succeed|paid/.test(status) && /^bat\./.test(ref)) {
+    // ref = « bat.<idProjet>.<hasard> » → on retrouve le projet et la commande, puis on marque payé.
+    try {
+      const projId = ref.split(".")[1];
+      if (projId) {
+        const subs = await listSubmissions(projId);
+        const target = subs.find((s) => s.data && s.data._ref === ref);
+        if (target) { const nd = Object.assign({}, target.data, { _paye: true }); await sbUpdateSubmissionData(target.id, projId, nd); }
+      }
+    } catch (e) {}
+  }
+  res.writeHead(200); res.end("ok");
+}
+async function sbUpdateSubmissionData(id, projectId, data) {
+  if (USE_DB) { try { await sb(`/submissions?id=eq.${encodeURIComponent(id)}&project_id=eq.${encodeURIComponent(projectId)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ data }) }); } catch (e) {} return; }
+  const a = loadSubs(); a.forEach((s) => { if (s.id === id && s.projectId === projectId) s.data = data; }); saveSubs(a);
+}
+
 // --- PUBLICATION EN LIGNE (Palier 2) : via Netlify, sans compte côté apprenant ---
 const NETLIFY_API = "https://api.netlify.com/api/v1";
 async function netlify(path, opts = {}) {
@@ -935,10 +1128,13 @@ async function netlify(path, opts = {}) {
 }
 
 // Publie (ou met à jour) le site d'une conversation, renvoie l'adresse publique.
-async function publishSite(conv) {
+async function publishSite(conv, baseUrl) {
   if (!NETLIFY_TOKEN) { const e = new Error("La publication n'est pas encore configurée sur cette plateforme."); e.status = 501; throw e; }
-  const html = await readSite(conv.id);
+  let html = await readSite(conv.id);
   if (!html) { const e = new Error("Aucun site à publier : construisez d'abord votre site."); e.status = 400; throw e; }
+  // Rafraîchit le kit avec l'état ACTUEL (paiement, volets) au moment de la publication,
+  // avec l'origine de la PLATEFORME (là où vivent /api/app) — pas l'adresse du site publié.
+  if (baseUrl) { try { html = injectKit(html, convModules(conv), conv, baseUrl); } catch (e) {} }
 
   // Jeu de fichiers à déployer. Site simple = index.html seul. Application
   // installable (PWA) = index.html enrichi + manifeste + service worker + icônes.
@@ -1001,14 +1197,14 @@ async function handlePublish(req, res) {
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
     if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
     if (typeof p.pwa === "boolean") { conv.pwa = p.pwa; await saveConv(conv); }
-    const out = await publishSite(conv);
+    const out = await publishSite(conv, reqBase(req));
     out.pwa = !!conv.pwa;
     sendJson(res, 200, out);
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Publication impossible." }); }
 }
 
 // GET /api/config : ce que le client a besoin de savoir (ex. si la publication est dispo).
-function handleConfig(req, res) { sendJson(res, 200, { canPublish: !!NETLIFY_TOKEN, accounts: true }); }
+function handleConfig(req, res) { sendJson(res, 200, { canPublish: !!NETLIFY_TOKEN, accounts: true, waveApi: !!WAVE_API_KEY }); }
 
 // --- COMPTES (Palier 4) : inscription, connexion, session ---
 // POST /api/auth/register  { email, name, password }
@@ -1711,6 +1907,10 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/cohorts")) return handleCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/app/submit") return handleSubmit(req, res);
   if (req.method === "POST" && req.url === "/api/app/upload") return handleUpload(req, res);
+  if (req.method === "POST" && req.url === "/api/app/pay") return handlePay(req, res);
+  if (req.method === "POST" && req.url === "/api/wave/webhook") return handleWaveWebhook(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/payment")) return handleGetPayment(req, res);
+  if (req.method === "POST" && req.url === "/api/payment/config") return handleSetPayment(req, res);
   if (req.method === "POST" && req.url === "/api/app/auth/register") return handleAppRegister(req, res);
   if (req.method === "POST" && req.url === "/api/app/auth/login") return handleAppLogin(req, res);
   if (req.method === "POST" && req.url === "/api/app/auth/me") return handleAppMe(req, res);
