@@ -127,6 +127,11 @@
   .lrow .tag{flex:0 0 auto;font-family:var(--f-mono),monospace;font-size:9px;letter-spacing:.05em;text-transform:uppercase;border:1px solid var(--line);border-radius:100px;padding:3px 8px;white-space:nowrap;}
   .aempty{color:var(--ink-faint);font-size:.86rem;text-align:center;padding:16px 8px;}
   .asection{font-family:var(--f-display),sans-serif;font-weight:640;font-size:.92rem;margin:16px 0 7px;color:var(--ink);border-top:1px solid var(--line);padding-top:14px;}
+  .subrow{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--surface);}
+  .submeta{font-family:var(--f-mono),monospace;font-size:10px;letter-spacing:.03em;color:var(--ink-faint);margin-bottom:5px;}
+  .subline{font-size:.86rem;color:var(--ink);margin:2px 0;line-height:1.4;}
+  .subdel{flex:0 0 auto;font-family:var(--f-mono),monospace;font-size:10.5px;border:1px solid var(--line);background:var(--surface-2);color:var(--bad);border-radius:7px;padding:5px 9px;cursor:pointer;height:fit-content;}
+  .subdel:hover{border-color:var(--bad);}
   .ch-actions{display:flex;gap:8px;align-items:center;}
   .resumed{margin:10px 12px 0;font-family:var(--f-mono),monospace;font-size:10.5px;color:var(--ink-faint);background:var(--surface-2);border:1px dashed var(--line);border-radius:8px;padding:7px 10px;text-align:center;}
   #thread{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:11px;min-height:0;}
@@ -236,6 +241,7 @@
           <div class="pv-tools">
             <button class="pubbtn" id="pubBtn" type="button" style="display:none;" title="Mettre votre site en ligne, avec une adresse à partager">🌐 Publier en ligne</button>
             <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">🌐 Voir en ligne</a>
+            <button class="dlbtn" id="dataBtn" type="button" style="display:none;" title="Voir les commandes / rendez-vous reçus">📋 Données</button>
             <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">⤓ Télécharger mon site</a>
             <div class="seg" id="devToggle">
               <button data-dev="desktop" class="active" type="button">🖥</button>
@@ -266,6 +272,16 @@
         <button id="certGo" class="primary" type="button">Créer mon certificat</button>
       </div>
       <div class="linkline">Les certificats sont vérifiables sur <a href="/verifier" target="_blank" rel="noopener">/verifier</a>.</div>
+    </div>
+  </div>
+
+  <!-- Données reçues (commandes / rendez-vous / messages) -->
+  <div class="modal-bg" id="dataModal">
+    <div class="modal wide">
+      <h3>📋 Données reçues</h3>
+      <p>Les commandes, rendez-vous et messages envoyés depuis votre site publié apparaissent ici.</p>
+      <div id="dataBody"><div class="aempty">Chargement…</div></div>
+      <div class="row"><button id="dataClose" type="button">Fermer</button></div>
     </div>
   </div>
 
@@ -345,6 +361,7 @@
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
     const pubBtn = $("pubBtn"), pubLink = $("pubLink");
+    const dataBtn = $("dataBtn"), dataModal = $("dataModal"), dataBody = $("dataBody");
     const typeBadge = $("typeBadge"), typeModal = $("typeModal"), typeChoices = $("typeChoices");
     let chooserSel = new Set(["presentation"]);
 
@@ -428,6 +445,7 @@
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
       if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "↻ Republier" : "🌐 Publier en ligne"; }
+      dataBtn.style.display = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0) ? "inline-block" : "none";
     }
 
     function showPublished(url){
@@ -460,7 +478,7 @@
     async function startNew(mods){
       currentModules = normMods(mods);
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
-      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none";
+      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none";
       pubBtn.style.display="none"; pubLink.style.display="none"; publishedUrl=null;
       renderRail(); renderTypeBadge();
       const typing = bubble("…","ai typing"); setBusy(true);
@@ -529,6 +547,9 @@
     typeModal.addEventListener("click",(e)=>{ if(e.target===typeModal){ closeTypeChooser(); if(!convId) startNew(["presentation"]); } });
     nextBtn.addEventListener("click", goNext);
     pubBtn.addEventListener("click", doPublish);
+    dataBtn.addEventListener("click", openData);
+    $("dataClose").addEventListener("click", closeData);
+    dataModal.addEventListener("click",(e)=>{ if(e.target===dataModal) closeData(); });
 
     // Certificat : petite fenêtre pour saisir le nom, puis ouverture du certificat imprimable.
     const certModal = $("certModal"), certName = $("certName");
@@ -615,7 +636,7 @@
       thread.innerHTML=""; resumedNote.style.display="none"; showAccessBanner();
       step=0; siteBuilt=false; renderRail();
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none";
+      dlBtn.style.display="none"; dataBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none";
       buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
       let msg;
       if(kind==="none") msg="👋 Bienvenue sur Bâtisseur. Connectez-vous ou créez un compte pour commencer votre formation.";
@@ -843,6 +864,55 @@
         if(!r.ok){ err.textContent = d.error || "Création impossible."; return; }
         await loadAdmin();
       }catch(e){ err.textContent = "Impossible de joindre le serveur."; }
+    }
+
+    // ===== Données reçues (commandes / rendez-vous / messages) =====
+    async function openData(){ if(!convId) return; dataModal.classList.add("show"); await loadData(); }
+    function closeData(){ dataModal.classList.remove("show"); }
+    function subLabel(c){ return c==="commande"?"Commandes":(c==="rendez-vous"?"Rendez-vous":(c==="message"?"Messages":c)); }
+    async function loadData(){
+      dataBody.innerHTML='<div class="aempty">Chargement…</div>';
+      try{
+        const r=await fetch("/api/submissions?id="+encodeURIComponent(convId)); const d=await r.json();
+        if(!r.ok){ dataBody.innerHTML='<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; }
+        renderData(d.submissions||[]);
+      }catch(e){ dataBody.innerHTML='<div class="aempty">Impossible de joindre le serveur.</div>'; }
+    }
+    function renderPayload(data){
+      const box=document.createElement("div");
+      try{
+        if(data && Array.isArray(data.articles)){
+          data.articles.forEach(function(a){ const l=document.createElement("div"); l.className="subline"; l.textContent="• "+a.produit+" × "+a.quantite+(a.prix!=null?"  ("+a.prix+")":""); box.appendChild(l); });
+          const t=document.createElement("div"); t.className="subline"; t.style.fontWeight="700"; t.textContent="Total : "+(data.total!=null?data.total:"")+" "+(data.devise||""); box.appendChild(t);
+          return box;
+        }
+        Object.keys(data||{}).forEach(function(k){ const l=document.createElement("div"); l.className="subline"; l.innerHTML="<b>"+escHtml(k)+" :</b> "+escHtml(typeof data[k]==="object"?JSON.stringify(data[k]):data[k]); box.appendChild(l); });
+      }catch(e){ box.textContent=JSON.stringify(data); }
+      return box;
+    }
+    function renderData(list){
+      dataBody.innerHTML="";
+      if(!list.length){ dataBody.innerHTML='<div class="aempty">Aucune donnée pour le moment. Publiez votre site et partagez-le : les commandes et rendez-vous reçus apparaîtront ici.</div>'; return; }
+      const groups={}; list.forEach(function(s){ (groups[s.collection]=groups[s.collection]||[]).push(s); });
+      Object.keys(groups).forEach(function(col){
+        const h=document.createElement("div"); h.className="asection"; h.textContent=subLabel(col)+" ("+groups[col].length+")"; dataBody.appendChild(h);
+        const wrap=document.createElement("div"); wrap.className="llist";
+        groups[col].forEach(function(s){
+          const row=document.createElement("div"); row.className="subrow";
+          const info=document.createElement("div"); info.style.flex="1"; info.style.minWidth="0";
+          const meta=document.createElement("div"); meta.className="submeta";
+          try{ meta.textContent=new Date(s.createdAt).toLocaleString("fr-FR"); }catch(e){ meta.textContent=s.createdAt||""; }
+          info.appendChild(meta); info.appendChild(renderPayload(s.data));
+          const del=document.createElement("button"); del.className="subdel"; del.type="button"; del.textContent="Supprimer";
+          del.addEventListener("click", function(){ deleteSub(s.id); });
+          row.appendChild(info); row.appendChild(del); wrap.appendChild(row);
+        });
+        dataBody.appendChild(wrap);
+      });
+    }
+    async function deleteSub(id){
+      try{ await fetch("/api/submissions/delete",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,projectId:convId})}); }catch(e){}
+      await loadData();
     }
 
     loginOpenBtn.addEventListener("click", ()=> openAuth("login"));

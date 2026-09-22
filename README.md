@@ -371,6 +371,34 @@ choisissant la sienne à l'inscription.
 > alter table users add column if not exists cohort_id text;
 > ```
 
+## Applications web — enregistrer les données (Niveau 2, Étape A)
+
+Première brique des vraies applications : les **commandes** (boutique) et les **rendez-vous**
+envoyés depuis un site publié sont désormais **enregistrés**, et l'apprenant les retrouve dans
+un bouton **« 📋 Données »** (en haut de l'aperçu) — liste, détail, suppression.
+
+- Fonctionne aussi sur le **site publié** (statique) : une petite « trousse de données » est
+  injectée dans les sites boutique/rendez-vous ; elle envoie chaque commande / demande au
+  moteur de données de la plateforme (en plus d'ouvrir l'e-mail ou WhatsApp comme avant).
+- **Isolé par projet** : seul le propriétaire du projet voit ses données.
+- **Garde-fous anti-abus** : limite de débit par visiteur et par jour, taille maximale,
+  piège anti-robot invisible (champ `bat_hp`).
+
+> **Si vous utilisez Supabase**, créez la table des données (dans **SQL Editor**) :
+>
+> ```sql
+> create table if not exists submissions (
+>   id text primary key,
+>   project_id text,
+>   collection text,
+>   data jsonb,
+>   created_at timestamptz default now()
+> );
+> ```
+
+Suite prévue (voir le document de plan) : **Étape B** — comptes des visiteurs (espace client) ;
+**Étape C** — générateur d'applications sur mesure.
+
 ## Mettre à jour la plateforme déjà en ligne
 
 Le service Render est relié à votre dépôt GitHub. Pour publier une nouvelle version :

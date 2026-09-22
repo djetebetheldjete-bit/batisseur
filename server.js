@@ -114,8 +114,7 @@ ESPACES MÉDIAS — DEMANDE AVANT DE SUPPOSER :
 // le HTML déclaratif (attributs data-bat-…). Le panier calcule le total ; « Commander »
 // / « Demander » préparent un message pré-rempli (WhatsApp si un numéro est présent,
 // sinon email mailto:). 100 % côté visiteur, aucune dépendance, aucun backend.
-const INTERACTIVE_KIT = `<!-- BAT-KIT:START -->
-<script>
+const INTERACTIVE_KIT = `<script>
 (function(){
   try{
     var NL=String.fromCharCode(10);
@@ -139,6 +138,12 @@ const INTERACTIVE_KIT = `<!-- BAT-KIT:START -->
       if(c.wa){window.open("https://wa.me/"+c.wa+"?text="+encodeURIComponent(subject+NL+NL+body),"_blank");return true;}
       if(c.email){window.location.href="mailto:"+c.email+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(body);return true;}
       return false;
+    }
+    // Enregistrement sur la plateforme (le propriétaire retrouve tout dans son espace).
+    function postApp(collection, data){
+      try{ var c=window.__BAT; if(!c||!c.app||!c.api) return;
+        fetch(c.api,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({app:c.app,collection:collection,data:data})}).catch(function(){});
+      }catch(e){}
     }
     // ---- Panier (boutique) ----
     var cart={};
@@ -181,36 +186,44 @@ const INTERACTIVE_KIT = `<!-- BAT-KIT:START -->
       } else if(t.hasAttribute("data-bat-inc")){var a=decodeURIComponent(t.getAttribute("data-bat-inc")); if(cart[a]){cart[a].qty++;render();}}
       else if(t.hasAttribute("data-bat-dec")){var b=decodeURIComponent(t.getAttribute("data-bat-dec")); if(cart[b]){cart[b].qty--; if(cart[b].qty<=0) delete cart[b]; render();}}
       else if(t.hasAttribute("data-bat-order")){e.preventDefault();
-        var ns=Object.keys(cart); if(!ns.length) return; var tot=0;
-        var lines=ns.map(function(n){var it=cart[n];tot+=it.price*it.qty;return "- "+n+" x"+it.qty+" : "+money(it.price*it.qty);});
+        var ns=Object.keys(cart); if(!ns.length) return; var tot=0; var items=[];
+        var lines=ns.map(function(n){var it=cart[n];tot+=it.price*it.qty; items.push({produit:n, quantite:it.qty, prix:it.price}); return "- "+n+" x"+it.qty+" : "+money(it.price*it.qty);});
+        postApp("commande", { articles:items, total: Math.round(tot*100)/100, devise: CUR });
         var body="Bonjour, je souhaite commander :"+NL+lines.join(NL)+NL+NL+"Total : "+money(tot);
-        if(!send("Nouvelle commande", body)){var box=q("[data-bat-cart]"); if(box){var pre=document.createElement("pre"); pre.style.cssText="white-space:pre-wrap;background:#f4f4f4;color:#111;padding:10px;border-radius:8px;margin-top:8px"; pre.textContent="Envoyez-nous ce récapitulatif :"+NL+body; box.appendChild(pre);}}
+        if(!send("Nouvelle commande", body)){var box=q("[data-bat-cart]"); if(box){var pre=document.createElement("pre"); pre.style.cssText="white-space:pre-wrap;background:#f4f4f4;color:#111;padding:10px;border-radius:8px;margin-top:8px"; pre.textContent="Merci ! Votre commande a bien été envoyée."+NL+NL+body; box.appendChild(pre);}}
       }
     });
-    // ---- Réservation (rendez-vous) ----
-    qa("form[data-bat-booking]").forEach(function(f){
+    // ---- Formulaires enregistrés (rendez-vous / message) ----
+    function wireForm(f, collection, subject, intro){
       f.addEventListener("submit",function(e){e.preventDefault();
-        var data=[]; qa("input,select,textarea",f).forEach(function(el){ if(!el.name||!el.value) return; var lab=el.getAttribute("data-label")||el.name; data.push(lab+" : "+el.value); });
+        var hp=f.querySelector('[name="bat_hp"]'); if(hp && hp.value){ return; } // piège anti-robot
+        var obj={}, data=[];
+        qa("input,select,textarea",f).forEach(function(el){ if(!el.name||el.name==="bat_hp"||!el.value) return; var lab=el.getAttribute("data-label")||el.name; obj[lab]=String(el.value); data.push(lab+" : "+el.value); });
         if(!data.length) return;
-        var body="Bonjour, je souhaite demander un rendez-vous :"+NL+data.join(NL);
-        if(!send("Demande de rendez-vous", body)){var p=document.createElement("p"); p.textContent="Merci ! Envoyez-nous ces informations pour confirmer votre demande."; f.appendChild(p);}
+        postApp(collection, obj);
+        var body="Bonjour, "+intro+NL+data.join(NL);
+        if(!send(subject, body)){ var pmsg=document.createElement("p"); pmsg.style.marginTop="10px"; pmsg.textContent="Merci ! Votre demande a bien été prise en compte."; f.appendChild(pmsg); }
+        try{ f.reset(); }catch(e2){}
       });
-    });
+    }
+    qa("form[data-bat-booking]").forEach(function(f){ wireForm(f, "rendez-vous", "Demande de rendez-vous", "je souhaite demander un rendez-vous :"); });
+    qa("form[data-bat-contact]").forEach(function(f){ wireForm(f, "message", "Nouveau message", "voici mon message :"); });
     ensureBox(); render();
   }catch(e){}
 })();
-</script>
-<!-- BAT-KIT:END -->`;
+</script>`;
 
 const KIT_RE = /\s*<!-- BAT-KIT:START -->[\s\S]*?<!-- BAT-KIT:END -->/g;
 function stripKit(html) { return html ? html.replace(KIT_RE, "").replace(/\n{3,}/g, "\n\n").trim() : html; }
-function injectKit(html, mods) {
+function injectKit(html, mods, conv, baseUrl) {
   if (!html) return html;
   html = stripKit(html);
   const wants = mods.includes("boutique") || mods.includes("rdv");
   if (!wants) return html;
-  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, "\n" + INTERACTIVE_KIT + "\n</body>");
-  return html + "\n" + INTERACTIVE_KIT;
+  const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',api:' + JSON.stringify((baseUrl || "") + "/api/app/submit") + '};</script>';
+  const block = "\n<!-- BAT-KIT:START -->\n" + cfg + "\n" + INTERACTIVE_KIT + "\n<!-- BAT-KIT:END -->\n";
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, block + "</body>");
+  return html + block;
 }
 
 // --- VOLETS DU PROJET (Paliers 5 & 6) : un projet combine un ou plusieurs volets ---
@@ -237,6 +250,7 @@ const MODULES = {
 - Place UNE seule fois, dans la rubrique boutique, le conteneur du panier : <div data-bat-cart></div>. La plateforme y affiche automatiquement le panier, le TOTAL calculé, et un bouton « Commander » qui prépare la commande pré-remplie.
 - Indique la devise si ce n'est pas l'euro, avec un attribut sur n'importe quel élément : data-bat-currency="FCFA" (par défaut : euros).
 - Donne un moyen de recevoir les commandes : un lien email <a href="mailto:contact@exemple.com">…</a> ET/OU un numéro WhatsApp <a href="https://wa.me/2250700000000">…</a>. Le bouton « Commander » utilisera WhatsApp si un numéro est présent, sinon l'email. N'invente pas de paiement en ligne.
+- Chaque commande validée est aussi ENREGISTRÉE automatiquement pour le propriétaire (rien à ajouter de ta part).
 - Tu n'écris AUCUN JavaScript : seulement ce HTML déclaratif.`
   },
   rdv: {
@@ -256,9 +270,12 @@ const MODULES = {
     <input name="Nom" type="text" placeholder="Votre nom">
     <input name="Contact" type="text" placeholder="Téléphone ou email">
     <textarea name="Message" placeholder="Message (facultatif)"></textarea>
+    <input name="bat_hp" style="display:none" tabindex="-1" autocomplete="off" aria-hidden="true">
     <button type="submit">Demander le rendez-vous</button>
   </form>
+  (Le champ « bat_hp » est un piège anti-robot invisible : inclus-le tel quel, ne l'affiche jamais.)
 - Donne un moyen de recevoir les demandes : lien email <a href="mailto:contact@exemple.com">…</a> ET/OU WhatsApp <a href="https://wa.me/2250700000000">…</a> (WhatsApp prioritaire s'il est présent).
+- Chaque demande est aussi ENREGISTRÉE automatiquement pour le propriétaire (rien à ajouter de ta part).
 - N'invente pas d'agenda en temps réel. Tu n'écris AUCUN JavaScript : seulement ce HTML déclaratif.`
   }
 };
@@ -305,6 +322,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".ico": "image/x-icon", ".png": "image/png", ".svg": "image/svg+xml" };
 
 function sendJson(res, code, obj) { res.writeHead(code, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(obj)); }
+function reqBase(req) { return (String(req.headers["x-forwarded-proto"] || "http").split(",")[0]) + "://" + (req.headers.host || "localhost"); }
 function readBody(req) { return new Promise((resolve, reject) => { let b = ""; req.on("data", (c) => { b += c; if (b.length > 8e6) req.destroy(); }); req.on("end", () => resolve(b)); req.on("error", reject); }); }
 
 function validId(id) { return typeof id === "string" && /^[A-Za-z0-9-]{8,64}$/.test(id); }
@@ -610,7 +628,7 @@ async function callClaude(system, messages, model) {
 }
 
 // Génère la réponse de l'étape courante (et met à jour le site si c'est une étape de construction).
-async function produceCurrent(conv) {
+async function produceCurrent(conv, baseUrl) {
   const step = conv.step || 0;
   const isBuild = !!STEPS[step].build;
   const mods = convModules(conv);
@@ -645,7 +663,7 @@ ${current}
   let siteUpdated = false;
   let message = ex.message;
 
-  if (isBuild && ex.html) ex.html = injectKit(ex.html, mods);
+  if (isBuild && ex.html) ex.html = injectKit(ex.html, mods, conv, baseUrl);
   if (isBuild && ex.html && await writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
   if (!message || !message.trim()) message = siteUpdated ? "✓ J'ai mis à jour votre site — regardez l'aperçu." : (ex.html ? "✓ C'est fait." : reply);
 
@@ -667,7 +685,7 @@ async function handleStart(req, res) {
     const mods = normalizeModules(p.modules, p.projectType);
     const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
     const conv = { id, step: 0, modules: mods, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
-    const out = await produceCurrent(conv);
+    const out = await produceCurrent(conv, reqBase(req));
     sendJson(res, 200, { id, step: 0, modules: mods, ...out });
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
@@ -684,7 +702,7 @@ async function handleChat(req, res) {
     if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
     if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
     conv.messages.push({ role: "user", content: p.message });
-    const out = await produceCurrent(conv);
+    const out = await produceCurrent(conv, reqBase(req));
     sendJson(res, 200, { step: conv.step, ...out });
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
@@ -703,7 +721,7 @@ async function handleNext(req, res) {
     if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
     conv.step = current + 1;
     conv.messages.push({ role: "user", content: STEPS[conv.step].kickoff, hidden: true });
-    const out = await produceCurrent(conv);
+    const out = await produceCurrent(conv, reqBase(req));
     sendJson(res, 200, { step: conv.step, atEnd: conv.step >= LAST_STEP, ...out });
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
@@ -1235,7 +1253,86 @@ function handleVerifyPage(req, res) {
   res.end(page);
 }
 
+// ============================================================
+// APPLICATIONS WEB — ENREGISTREMENT DES DONNÉES (Niveau 2, Étape A)
+// Les commandes / rendez-vous / messages envoyés depuis un site publié sont
+// enregistrés (isolés par projet), et le propriétaire les retrouve dans son espace.
+// ============================================================
+const SUBS_FILE = path.join(DATA_DIR, "submissions.json");
+function loadSubs() { try { return JSON.parse(fs.readFileSync(SUBS_FILE, "utf8")); } catch (e) { return []; } }
+function saveSubs(a) { try { fs.writeFileSync(SUBS_FILE, JSON.stringify(a, null, 2)); } catch (e) { console.error("saveSubs:", e); } }
+async function addSubmission(rec) {
+  if (USE_DB) { try { await sb(`/submissions`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([{ id: rec.id, project_id: rec.projectId, collection: rec.collection, data: rec.data, created_at: rec.createdAt }]) }); } catch (e) { console.error("addSubmission:", e.message); } return; }
+  const a = loadSubs(); a.push(rec); saveSubs(a);
+}
+async function listSubmissions(projectId) {
+  if (USE_DB) { try { const r = await sb(`/submissions?project_id=eq.${encodeURIComponent(projectId)}&select=*&order=created_at.desc`); return (r || []).map((x) => ({ id: x.id, projectId: x.project_id, collection: x.collection, data: x.data, createdAt: x.created_at })); } catch (e) { return []; } }
+  return loadSubs().filter((s) => s.projectId === projectId).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+async function deleteSubmission(id, projectId) {
+  if (USE_DB) { try { await sb(`/submissions?id=eq.${encodeURIComponent(id)}&project_id=eq.${encodeURIComponent(projectId)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); } catch (e) {} return; }
+  saveSubs(loadSubs().filter((s) => !(s.id === id && s.projectId === projectId)));
+}
+
+// Limiteur de débit en mémoire (anti-abus) + en-têtes CORS pour l'écriture publique.
+const RL = {};
+function rateOk(key, limit, windowMs) { const now = Date.now(); const arr = (RL[key] || []).filter((t) => now - t < windowMs); arr.push(now); RL[key] = arr; return arr.length <= limit; }
+function corsHeaders() { return { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "content-type" }; }
+function sendJsonCors(res, code, obj) { res.writeHead(code, Object.assign({ "content-type": "application/json; charset=utf-8" }, corsHeaders())); res.end(JSON.stringify(obj)); }
+
+// POST /api/app/submit  { app, collection, data }  — appelé par les sites publiés (public)
+async function handleSubmit(req, res) {
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJsonCors(res, 400, { error: "Requête invalide." }); }
+    const app = p.app;
+    if (!validId(app)) return sendJsonCors(res, 400, { error: "Application inconnue." });
+    const collection = (String(p.collection || "message").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40)) || "message";
+    const ip = (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim()) || (req.socket && req.socket.remoteAddress) || "?";
+    if (!rateOk(app + ":" + ip, 15, 10 * 60 * 1000)) return sendJsonCors(res, 429, { error: "Trop de demandes. Réessayez dans quelques minutes." });
+    if (!rateOk("app:" + app, 400, 24 * 60 * 60 * 1000)) return sendJsonCors(res, 429, { error: "Limite journalière atteinte." });
+    const conv = await loadConv(app);
+    if (!conv) return sendJsonCors(res, 404, { error: "Application introuvable." });
+    let data = p.data;
+    if (data === null || typeof data !== "object") data = { valeur: String(data == null ? "" : data).slice(0, 2000) };
+    if (Array.isArray(data)) data = { liste: data };
+    const raw = JSON.stringify(data);
+    if (raw.length > 8000) return sendJsonCors(res, 413, { error: "Données trop volumineuses." });
+    const clean = {};
+    Object.keys(data).slice(0, 20).forEach((k) => {
+      const kk = String(k).slice(0, 60); let v = data[k];
+      if (typeof v === "string") v = v.slice(0, 2000);
+      else if (typeof v === "object" && v !== null) { try { v = JSON.parse(JSON.stringify(v)); } catch (e) { v = null; } }
+      clean[kk] = v;
+    });
+    await addSubmission({ id: crypto.randomUUID(), projectId: app, collection, data: clean, createdAt: new Date().toISOString() });
+    sendJsonCors(res, 200, { ok: true });
+  } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
+}
+
+// GET /api/submissions?id=<projet>  — le propriétaire consulte les données reçues
+async function handleSubmissions(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const id = u.searchParams.get("id");
+  const conv = await loadConv(id);
+  if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
+  sendJson(res, 200, { submissions: await listSubmissions(id) });
+}
+
+// POST /api/submissions/delete  { id, projectId }
+async function handleSubmissionDelete(req, res) {
+  const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
+  const conv = await loadConv(p.projectId);
+  if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
+  await deleteSubmission(p.id, p.projectId);
+  sendJson(res, 200, { ok: true });
+}
+
 const server = http.createServer((req, res) => {
+  if (req.method === "OPTIONS" && req.url.startsWith("/api/app/submit")) { res.writeHead(204, corsHeaders()); return res.end(); }
   if (req.method === "POST" && req.url === "/api/start") return handleStart(req, res);
   if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
@@ -1252,6 +1349,9 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/admin/cohort/generate") return handleAdminCohortGenerate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/update") return handleAdminCohortUpdate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cohorts")) return handleCohorts(req, res);
+  if (req.method === "POST" && req.url === "/api/app/submit") return handleSubmit(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/submissions")) return handleSubmissions(req, res);
+  if (req.method === "POST" && req.url === "/api/submissions/delete") return handleSubmissionDelete(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/certificate")) return handleCertificate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/verify")) return handleVerifyApi(req, res);
