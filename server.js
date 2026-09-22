@@ -34,8 +34,19 @@ function loadEnv(file) {
 }
 loadEnv(path.join(__dirname, ".env"));
 
-const API_KEY = process.env.ANTHROPIC_API_KEY;
+// Clés API : une seule (ANTHROPIC_API_KEY) ou plusieurs (ANTHROPIC_API_KEYS, séparées par des virgules).
+// Plusieurs clés = bascule automatique si l'une est saturée/en erreur (voir callClaude).
+const API_KEYS = (function () {
+  const many = (process.env.ANTHROPIC_API_KEYS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const one = (process.env.ANTHROPIC_API_KEY || "").trim();
+  const all = [];
+  many.concat(one ? [one] : []).forEach((k) => { if (k && all.indexOf(k) === -1) all.push(k); });
+  return all;
+})();
+const API_KEY = API_KEYS[0]; // compat / test de présence
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
+// Modèle allégé pour les étapes de DISCUSSION (par défaut = le même modèle ; mettre p.ex. un Haiku pour réduire le coût).
+const MODEL_LIGHT = process.env.ANTHROPIC_MODEL_LIGHT || MODEL;
 const PORT = process.env.PORT || 3000;
 // Jeton d'hébergement (Palier 2) : la plateforme publie les sites des apprenants à leur place.
 const NETLIFY_TOKEN = process.env.NETLIFY_TOKEN;
@@ -393,14 +404,15 @@ async function getUserById(id) {
   if (USE_DB) { try { const r = await sb(`/users?id=eq.${encodeURIComponent(id)}&select=*`); return (r && r[0]) || null; } catch (err) { return null; } }
   const a = loadAccounts(); return a.users[id] || null;
 }
-async function createUser({ email, name, password, status, cohort }) {
+async function createUser({ email, name, password, status, cohort, cohortId }) {
   const e = normEmail(email);
   const user = {
     id: crypto.randomUUID(), email: e,
     name: String(name || "").trim().slice(0, 80) || e.split("@")[0],
     pass: hashPassword(password),
     status: status || "pending",
-    cohort: (cohort != null ? String(cohort).trim().slice(0, 80) : "") || null,
+    cohort: (cohort != null ? String(cohort).trim().slice(0, 120) : "") || null,
+    cohort_id: cohortId || null,
     created_at: new Date().toISOString()
   };
   if (USE_DB) { await sb(`/users`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([user]) }); }
@@ -471,7 +483,7 @@ async function currentUser(req) {
   const token = parseCookies(req)[SESSION_COOKIE];
   return token ? await getSessionUser(token) : null;
 }
-function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name, status: userStatus(u), cohort: u.cohort || null, isAdmin: isAdmin(u) } : null; }
+function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name, status: userStatus(u), cohort: u.cohort || null, cohortId: u.cohort_id || null, isAdmin: isAdmin(u) } : null; }
 
 // Un projet rattaché à un compte n'est accessible qu'à son propriétaire (voir owns()).
 // Les projets anonymes (sans userId) restent accessibles par id, comme avant.
@@ -558,16 +570,43 @@ function extractSite(text) {
 }
 // -------------------------------------------------------------------------
 
-async function callClaude(system, messages) {
+// Round-robin de départ entre les clés (réparti dans le temps).
+let KEY_CURSOR = 0;
+const RETRYABLE = [408, 409, 429, 500, 502, 503, 504, 529];
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+async function callClaude(system, messages, model) {
   const clean = messages.map((m) => ({ role: m.role, content: m.content }));
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 8192, system, messages: clean })
-  });
-  const data = await response.json();
-  if (!response.ok) { console.error("Erreur API Claude :", data); const e = new Error((data && data.error && data.error.message) || "Erreur de l'API Claude."); e.status = response.status; throw e; }
-  return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+  const body = JSON.stringify({ model: model || MODEL, max_tokens: 8192, system, messages: clean });
+  const n = API_KEYS.length || 1;
+  const start = KEY_CURSOR; KEY_CURSOR = (KEY_CURSOR + 1) % n; // avance pour la prochaine requête
+  let lastErr = null;
+
+  for (let i = 0; i < n; i++) {
+    const key = API_KEYS[(start + i) % n];
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+        body
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+
+      const status = response.status;
+      const msg = (data && data.error && data.error.message) || ("Erreur de l'API Claude (" + status + ").");
+      lastErr = Object.assign(new Error(msg), { status });
+      // 400/404 = problème de requête/modèle, pas de clé : inutile de basculer.
+      if (status === 400 || status === 404) throw lastErr;
+      // Sinon (429 saturation, 401/403 clé, 5xx…) : on tente la clé suivante.
+      console.error(`Clé API ${(start + i) % n + 1}/${n} → erreur ${status}, bascule…`);
+      if ((status === 429 || status === 529) && i < n - 1) await sleep(600);
+    } catch (e) {
+      if (e && (e.status === 400 || e.status === 404)) throw e;
+      lastErr = e; // erreur réseau : on tente la clé suivante
+    }
+  }
+  throw lastErr || new Error("Aucune clé API disponible.");
 }
 
 // Génère la réponse de l'étape courante (et met à jour le site si c'est une étape de construction).
@@ -598,7 +637,8 @@ ${current}
     }
   }
 
-  const reply = await callClaude(system, conv.messages);
+  // Construction = modèle principal ; discussion = modèle allégé (économie).
+  const reply = await callClaude(system, conv.messages, isBuild ? MODEL : MODEL_LIGHT);
 
   // Extraction blindée : le HTML ne fuite jamais dans le message.
   const ex = extractSite(reply);
@@ -811,7 +851,16 @@ async function handleRegister(req, res) {
     // Auto-inscription : le compte est « en attente » de validation par le formateur.
     // Sauf l'admin lui-même, qui est actif d'emblée pour pouvoir gérer la plateforme.
     const status = ADMIN_EMAILS.includes(email) ? "active" : "pending";
-    const user = await createUser({ email, name: p.name, password: p.password, status });
+    // Choix d'une session (réservation d'une place) : contrôle d'ouverture + capacité.
+    let cohort = null, cohortId = null;
+    if (p.cohortId) {
+      const c = await getCohort(p.cohortId);
+      if (!c || c.closed) return sendJson(res, 400, { error: "Cette session n'est plus disponible. Choisissez-en une autre." });
+      const counts = await cohortCounts();
+      if ((counts[c.id] || 0) >= (c.capacity || 0)) return sendJson(res, 409, { error: "Cette session est complète. Choisissez-en une autre." });
+      cohort = c.label; cohortId = c.id;
+    }
+    const user = await createUser({ email, name: p.name, password: p.password, status, cohort, cohortId });
     const token = await createSession(user.id);
     setSessionCookie(res, token);
     sendJson(res, 200, { user: publicUser(user) });
@@ -852,7 +901,7 @@ async function handleProjects(req, res) {
 
 // --- ESPACE FORMATEUR (admin) : gestion des apprenants & des sessions ---
 async function adminListUsers() {
-  if (USE_DB) { try { return (await sb(`/users?select=id,email,name,status,cohort,created_at&order=created_at.desc`)) || []; } catch (e) { console.error("adminListUsers:", e.message); return []; } }
+  if (USE_DB) { try { return (await sb(`/users?select=id,email,name,status,cohort,cohort_id,created_at&order=created_at.desc`)) || []; } catch (e) { console.error("adminListUsers:", e.message); return []; } }
   const a = loadAccounts(); return Object.values(a.users).sort((x, y) => String(y.created_at || "").localeCompare(String(x.created_at || "")));
 }
 async function allConvs() {
@@ -872,7 +921,7 @@ async function handleAdminLearners(req, res) {
   convs.forEach((c) => { if (!c || !c.userId) return; const b = byUser[c.userId] || (byUser[c.userId] = { projects: 0, published: 0 }); b.projects++; if (c.publishedUrl) b.published++; });
   const learners = users
     .filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)))
-    .map((x) => ({ id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, status: (x.status || "active"), createdAt: x.created_at || null, projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0 }));
+    .map((x) => ({ id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, cohortId: x.cohort_id || null, status: (x.status || "active"), createdAt: x.created_at || null, projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0 }));
   const stats = {
     total: learners.length,
     active: learners.filter((l) => l.status === "active").length,
@@ -893,7 +942,9 @@ async function handleAdminCreate(req, res) {
   if (!validEmail(email)) return sendJson(res, 400, { error: "Adresse e-mail invalide." });
   if (typeof p.password !== "string" || p.password.length < 6) return sendJson(res, 400, { error: "Mot de passe : 6 caractères minimum." });
   if (await findUserByEmail(email)) return sendJson(res, 409, { error: "Un compte existe déjà avec cette adresse." });
-  const user = await createUser({ email, name: p.name, password: p.password, status: "active", cohort: p.cohort });
+  let cohort = p.cohort || null, cohortId = null;
+  if (p.cohortId) { const c = await getCohort(p.cohortId); if (c) { cohortId = c.id; cohort = c.label; } }
+  const user = await createUser({ email, name: p.name, password: p.password, status: "active", cohort, cohortId });
   sendJson(res, 200, { user: publicUser(user) });
 }
 
@@ -908,15 +959,100 @@ async function handleAdminUpdate(req, res) {
   if (ADMIN_EMAILS.includes(normEmail(target.email))) return sendJson(res, 400, { error: "Le compte administrateur ne se gère pas ici." });
   const fields = {};
   if (typeof p.status === "string" && ["pending", "active", "finished"].includes(p.status)) fields.status = p.status;
-  if (p.cohort !== undefined) fields.cohort = String(p.cohort || "").trim().slice(0, 80) || null;
+  if (p.cohortId !== undefined) {
+    if (p.cohortId) { const c = await getCohort(p.cohortId); if (c) { fields.cohort_id = c.id; fields.cohort = c.label; } }
+    else { fields.cohort_id = null; fields.cohort = null; }
+  } else if (p.cohort !== undefined) { fields.cohort = String(p.cohort || "").trim().slice(0, 120) || null; }
   if (!Object.keys(fields).length) return sendJson(res, 400, { error: "Rien à modifier." });
   const updated = await updateUser(p.userId, fields);
   sendJson(res, 200, { user: publicUser(updated) });
 }
 
+// --- SESSIONS DE FORMATION (cohorts) : dates + capacité + places ---
+const COHORTS_FILE = path.join(DATA_DIR, "cohorts.json");
+function loadCohortsStore() { try { return JSON.parse(fs.readFileSync(COHORTS_FILE, "utf8")); } catch (e) { return {}; } }
+function saveCohortsStore(o) { try { fs.writeFileSync(COHORTS_FILE, JSON.stringify(o, null, 2)); } catch (e) { console.error("saveCohorts:", e); } }
+async function getCohort(id) {
+  if (!id) return null;
+  if (USE_DB) { try { const r = await sb(`/cohorts?id=eq.${encodeURIComponent(id)}&select=data`); return (r && r[0]) ? r[0].data : null; } catch (e) { return null; } }
+  return loadCohortsStore()[id] || null;
+}
+async function listCohorts() {
+  let arr = [];
+  if (USE_DB) { try { arr = ((await sb(`/cohorts?select=data`)) || []).map((x) => x.data).filter(Boolean); } catch (e) { arr = []; } }
+  else arr = Object.values(loadCohortsStore());
+  arr.sort((a, b) => String(a.startDate || "").localeCompare(String(b.startDate || "")));
+  return arr;
+}
+async function saveCohort(rec) {
+  if (USE_DB) { try { await sb(`/cohorts?on_conflict=id`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify([{ id: rec.id, data: rec, created_at: new Date().toISOString() }]) }); } catch (e) { console.error("saveCohort:", e.message); } return; }
+  const o = loadCohortsStore(); o[rec.id] = rec; saveCohortsStore(o);
+}
+async function updateCohortRec(id, fields) { const c = await getCohort(id); if (!c) return null; Object.assign(c, fields); await saveCohort(c); return c; }
+async function cohortCounts() {
+  const users = await adminListUsers();
+  const m = {};
+  users.forEach((u) => { const cid = u.cohort_id, st = u.status || "active"; if (cid && (st === "pending" || st === "active")) m[cid] = (m[cid] || 0) + 1; });
+  return m;
+}
+
+// GET /api/cohorts : sessions OUVERTES avec places restantes (public, pour l'inscription)
+async function handleCohorts(req, res) {
+  const list = await listCohorts(); const counts = await cohortCounts();
+  const open = list.filter((c) => !c.closed).map((c) => {
+    const enrolled = counts[c.id] || 0; const remaining = Math.max(0, (c.capacity || 0) - enrolled);
+    return { id: c.id, label: c.label, startDate: c.startDate, capacity: c.capacity, remaining: remaining, full: remaining <= 0 };
+  });
+  sendJson(res, 200, { cohorts: open });
+}
+
+// GET /api/admin/cohorts : toutes les sessions + inscrits (admin)
+async function handleAdminCohorts(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  const list = await listCohorts(); const counts = await cohortCounts();
+  sendJson(res, 200, { cohorts: list.map((c) => ({ id: c.id, label: c.label, startDate: c.startDate, capacity: c.capacity, closed: !!c.closed, enrolled: counts[c.id] || 0 })) });
+}
+
+// POST /api/admin/cohort/generate  { startDate, intervalDays, count, capacity }
+async function handleAdminCohortGenerate(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const start = String(p.startDate || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return sendJson(res, 400, { error: "Date de début invalide (AAAA-MM-JJ)." });
+  const interval = Math.max(1, parseInt(p.intervalDays, 10) || 14);
+  const count = Math.min(52, Math.max(1, parseInt(p.count, 10) || 1));
+  const capacity = Math.max(1, parseInt(p.capacity, 10) || 15);
+  const existing = await listCohorts(); const seen = {}; existing.forEach((c) => { seen[c.startDate] = true; });
+  const base = new Date(start + "T00:00:00Z"); let created = 0;
+  for (let i = 0; i < count; i++) {
+    const iso = new Date(base.getTime() + i * interval * 86400000).toISOString().slice(0, 10);
+    if (seen[iso]) continue;
+    await saveCohort({ id: crypto.randomUUID(), label: "Session du " + frDate(iso), startDate: iso, capacity: capacity, closed: false, createdAt: new Date().toISOString() });
+    seen[iso] = true; created++;
+  }
+  sendJson(res, 200, { created });
+}
+
+// POST /api/admin/cohort/update  { id, closed?, capacity?, label? }
+async function handleAdminCohortUpdate(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  if (!p.id) return sendJson(res, 400, { error: "Session manquante." });
+  const fields = {};
+  if (typeof p.closed === "boolean") fields.closed = p.closed;
+  if (p.capacity !== undefined) { const c = parseInt(p.capacity, 10); if (c >= 1) fields.capacity = c; }
+  if (typeof p.label === "string" && p.label.trim()) fields.label = p.label.trim().slice(0, 120);
+  if (!Object.keys(fields).length) return sendJson(res, 400, { error: "Rien à modifier." });
+  const c = await updateCohortRec(p.id, fields);
+  if (!c) return sendJson(res, 404, { error: "Session introuvable." });
+  sendJson(res, 200, { ok: true });
+}
+
 // --- CERTIFICAT (simple) : une belle page imprimable en PDF ---
 function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 const MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+function frDate(iso) { try { const d = new Date(iso + "T00:00:00Z"); return JOURS[d.getUTCDay()] + " " + d.getUTCDate() + " " + MOIS[d.getUTCMonth()] + " " + d.getUTCFullYear(); } catch (e) { return iso; } }
 
 // --- Registre des certificats (pour la vérification publique) ---
 const CERTS_FILE = path.join(DATA_DIR, "certificates.json");
@@ -1112,6 +1248,10 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/admin/learners")) return handleAdminLearners(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/create") return handleAdminCreate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/update") return handleAdminUpdate(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/admin/cohorts")) return handleAdminCohorts(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/cohort/generate") return handleAdminCohortGenerate(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/cohort/update") return handleAdminCohortUpdate(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/cohorts")) return handleCohorts(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/certificate")) return handleCertificate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/verify")) return handleVerifyApi(req, res);
@@ -1127,7 +1267,8 @@ server.listen(PORT, () => {
   console.log(`\n  Bâtisseur — parcours complet (v1.5) en marche.`);
   console.log(`  Ouvrez  http://localhost:${PORT}`);
   console.log(`  Étapes : ${STEPS.map((s) => s.label).join("  →  ")}`);
-  console.log(`  Modèle : ${MODEL}`);
+  console.log(`  Modèle : ${MODEL}${MODEL_LIGHT !== MODEL ? "  (discussion : " + MODEL_LIGHT + ")" : ""}`);
+  console.log(`  Clés API : ${API_KEYS.length} (bascule automatique)`);
   console.log(`  Mémoire : ${USE_DB ? "base de données (Supabase)" : "fichiers locaux"}`);
   console.log(`  Publication : ${NETLIFY_TOKEN ? "activée" : "désactivée"}`);
   console.log(`  Comptes : activés (espace membre)`);

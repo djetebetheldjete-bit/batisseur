@@ -75,6 +75,7 @@
   .modal h3{font-family:var(--f-display),sans-serif;margin:0 0 6px;color:var(--ink);font-size:1.05rem;}
   .modal p{margin:0 0 14px;color:var(--ink-faint);font-size:.86rem;}
   .modal input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--ink);font-family:inherit;font-size:.95rem;}
+  .modal select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--ink);font-family:inherit;font-size:.95rem;}
   .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
   .modal button{font-family:var(--f-display),sans-serif;font-weight:600;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:.85rem;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);}
   .modal button.primary{border:none;background:var(--accent);color:#fff;}
@@ -124,6 +125,7 @@
   .lrow input.lcohort{width:118px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2);color:var(--ink);font-size:.78rem;}
   .lrow select.lstatus{padding:6px 8px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface-2);color:var(--ink);font-size:.78rem;cursor:pointer;}
   .aempty{color:var(--ink-faint);font-size:.86rem;text-align:center;padding:16px 8px;}
+  .asection{font-family:var(--f-display),sans-serif;font-weight:640;font-size:.92rem;margin:16px 0 7px;color:var(--ink);border-top:1px solid var(--line);padding-top:14px;}
   .ch-actions{display:flex;gap:8px;align-items:center;}
   .resumed{margin:10px 12px 0;font-family:var(--f-mono),monospace;font-size:10.5px;color:var(--ink-faint);background:var(--surface-2);border:1px dashed var(--line);border-radius:8px;padding:7px 10px;text-align:center;}
   #thread{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:11px;min-height:0;}
@@ -298,6 +300,7 @@
         <input id="authName" type="text" placeholder="Votre nom et prénom" maxlength="80" autocomplete="name" style="display:none;">
         <input id="authEmail" type="email" placeholder="Adresse e-mail" autocomplete="email">
         <input id="authPass" type="password" placeholder="Mot de passe (6 caractères minimum)" autocomplete="current-password">
+        <select id="authCohort" style="display:none;"></select>
       </div>
       <div class="autherr" id="authErr"></div>
       <div class="row">
@@ -571,7 +574,16 @@
         el.style.display = "block";
       } else if(el){ el.style.display = "none"; }
     }
-    const authName = $("authName"), authEmail = $("authEmail"), authPass = $("authPass"), authErr = $("authErr");
+    const authName = $("authName"), authEmail = $("authEmail"), authPass = $("authPass"), authErr = $("authErr"), authCohort = $("authCohort");
+    async function loadAuthCohorts(){
+      try{
+        const r = await fetch("/api/cohorts"); const d = await r.json(); const list = d.cohorts || [];
+        authCohort.innerHTML = "";
+        if(!list.length){ const o=document.createElement("option"); o.value=""; o.textContent="Aucune session ouverte pour le moment"; authCohort.appendChild(o); return; }
+        const head=document.createElement("option"); head.value=""; head.textContent="Choisissez votre session…"; authCohort.appendChild(head);
+        list.forEach(function(c){ const o=document.createElement("option"); o.value=c.id; o.disabled=c.full; o.textContent=c.label+" — "+(c.full?"complet":(c.remaining+" place"+(c.remaining>1?"s":"")+" restante"+(c.remaining>1?"s":""))); authCohort.appendChild(o); });
+      }catch(e){ authCohort.innerHTML=""; }
+    }
     const authGo = $("authGo"), authToggle = $("authToggle"), authSwitchLine = $("authSwitchLine");
     const espaceModal = $("espaceModal"), projList = $("projList");
 
@@ -641,6 +653,7 @@
         authTitle.textContent = "Créer un compte";
         authIntro.textContent = "Un compte enregistre vos projets et met votre nom sur le certificat.";
         authName.style.display = "block";
+        authCohort.style.display = "block"; loadAuthCohorts();
         authGo.textContent = "Créer mon compte";
         authPass.setAttribute("autocomplete","new-password");
         authSwitchLine.innerHTML = 'Déjà un compte ? ';
@@ -648,6 +661,7 @@
         authTitle.textContent = "Se connecter";
         authIntro.textContent = "Retrouvez vos projets sur tous vos appareils.";
         authName.style.display = "none";
+        authCohort.style.display = "none";
         authGo.textContent = "Se connecter";
         authPass.setAttribute("autocomplete","current-password");
         authSwitchLine.innerHTML = 'Pas encore de compte ? ';
@@ -668,7 +682,7 @@
       authGo.disabled = true; const prev = authGo.textContent; authGo.textContent = "…";
       try{
         const url = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
-        const body = authMode === "register" ? { email, password: pass, name } : { email, password: pass };
+        const body = authMode === "register" ? { email, password: pass, name, cohortId: authCohort.value || undefined } : { email, password: pass };
         const r = await fetch(url, { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body) });
         const d = await r.json();
         if(!r.ok){ authErr.textContent = d.error || "Impossible pour le moment."; return; }
@@ -718,14 +732,23 @@
     }
 
     // ===== Espace formateur (admin) =====
-    async function openAdmin(){ adminModal.classList.add("show"); await loadLearners(); }
+    let adminCohorts = [];
+    function escHtml(s){ const d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
+    function cohortOptions(selected){
+      let h = '<option value="">— Aucune —</option>';
+      adminCohorts.forEach(function(c){ h += '<option value="'+c.id+'"'+(c.id===selected?' selected':'')+'>'+escHtml(c.label)+'</option>'; });
+      return h;
+    }
+    async function openAdmin(){ adminModal.classList.add("show"); await loadAdmin(); }
     function closeAdmin(){ adminModal.classList.remove("show"); }
-    async function loadLearners(){
+    async function loadAdmin(){
       adminBody.innerHTML = '<div class="aempty">Chargement…</div>';
       try{
-        const r = await fetch("/api/admin/learners"); const d = await r.json();
-        if(!r.ok){ adminBody.innerHTML = '<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; }
-        renderAdmin(d);
+        const [lr, cr] = await Promise.all([ fetch("/api/admin/learners"), fetch("/api/admin/cohorts") ]);
+        const ld = await lr.json(); const cd = await cr.json().catch(()=>({cohorts:[]}));
+        if(!lr.ok){ adminBody.innerHTML = '<div class="aempty">'+(ld.error||"Erreur")+'</div>'; return; }
+        adminCohorts = cd.cohorts || [];
+        renderAdmin(ld);
       }catch(e){ adminBody.innerHTML = '<div class="aempty">Impossible de joindre le serveur.</div>'; }
     }
     function renderAdmin(d){
@@ -738,45 +761,84 @@
       });
       adminBody.appendChild(stats);
 
+      // --- Sessions de formation ---
+      const sh = document.createElement("div"); sh.className = "asection"; sh.textContent = "Sessions de formation"; adminBody.appendChild(sh);
+      const gen = document.createElement("div"); gen.className = "acreate";
+      gen.innerHTML = '<input id="cgDate" type="date" value="2026-10-10" title="Date de début" style="max-width:150px"><input id="cgInt" type="number" min="1" value="14" title="Intervalle (jours)" style="max-width:80px"><input id="cgCount" type="number" min="1" value="6" title="Nombre de sessions" style="max-width:80px"><input id="cgCap" type="number" min="1" value="15" title="Places" style="max-width:80px"><button id="cgGo" type="button">Générer</button><div class="acerr" id="cgErr"></div>';
+      adminBody.appendChild(gen);
+      gen.querySelector("#cgGo").addEventListener("click", generateCohorts);
+
+      const slist = document.createElement("div"); slist.className = "llist";
+      if(!adminCohorts.length){ slist.innerHTML = '<div class="aempty">Aucune session. Générez-les à partir de la date de début.</div>'; }
+      else adminCohorts.forEach(function(c){
+        const row = document.createElement("div"); row.className = "lrow";
+        const info = document.createElement("div"); info.className = "linfo"; info.innerHTML = '<b></b><span></span>';
+        info.querySelector("b").textContent = c.label;
+        info.querySelector("span").textContent = c.enrolled + " / " + c.capacity + " inscrits";
+        const cap = document.createElement("input"); cap.type = "number"; cap.min = "1"; cap.value = c.capacity; cap.className = "lcohort"; cap.style.width = "64px"; cap.title = "Capacité";
+        const sel = document.createElement("select"); sel.className = "lstatus";
+        [["false","Ouverte"],["true","Fermée"]].forEach(function(o){ const op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; if(String(!!c.closed)===o[0]) op.selected = true; sel.appendChild(op); });
+        const save = function(){ updateCohort(c.id, sel.value==="true", parseInt(cap.value,10)||c.capacity); };
+        sel.addEventListener("change", save);
+        cap.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); cap.blur(); } });
+        cap.addEventListener("blur", function(){ if((parseInt(cap.value,10)||0) !== c.capacity) save(); });
+        row.appendChild(info); row.appendChild(cap); row.appendChild(sel);
+        slist.appendChild(row);
+      });
+      adminBody.appendChild(slist);
+
+      // --- Inscrire un apprenant ---
+      const lh = document.createElement("div"); lh.className = "asection"; lh.textContent = "Apprenants"; adminBody.appendChild(lh);
       const f = document.createElement("div"); f.className = "acreate";
-      f.innerHTML = '<input id="acName" placeholder="Nom et prénom" maxlength="80"><input id="acEmail" type="email" placeholder="Email" autocomplete="off"><input id="acCohort" placeholder="Session (ex. Sept. 2026 – A)" maxlength="80"><input id="acPass" type="text" placeholder="Mot de passe" autocomplete="off"><button id="acGo" type="button">+ Inscrire</button><div class="acerr" id="acErr"></div>';
+      f.innerHTML = '<input id="acName" placeholder="Nom et prénom" maxlength="80"><input id="acEmail" type="email" placeholder="Email" autocomplete="off"><select id="acCohortSel"></select><input id="acPass" type="text" placeholder="Mot de passe" autocomplete="off"><button id="acGo" type="button">+ Inscrire</button><div class="acerr" id="acErr"></div>';
       adminBody.appendChild(f);
+      f.querySelector("#acCohortSel").innerHTML = cohortOptions("");
       f.querySelector("#acGo").addEventListener("click", createLearner);
 
       const list = document.createElement("div"); list.className = "llist";
       if(!d.learners || !d.learners.length){ list.innerHTML = '<div class="aempty">Aucun apprenant inscrit pour le moment.</div>'; }
-      else d.learners.forEach((l)=>{
+      else d.learners.forEach(function(l){
         const row = document.createElement("div"); row.className = "lrow";
         const info = document.createElement("div"); info.className = "linfo"; info.innerHTML = '<b></b><span></span>';
         info.querySelector("b").textContent = l.name;
         info.querySelector("span").textContent = l.email + " · " + l.projects + " projet" + (l.projects>1?"s":"");
-        const cohort = document.createElement("input"); cohort.className = "lcohort"; cohort.value = l.cohort || ""; cohort.placeholder = "Session";
-        const sel = document.createElement("select"); sel.className = "lstatus";
-        [["active","Actif"],["pending","En attente"],["finished","Terminé"]].forEach(([v,t])=>{ const o = document.createElement("option"); o.value = v; o.textContent = t; if(l.status===v) o.selected = true; sel.appendChild(o); });
-        const save = ()=>saveLearner(l.id, sel.value, cohort.value);
-        sel.addEventListener("change", save);
-        cohort.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); cohort.blur(); } });
-        cohort.addEventListener("blur", ()=>{ if((cohort.value||"") !== (l.cohort||"")) save(); });
-        row.appendChild(info); row.appendChild(cohort); row.appendChild(sel);
+        const csel = document.createElement("select"); csel.className = "lcohort"; csel.style.width = "150px"; csel.innerHTML = cohortOptions(l.cohortId || "");
+        const ssel = document.createElement("select"); ssel.className = "lstatus";
+        [["active","Actif"],["pending","En attente"],["finished","Terminé"]].forEach(function(o){ const op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; if(l.status===o[0]) op.selected = true; ssel.appendChild(op); });
+        const save = function(){ saveLearner(l.id, ssel.value, csel.value); };
+        ssel.addEventListener("change", save);
+        csel.addEventListener("change", save);
+        row.appendChild(info); row.appendChild(csel); row.appendChild(ssel);
         list.appendChild(row);
       });
       adminBody.appendChild(list);
     }
-    async function saveLearner(userId, status, cohort){
+    async function generateCohorts(){
+      const date = $("cgDate").value, interval = $("cgInt").value, count = $("cgCount").value, cap = $("cgCap").value;
+      const err = $("cgErr"); err.textContent = "";
+      if(!date){ err.textContent = "Choisissez la date de début."; return; }
       try{
-        const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId,status,cohort})});
-        if(!r.ok){ await loadLearners(); }
-      }catch(e){}
+        const r = await fetch("/api/admin/cohort/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({startDate:date,intervalDays:parseInt(interval,10)||14,count:parseInt(count,10)||1,capacity:parseInt(cap,10)||15})});
+        const d = await r.json(); if(!r.ok){ err.textContent = d.error || "Erreur"; return; }
+        await loadAdmin();
+      }catch(e){ err.textContent = "Impossible de joindre le serveur."; }
+    }
+    async function updateCohort(id, closed, capacity){
+      try{ await fetch("/api/admin/cohort/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,closed:closed,capacity:capacity})}); }catch(e){}
+      await loadAdmin();
+    }
+    async function saveLearner(userId, status, cohortId){
+      try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,status:status,cohortId:cohortId})}); if(!r.ok){ await loadAdmin(); } }catch(e){}
     }
     async function createLearner(){
-      const name = $("acName").value.trim(), email = $("acEmail").value.trim(), cohort = $("acCohort").value.trim(), pass = $("acPass").value;
+      const name = $("acName").value.trim(), email = $("acEmail").value.trim(), cohortId = $("acCohortSel").value, pass = $("acPass").value;
       const err = $("acErr"); err.textContent = "";
       if(!email || !pass){ err.textContent = "Email et mot de passe requis."; return; }
       try{
-        const r = await fetch("/api/admin/learner/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name,email,cohort,password:pass})});
+        const r = await fetch("/api/admin/learner/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:name,email:email,cohortId:cohortId||undefined,password:pass})});
         const d = await r.json();
         if(!r.ok){ err.textContent = d.error || "Création impossible."; return; }
-        await loadLearners();
+        await loadAdmin();
       }catch(e){ err.textContent = "Impossible de joindre le serveur."; }
     }
 

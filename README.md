@@ -332,6 +332,45 @@ alter table users add column if not exists cohort text;
 (Le défaut `active` garde l'accès à vos comptes déjà créés ; les nouvelles auto-inscriptions
 sont mises « en attente » automatiquement par l'application.)
 
+## Plusieurs clés API & modèle allégé (économie / robustesse)
+
+- **Plusieurs clés** : en plus de `ANTHROPIC_API_KEY`, on peut renseigner `ANTHROPIC_API_KEYS`
+  (des clés séparées par des virgules). L'app **bascule automatiquement** sur la clé suivante
+  si l'une est saturée (limite atteinte) ou en erreur — pratique pendant une session en direct
+  où plusieurs apprenants construisent en même temps. Avec une seule clé, rien ne change.
+  > Attention : plusieurs clés d'un **même compte** Anthropic partagent la même limite de débit
+  > (les limites sont au niveau de l'organisation). Ça apporte surtout de la **résilience** ; pour
+  > vraiment plus de débit, il faut monter de palier d'usage, ou des clés de comptes distincts.
+- **Modèle allégé par étape** : `ANTHROPIC_MODEL_LIGHT` (optionnel) sert pour les étapes de
+  **discussion** (moins coûteux), tandis que `ANTHROPIC_MODEL` reste pour la **construction** du
+  site. Par défaut les deux sont identiques. Ex. : `ANTHROPIC_MODEL_LIGHT=claude-haiku-4-5-…`.
+
+## Sessions de formation (dates, places, réservation)
+
+Le formateur publie des **sessions** datées, et chaque apprenant **réserve sa place** en
+choisissant la sienne à l'inscription.
+
+- Dans **« ◱ Espace formateur » → Sessions de formation**, un formulaire **génère** les sessions
+  d'un coup : *date de début*, *intervalle* (14 jours), *nombre*, *places par session* (15).
+  Chaque session est datée automatiquement (ex. « Session du samedi 10 octobre 2026 »).
+- À l'inscription, l'apprenant **voit les sessions ouvertes avec les places restantes** et en
+  choisit une. Quand une session est **complète**, elle n'est plus proposée (pas de surbooking).
+- Le formateur peut **fermer/rouvrir** une session, **changer sa capacité**, et **affecter ou
+  déplacer** un apprenant d'une session à l'autre (menu déroulant sur chaque apprenant).
+- Une place occupée = un apprenant *en attente* ou *actif* dans la session.
+
+> **Si vous utilisez Supabase**, créez la table des sessions et ajoutez la colonne de session à
+> la table `users` (dans **SQL Editor**) :
+>
+> ```sql
+> create table if not exists cohorts (
+>   id text primary key,
+>   data jsonb,
+>   created_at timestamptz default now()
+> );
+> alter table users add column if not exists cohort_id text;
+> ```
+
 ## Mettre à jour la plateforme déjà en ligne
 
 Le service Render est relié à votre dépôt GitHub. Pour publier une nouvelle version :
