@@ -1,5 +1,12 @@
 # Bâtisseur — parcours complet (v1.5)
 
+> **Base de données — où est le SQL ?**
+> Tout le SQL est réuni dans un seul fichier à la racine du projet : **`schema.sql`**.
+> Ce script est **idempotent** (exécutable plusieurs fois sans risque) et crée toutes les
+> tables et colonnes nécessaires. Pour l'installer : Supabase → **SQL Editor** → coller le
+> contenu de `schema.sql` → **Run**. Les blocs SQL répartis dans les sections ci-dessous
+> restent à titre d'explication étape par étape, mais `schema.sql` les remplace tous.
+
 > **Nouveautés v1.5 — fiabilité**
 > - **Une seule structure** : le site est une page unique (le mode « Plusieurs pages » a été
 >   retiré). Plus de bascule qui fait tout perdre ou beuguer.

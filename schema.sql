@@ -1,0 +1,86 @@
+-- ============================================================
+-- Bâtisseur — schéma complet de la base de données
+-- (Supabase / PostgreSQL — à exécuter dans SQL Editor)
+--
+-- Script IDEMPOTENT : peut être exécuté plusieurs fois sans risque.
+-- Il crée toutes les tables et colonnes nécessaires à ce jour.
+-- Si votre base contient déjà certaines tables, les lignes
+-- « create table if not exists » et « add column if not exists »
+-- les laissent intactes et n'ajoutent que ce qui manque.
+-- ============================================================
+
+-- --- Mémoire durable : conversations et sites générés ---
+create table if not exists conversations (
+  id text primary key,
+  data jsonb,
+  updated_at timestamptz default now()
+);
+
+create table if not exists sites (
+  id text primary key,
+  html text,
+  updated_at timestamptz default now()
+);
+
+-- --- Comptes de la plateforme (apprenants et formateurs) ---
+create table if not exists users (
+  id text primary key,
+  email text unique,
+  name text,
+  pass text,
+  status text default 'active',
+  cohort text,
+  cohort_id text,
+  created_at timestamptz default now()
+);
+alter table users add column if not exists status text default 'active';
+alter table users add column if not exists cohort text;
+alter table users add column if not exists cohort_id text;
+
+create table if not exists sessions (
+  token text primary key,
+  user_id text,
+  created_at timestamptz default now()
+);
+
+-- --- Certificats vérifiables ---
+create table if not exists certificates (
+  num text primary key,
+  data jsonb,
+  created_at timestamptz default now()
+);
+
+-- --- Sessions de formation (dates, capacité) ---
+create table if not exists cohorts (
+  id text primary key,
+  data jsonb,
+  created_at timestamptz default now()
+);
+
+-- --- Données reçues par les applications (commandes, rendez-vous, messages) ---
+create table if not exists submissions (
+  id text primary key,
+  project_id text,
+  collection text,
+  data jsonb,
+  status text default 'nouveau',
+  created_at timestamptz default now()
+);
+alter table submissions add column if not exists status text default 'nouveau';
+
+-- --- Comptes des visiteurs des applications (espace membre) ---
+create table if not exists app_users (
+  id text primary key,
+  app_id text,
+  email text,
+  name text,
+  pass text,
+  created_at timestamptz default now()
+);
+
+create table if not exists app_sessions (
+  token text primary key,
+  app_id text,
+  user_id text,
+  created_at timestamptz default now()
+);
