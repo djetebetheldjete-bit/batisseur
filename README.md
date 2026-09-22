@@ -7,6 +7,27 @@
 > contenu de `schema.sql` → **Run**. Les blocs SQL répartis dans les sections ci-dessous
 > restent à titre d'explication étape par étape, mais `schema.sql` les remplace tous.
 
+> **Application installable (PWA)**
+> Au moment de la publication, une case **« Installable sur téléphone »** apparaît à côté du
+> bouton *Publier en ligne*. Cochée, le site est déployé comme une **vraie application** :
+> icône sur l'écran d'accueil, ouverture en plein écran, fonctionnement même hors connexion.
+> La plateforme génère et déploie automatiquement tout le nécessaire (icônes PNG 192 / 512,
+> `manifest.webmanifest`, service worker `sw.js`) et injecte les balises dans la page —
+> **l'apprenant n'écrit rien**. Tout est produit en Node natif dans `pwa.js`, **sans aucune
+> dépendance npm** et **sans nouvelle variable d'environnement ni changement de base**.
+> Installation côté visiteur : Android → menu du navigateur → « Ajouter à l'écran d'accueil » ;
+> iPhone → bouton Partager → « Sur l'écran d'accueil ».
+
+> **Envoi de fichiers par les visiteurs**
+> Un visiteur peut **joindre un fichier** (photo, PDF, document Word / Excel / PowerPoint, texte)
+> à une commande, un rendez-vous ou un message — utile par exemple pour un imprimeur qui reçoit
+> le fichier à imprimer, ou un artisan qui reçoit une photo du projet. Pour l'activer, l'assistant
+> ajoute simplement un champ `<input type="file" data-bat-file>` dans un formulaire ; **aucun code
+> à écrire**. Les fichiers (max **3 Mo**, types contrôlés) sont stockés côté plateforme et **seul
+> le propriétaire** peut les télécharger, depuis son tableau de bord « Données ». Nouvelle table
+> `uploads` (voir `schema.sql`) ; endpoints publics `/api/app/upload` (dépôt) et privé
+> `/api/upload` (téléchargement réservé au propriétaire). Toujours **sans dépendance npm**.
+
 > **Nouveautés v1.5 — fiabilité**
 > - **Une seule structure** : le site est une page unique (le mode « Plusieurs pages » a été
 >   retiré). Plus de bascule qui fait tout perdre ou beuguer.

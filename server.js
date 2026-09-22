@@ -17,6 +17,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const pwa = require("./pwa.js");
 
 function loadEnv(file) {
   try {
@@ -109,6 +110,11 @@ Sauf demande contraire de la personne, chaque site respecte ce standard sobre et
 - Composants nets : boutons aux coins légèrement arrondis (~8px), cartes à bordure fine ou ombre très légère, filets discrets. Contraste suffisant pour la lisibilité (texte foncé sur fond clair).
 - Aucune fioriture décorative, aucun émoji.
 La personne garde la main : si elle demande d'autres couleurs, une ambiance plus chaleureuse ou colorée, une police plus grande, etc., applique exactement sa demande.
+
+FICHIERS JOINTS (optionnel, sur demande) :
+- Un visiteur peut JOINDRE un fichier (photo, PDF, document) à un formulaire de rendez-vous, de contact ou de commande. Pour l'activer, ajoute simplement, DANS un formulaire, un champ fichier déclaratif : <input type="file" data-bat-file name="fichier" data-label="Votre fichier"> (ajoute « multiple » pour permettre plusieurs fichiers). La plateforme gère tout l'envoi ; tu n'écris AUCUN JavaScript.
+- Types acceptés : images, PDF, documents Word / Excel / PowerPoint, texte. Taille maximale : 3 Mo par fichier. Le propriétaire retrouve les fichiers reçus dans son tableau de bord « Données ».
+- Pour un formulaire de commande simple avec pièce jointe (ex. un imprimeur qui reçoit un fichier à imprimer), utilise un <form data-bat-form data-bat-collection="commande"> contenant les champs voulus et le champ fichier ci-dessus.
 
 RUBRIQUES LIBRES :
 - Le menu reflète EXACTEMENT les rubriques voulues (Accueil, Services, Réalisations, À propos, Contact, Tarifs, Blog, FAQ, Équipe, Galerie, Horaires… ce que la personne veut).
@@ -263,21 +269,48 @@ const INTERACTIVE_KIT = `<script>
         if(!send("Nouvelle commande", body)){var box=q("[data-bat-cart]"); if(box){var pre=document.createElement("pre"); pre.style.cssText="white-space:pre-wrap;background:#f4f4f4;color:#111;padding:10px;border-radius:8px;margin-top:8px"; pre.textContent="Merci ! Votre commande a bien été envoyée."+NL+NL+body; box.appendChild(pre);}}
       }
     });
-    // ---- Formulaires enregistrés (rendez-vous / message) ----
+    // ---- Fichiers joints (upload par le visiteur) ----
+    var FILE_MAX = 3 * 1024 * 1024;
+    function readB64(file){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result).split(",")[1]||""); }; r.onerror=function(){ rej(new Error("Lecture du fichier impossible.")); }; r.readAsDataURL(file); }); }
+    function uploadFile(file){
+      if(file.size>FILE_MAX) return Promise.reject(new Error("Le fichier « "+file.name+" » dépasse 3 Mo."));
+      return readB64(file).then(function(b64){
+        return fetch(api("/upload"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({app:APP,name:file.name,type:file.type||"application/octet-stream",size:file.size,data:b64,token:tok()||undefined})})
+          .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ if(r.ok&&j&&j.id) return {id:j.id,name:j.name,type:j.type,size:j.size}; throw new Error((j&&j.error)||"Envoi du fichier impossible."); }); });
+      });
+    }
+    function collectFiles(f){ var out=[]; qa('input[type="file"]',f).forEach(function(el){ if(!el.files) return; for(var i=0;i<el.files.length;i++) out.push(el.files[i]); }); return out; }
+    function uploadAll(files){ var refs=[]; return files.reduce(function(pr,file){ return pr.then(function(){ return uploadFile(file).then(function(ref){ refs.push(ref); }); }); }, Promise.resolve()).then(function(){ return refs; }); }
+    // ---- Formulaires enregistrés (rendez-vous / message / commande) ----
     function wireForm(f, collection, subject, intro){
       f.addEventListener("submit",function(e){e.preventDefault();
         var hp=f.querySelector('[name="bat_hp"]'); if(hp && hp.value){ return; } // piège anti-robot
         var obj={}, data=[];
-        qa("input,select,textarea",f).forEach(function(el){ if(!el.name||el.name==="bat_hp"||!el.value) return; var lab=el.getAttribute("data-label")||el.name; obj[lab]=String(el.value); data.push(lab+" : "+el.value); });
-        if(!data.length) return;
-        postApp(collection, obj);
-        var body="Bonjour, "+intro+NL+data.join(NL);
-        if(!send(subject, body)){ var pmsg=document.createElement("p"); pmsg.style.marginTop="10px"; pmsg.textContent="Merci ! Votre demande a bien été prise en compte."; f.appendChild(pmsg); }
-        try{ f.reset(); }catch(e2){}
+        qa("input,select,textarea",f).forEach(function(el){ if(el.type==="file"||!el.name||el.name==="bat_hp"||!el.value) return; var lab=el.getAttribute("data-label")||el.name; obj[lab]=String(el.value); data.push(lab+" : "+el.value); });
+        var files=collectFiles(f);
+        if(!data.length && !files.length) return;
+        var btn=f.querySelector('[type="submit"]'); var lbl=btn?btn.textContent:"";
+        var errBox=f.querySelector("[data-bat-formerr]");
+        function showErr(msg){ if(!errBox){ errBox=document.createElement("p"); errBox.setAttribute("data-bat-formerr",""); errBox.style.cssText="margin-top:10px;color:#c0392b;font-size:14px"; f.appendChild(errBox); } errBox.textContent=msg; if(btn){ btn.disabled=false; btn.textContent=lbl; } }
+        function finish(fichiers){
+          if(fichiers && fichiers.length){ obj.fichiers=fichiers.map(function(x){return {id:x.id,name:x.name,type:x.type,size:x.size};}); data.push((fichiers.length>1?"Fichiers joints : ":"Fichier joint : ")+fichiers.map(function(x){return x.name;}).join(", ")); }
+          postApp(collection, obj);
+          var body="Bonjour, "+intro+NL+data.join(NL);
+          if(!send(subject, body)){ var pmsg=document.createElement("p"); pmsg.style.marginTop="10px"; pmsg.textContent="Merci ! Votre demande a bien été prise en compte."; f.appendChild(pmsg); }
+          if(errBox) errBox.textContent="";
+          try{ f.reset(); }catch(e2){}
+          if(btn){ btn.disabled=false; btn.textContent=lbl; }
+        }
+        if(files.length){
+          if(!(APP && apiBase())){ showErr("L'envoi de fichiers sera actif une fois le site publié."); return; }
+          if(btn){ btn.disabled=true; btn.textContent="Envoi…"; }
+          uploadAll(files).then(finish).catch(function(err){ showErr((err&&err.message)||"Envoi impossible."); });
+        } else { finish([]); }
       });
     }
     qa("form[data-bat-booking]").forEach(function(f){ wireForm(f, "rendez-vous", "Demande de rendez-vous", "je souhaite demander un rendez-vous :"); });
     qa("form[data-bat-contact]").forEach(function(f){ wireForm(f, "message", "Nouveau message", "voici mon message :"); });
+    qa("form[data-bat-form]").forEach(function(f){ var c=(f.getAttribute("data-bat-collection")||"message").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,40)||"message"; wireForm(f, c, f.getAttribute("data-bat-subject")||"Nouvelle demande", f.getAttribute("data-bat-intro")||"voici ma demande :"); });
     ensureBox(); render(); initMembers();
   }catch(e){}
 })();
@@ -288,7 +321,7 @@ function stripKit(html) { return html ? html.replace(KIT_RE, "").replace(/\n{3,}
 function injectKit(html, mods, conv, baseUrl) {
   if (!html) return html;
   html = stripKit(html);
-  const wants = mods.includes("boutique") || mods.includes("rdv") || mods.includes("membre") || /data-bat-(auth|members|booking|contact|add)/i.test(html);
+  const wants = mods.includes("boutique") || mods.includes("rdv") || mods.includes("membre") || /data-bat-(auth|members|booking|contact|add|form|file)/i.test(html);
   if (!wants) return html;
   const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',base:' + JSON.stringify((baseUrl || "") + "/api/app") + '};</script>';
   const block = "\n<!-- BAT-KIT:START -->\n" + cfg + "\n" + INTERACTIVE_KIT + "\n<!-- BAT-KIT:END -->\n";
@@ -406,7 +439,9 @@ Bâtisseur ne fait pas que des sites vitrines : c'est aussi un créateur d'appli
 - Une PRISE DE RENDEZ-VOUS : les demandes sont enregistrées et suivies de la même façon.
 - Un ESPACE MEMBRE : les visiteurs créent un compte, se connectent, et accèdent à des sections réservées.
 - Les commandes, rendez-vous et messages arrivent automatiquement dans un tableau de bord « Données ».
-- Bientôt : rendre le site INSTALLABLE comme une appli sur le téléphone, l'UPLOAD de fichiers, et le PAIEMENT en ligne.
+- Une APPLICATION INSTALLABLE : au moment de la publication, la personne peut cocher « Installable sur téléphone » pour que son site s'installe comme une vraie appli (icône sur l'écran d'accueil, ouverture en plein écran, fonctionne même hors connexion). La plateforme s'occupe de tout automatiquement — rien à écrire.
+- L'ENVOI DE FICHIERS : un visiteur peut joindre une photo, un PDF ou un document à une commande, un rendez-vous ou un message (par exemple un imprimeur qui reçoit le fichier à imprimer, un artisan qui reçoit une photo du projet). Le propriétaire retrouve les fichiers dans son tableau de bord « Données ». Il suffit d'ajouter un champ fichier au formulaire — la plateforme gère tout.
+- Bientôt : le PAIEMENT en ligne.
 Explique ces possibilités comme des idées concrètes (« on pourrait ajouter… »), sans forcer. Si une fonction demande un volet qui n'est pas activé (Boutique, Rendez-vous, Espace membre), invite gentiment la personne à cliquer « Recommencer » et à cocher le ou les volets voulus (on peut en combiner plusieurs).`;
 
 const DATA_DIR = path.join(__dirname, "data");
@@ -609,7 +644,7 @@ function convTitle(conv) {
   return "Projet sans titre";
 }
 function convSummary(conv) {
-  return { id: conv.id, title: convTitle(conv), modules: convModules(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, updatedAt: conv.updatedAt || conv.createdAt || null };
+  return { id: conv.id, title: convTitle(conv), modules: convModules(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, updatedAt: conv.updatedAt || conv.createdAt || null };
 }
 async function listConvsForUser(userId) {
   if (!userId) return [];
@@ -852,7 +887,7 @@ async function handleGetConversation(req, res) {
   const cu = await currentUser(req);
   if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
   if (conv.userId && !canView(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
-  sendJson(res, 200, { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) });
+  sendJson(res, 200, { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) });
 }
 
 // GET /preview/<id>/<fichier> : sert le site généré (une seule page)
@@ -904,8 +939,23 @@ async function publishSite(conv) {
   if (!NETLIFY_TOKEN) { const e = new Error("La publication n'est pas encore configurée sur cette plateforme."); e.status = 501; throw e; }
   const html = await readSite(conv.id);
   if (!html) { const e = new Error("Aucun site à publier : construisez d'abord votre site."); e.status = 400; throw e; }
-  const buf = Buffer.from(html, "utf8");
-  const sha1 = crypto.createHash("sha1").update(buf).digest("hex");
+
+  // Jeu de fichiers à déployer. Site simple = index.html seul. Application
+  // installable (PWA) = index.html enrichi + manifeste + service worker + icônes.
+  let fileset;
+  if (conv.pwa) {
+    fileset = pwa.buildPwaFiles(html, { name: convTitle(conv), version: crypto.createHash("sha1").update(html).digest("hex").slice(0, 12) });
+  } else {
+    fileset = { "index.html": Buffer.from(html, "utf8") };
+  }
+  const files = {};   // "/chemin" -> sha1 (annoncé à l'hébergeur)
+  const bySha = {};   // sha1 -> { name, buf } (pour le téléversement)
+  for (const name of Object.keys(fileset)) {
+    const fbuf = fileset[name];
+    const fsha = crypto.createHash("sha1").update(fbuf).digest("hex");
+    files["/" + name] = fsha;
+    bySha[fsha] = { name: name, buf: fbuf };
+  }
 
   // 1) Créer le site chez l'hébergeur (une seule fois par conversation).
   if (!conv.netlifySiteId) {
@@ -915,16 +965,18 @@ async function publishSite(conv) {
     await saveConv(conv);
   }
 
-  // 2) Créer un déploiement en annonçant le fichier par son empreinte (sha1).
+  // 2) Créer un déploiement en annonçant les fichiers par leur empreinte (sha1).
   const deploy = await netlify(`/sites/${conv.netlifySiteId}/deploys`, {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ files: { "/index.html": sha1 } })
+    body: JSON.stringify({ files: files })
   });
 
-  // 3) Téléverser le fichier si l'hébergeur ne l'a pas déjà.
-  if ((deploy.required || []).includes(sha1)) {
-    await netlify(`/deploys/${deploy.id}/files/index.html`, {
-      method: "PUT", headers: { "content-type": "application/octet-stream" }, body: buf
+  // 3) Téléverser chaque fichier que l'hébergeur ne possède pas déjà.
+  for (const need of (deploy.required || [])) {
+    const f = bySha[need];
+    if (!f) continue;
+    await netlify(`/deploys/${deploy.id}/files/${f.name}`, {
+      method: "PUT", headers: { "content-type": "application/octet-stream" }, body: f.buf
     });
   }
 
@@ -948,7 +1000,9 @@ async function handlePublish(req, res) {
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
     if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
+    if (typeof p.pwa === "boolean") { conv.pwa = p.pwa; await saveConv(conv); }
     const out = await publishSite(conv);
+    out.pwa = !!conv.pwa;
     sendJson(res, 200, out);
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Publication impossible." }); }
 }
@@ -1378,6 +1432,34 @@ async function updateSubmissionStatus(id, projectId, status) {
   const a = loadSubs(); a.forEach((s) => { if (s.id === id && s.projectId === projectId) s.status = status; }); saveSubs(a);
 }
 
+// --- FICHIERS JOINTS (upload par les visiteurs des applications) -----------
+// Un visiteur peut joindre un fichier (photo, PDF, document) à une commande,
+// un rendez-vous ou un message. Le fichier est stocké côté plateforme (base ou
+// fichier local) et SEUL le propriétaire peut le télécharger depuis son tableau
+// de bord. Aucune dépendance : le fichier arrive en base64 dans un POST JSON.
+const UPLOADS_FILE = path.join(DATA_DIR, "uploads.json");
+const UPLOAD_MAX_BYTES = 3 * 1024 * 1024;          // 3 Mo par fichier
+const UPLOAD_TYPES_OK = /^(image\/(png|jpeg|jpg|webp|gif|heic|heif)|application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)|application\/vnd\.ms-(excel|powerpoint)|text\/plain|text\/csv)$/i;
+function loadUploads() { try { return JSON.parse(fs.readFileSync(UPLOADS_FILE, "utf8")); } catch (e) { return []; } }
+function saveUploads(a) { try { fs.writeFileSync(UPLOADS_FILE, JSON.stringify(a, null, 2)); } catch (e) { console.error("saveUploads:", e); } }
+function safeName(name) {
+  let n = String(name || "fichier").replace(/[\/\\]/g, "_").replace(/[^\w .()\-À-ÿ]/g, "").trim();
+  n = n.slice(-80) || "fichier";
+  return n;
+}
+async function addUpload(rec) {
+  if (USE_DB) { await sb(`/uploads`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([{ id: rec.id, project_id: rec.projectId, name: rec.name, type: rec.type, size: rec.size, data: rec.data, created_at: rec.createdAt }]) }); return; }
+  const a = loadUploads(); a.push(rec); saveUploads(a);
+}
+async function getUpload(id, projectId) {
+  if (USE_DB) { try { const r = await sb(`/uploads?id=eq.${encodeURIComponent(id)}&project_id=eq.${encodeURIComponent(projectId)}&select=*`); const x = (r || [])[0]; return x ? { id: x.id, projectId: x.project_id, name: x.name, type: x.type, size: x.size, data: x.data } : null; } catch (e) { return null; } }
+  return loadUploads().find((u) => u.id === id && u.projectId === projectId) || null;
+}
+async function deleteUpload(id, projectId) {
+  if (USE_DB) { try { await sb(`/uploads?id=eq.${encodeURIComponent(id)}&project_id=eq.${encodeURIComponent(projectId)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); } catch (e) {} return; }
+  saveUploads(loadUploads().filter((u) => !(u.id === id && u.projectId === projectId)));
+}
+
 // Limiteur de débit en mémoire (anti-abus) + en-têtes CORS pour l'écriture publique.
 const RL = {};
 function rateOk(key, limit, windowMs) { const now = Date.now(); const arr = (RL[key] || []).filter((t) => now - t < windowMs); arr.push(now); RL[key] = arr; return arr.length <= limit; }
@@ -1415,6 +1497,52 @@ async function handleSubmit(req, res) {
   } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
 }
 
+// POST /api/app/upload  { app, name, type, size, data(base64) }  — public (sites publiés)
+async function handleUpload(req, res) {
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJsonCors(res, 400, { error: "Requête invalide." }); }
+    const app = p.app;
+    if (!validId(app)) return sendJsonCors(res, 400, { error: "Application inconnue." });
+    const ip = (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim()) || (req.socket && req.socket.remoteAddress) || "?";
+    if (!rateOk("up:" + app + ":" + ip, 20, 10 * 60 * 1000)) return sendJsonCors(res, 429, { error: "Trop d'envois de fichiers. Réessayez dans quelques minutes." });
+    if (!rateOk("upday:" + app, 300, 24 * 60 * 60 * 1000)) return sendJsonCors(res, 429, { error: "Limite journalière atteinte." });
+    const conv = await loadConv(app);
+    if (!conv) return sendJsonCors(res, 404, { error: "Application introuvable." });
+    const type = String(p.type || "").slice(0, 100);
+    if (!UPLOAD_TYPES_OK.test(type)) return sendJsonCors(res, 415, { error: "Type de fichier non pris en charge." });
+    const b64 = String(p.data || "").replace(/^data:[^,]*,/, "");
+    if (!b64 || b64.length > Math.ceil(UPLOAD_MAX_BYTES / 3) * 4 + 1024) return sendJsonCors(res, 413, { error: "Fichier trop volumineux (maximum 3 Mo)." });
+    let buf; try { buf = Buffer.from(b64, "base64"); } catch (e) { return sendJsonCors(res, 400, { error: "Fichier illisible." }); }
+    if (!buf.length || buf.length > UPLOAD_MAX_BYTES) return sendJsonCors(res, 413, { error: "Fichier trop volumineux (maximum 3 Mo)." });
+    const name = safeName(p.name);
+    const id = crypto.randomUUID();
+    try { await addUpload({ id, projectId: app, name, type, size: buf.length, data: b64, createdAt: new Date().toISOString() }); }
+    catch (e) { return sendJsonCors(res, 500, { error: "Enregistrement du fichier impossible." }); }
+    sendJsonCors(res, 200, { id, name, type, size: buf.length });
+  } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
+}
+
+// GET /api/upload?id=&projectId=  — téléchargement RÉSERVÉ au propriétaire du projet
+async function handleUploadDownload(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const id = u.searchParams.get("id"); const projectId = u.searchParams.get("projectId");
+  const conv = await loadConv(projectId);
+  if (!conv) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Projet introuvable."); }
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Accès non autorisé."); }
+  const up = await getUpload(id, projectId);
+  if (!up) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Fichier introuvable."); }
+  let buf; try { buf = Buffer.from(String(up.data || "").replace(/^data:[^,]*,/, ""), "base64"); } catch (e) { buf = Buffer.alloc(0); }
+  const disp = (u.searchParams.get("view") === "1") ? "inline" : "attachment";
+  res.writeHead(200, {
+    "content-type": (up.type && /^[\w.+/-]+$/.test(up.type)) ? up.type : "application/octet-stream",
+    "content-disposition": disp + '; filename="' + safeName(up.name).replace(/"/g, "") + '"',
+    "content-length": buf.length,
+    "cache-control": "private, no-store"
+  });
+  res.end(buf);
+}
+
 // GET /api/submissions?id=<projet>  — le propriétaire consulte les données reçues
 async function handleSubmissions(req, res) {
   const u = new URL(req.url, "http://localhost");
@@ -1433,6 +1561,13 @@ async function handleSubmissionDelete(req, res) {
   if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
   const cu = await currentUser(req);
   if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
+  // Supprime aussi les fichiers joints à cet envoi.
+  try {
+    const subs = await listSubmissions(p.projectId);
+    const target = subs.find((s) => s.id === p.id);
+    const fs2 = target && target.data && Array.isArray(target.data.fichiers) ? target.data.fichiers : [];
+    for (const f of fs2) { if (f && f.id) await deleteUpload(f.id, p.projectId); }
+  } catch (e) {}
   await deleteSubmission(p.id, p.projectId);
   sendJson(res, 200, { ok: true });
 }
@@ -1575,11 +1710,13 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/admin/cohort/update") return handleAdminCohortUpdate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cohorts")) return handleCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/app/submit") return handleSubmit(req, res);
+  if (req.method === "POST" && req.url === "/api/app/upload") return handleUpload(req, res);
   if (req.method === "POST" && req.url === "/api/app/auth/register") return handleAppRegister(req, res);
   if (req.method === "POST" && req.url === "/api/app/auth/login") return handleAppLogin(req, res);
   if (req.method === "POST" && req.url === "/api/app/auth/me") return handleAppMe(req, res);
   if (req.method === "POST" && req.url === "/api/app/auth/logout") return handleAppLogout(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/app-users")) return handleAppUsersList(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/upload")) return handleUploadDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/submissions")) return handleSubmissions(req, res);
   if (req.method === "POST" && req.url === "/api/submissions/delete") return handleSubmissionDelete(req, res);
   if (req.method === "POST" && req.url === "/api/submissions/status") return handleSubmissionStatus(req, res);

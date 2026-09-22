@@ -162,6 +162,8 @@
   .pubbtn{font-family:var(--f-mono),monospace;font-size:11px;border:none;background:var(--good);color:#fff;border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap;}
   .pubbtn:hover{filter:brightness(1.06);}
   .pubbtn:disabled{opacity:.6;cursor:default;}
+  .pwachk{font-family:var(--f-mono),monospace;font-size:11px;color:var(--ink-soft);display:inline-flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;}
+  .pwachk input{margin:0;cursor:pointer;}
   .publink{font-family:var(--f-mono),monospace;font-size:11px;border:1px solid var(--good);color:var(--good);border-radius:8px;padding:5px 10px;text-decoration:none;white-space:nowrap;}
   .publink:hover{background:var(--good);color:#fff;}
   .pv-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
@@ -241,6 +243,7 @@
           <div class="tt">Aperçu <span class="live" id="liveTag" style="display:none;">en direct</span></div>
           <div class="pv-tools">
             <button class="pubbtn" id="pubBtn" type="button" style="display:none;" title="Mettre votre site en ligne, avec une adresse à partager">Publier en ligne</button>
+            <label class="pwachk" id="pwaWrap" style="display:none;" title="Le site pourra être installé comme une application sur le téléphone (icône sur l'écran d'accueil, ouverture en plein écran)."><input type="checkbox" id="pwaChk"> Installable sur téléphone</label>
             <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">Voir en ligne</a>
             <button class="dlbtn" id="dataBtn" type="button" style="display:none;" title="Voir les commandes / rendez-vous reçus">Données</button>
             <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">Télécharger le site</a>
@@ -361,7 +364,7 @@
     const newBtn = $("newBtn"), nextBtn = $("nextBtn"), resumedNote = $("resumed"), certBtn = $("certBtn");
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
-    const pubBtn = $("pubBtn"), pubLink = $("pubLink");
+    const pubBtn = $("pubBtn"), pubLink = $("pubLink"), pwaChk = $("pwaChk"), pwaWrap = $("pwaWrap");
     const dataBtn = $("dataBtn"), dataModal = $("dataModal"), dataBody = $("dataBody");
     const typeBadge = $("typeBadge"), typeModal = $("typeModal"), typeChoices = $("typeChoices");
     let chooserSel = new Set(["presentation"]);
@@ -446,26 +449,29 @@
       dlBtn.href = "/api/download?id=" + encodeURIComponent(convId);
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
-      if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "Republier" : "Publier en ligne"; }
+      if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "Republier" : "Publier en ligne"; pwaWrap.style.display = "inline-flex"; }
       dataBtn.style.display = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0 || currentModules.indexOf("membre")>=0) ? "inline-block" : "none";
     }
 
     function showPublished(url){
       publishedUrl = url;
       pubLink.href = url; pubLink.style.display = "inline-block";
-      if(canPublish){ pubBtn.style.display = "inline-block"; pubBtn.textContent = "Republier"; }
+      if(canPublish){ pubBtn.style.display = "inline-block"; pubBtn.textContent = "Republier"; pwaWrap.style.display = "inline-flex"; }
     }
 
     async function doPublish(){
       if(!convId) return;
+      const wantPwa = !!pwaChk.checked;
       pubBtn.disabled = true; const prev = pubBtn.textContent; pubBtn.textContent = "Publication…";
       const typing = bubble("… mise en ligne de votre site (quelques secondes)","ai typing");
       try{
-        const r = await fetch("/api/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
+        const r = await fetch("/api/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId, pwa:wantPwa})});
         const data = await r.json(); typing.remove();
         if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Publication impossible."),"err"); pubBtn.textContent=prev; pubBtn.disabled=false; return; }
         showPublished(data.url);
+        if(data.pwa){ pwaChk.checked = true; }
         bubble("Votre site est en ligne : " + data.url + "\n(Après une modification, cliquez « Republier » pour mettre à jour.)","ai");
+        if(data.pwa){ bubble("Votre site est aussi une application installable. Sur téléphone, ouvrez l'adresse puis, dans le menu du navigateur, choisissez « Ajouter à l'écran d'accueil » (sur iPhone, via le bouton Partager). Une icône apparaîtra comme pour une vraie appli.","ai"); }
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); pubBtn.textContent=prev; }
       finally{ pubBtn.disabled = false; }
     }
@@ -481,7 +487,7 @@
       currentModules = normMods(mods);
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none";
-      pubBtn.style.display="none"; pubLink.style.display="none"; publishedUrl=null;
+      pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       renderRail(); renderTypeBadge();
       const typing = bubble("…","ai typing"); setBusy(true);
       try{
@@ -506,6 +512,7 @@
           if(m.role==="user") bubble(m.content,"user");
           else bubble(stripBlocks(m.content),"ai");
         });
+        pwaChk.checked = !!data.pwa;
         if(data.hasSite) reloadPreview();
         if(data.publishedUrl) showPublished(data.publishedUrl);
         renderRail(); resumedNote.style.display="block"; setBusy(false);
@@ -586,7 +593,7 @@
     function canViewUI(){ return !!me && (me.isAdmin || me.status === "active" || me.status === "finished"); }
     function refreshLock(){
       buildLocked = !canBuildUI();
-      if(buildLocked){ input.disabled = true; sendBtn.disabled = true; nextBtn.style.display = "none"; pubBtn.style.display = "none"; }
+      if(buildLocked){ input.disabled = true; sendBtn.disabled = true; nextBtn.style.display = "none"; pubBtn.style.display = "none"; pwaWrap.style.display = "none"; }
       else { nextBtn.style.display = ""; input.placeholder = "Votre réponse… (ex. « mets le titre en bleu »)"; }
       showAccessBanner();
     }
@@ -638,7 +645,7 @@
       thread.innerHTML=""; resumedNote.style.display="none"; showAccessBanner();
       step=0; siteBuilt=false; renderRail();
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none";
+      dlBtn.style.display="none"; dataBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none";
       buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
       let msg;
       if(kind==="none") msg="Bienvenue sur Bâtisseur. Connectez-vous ou créez un compte pour commencer votre formation.";
@@ -881,17 +888,32 @@
         renderData(sd.submissions||[], (md.members||[]));
       }catch(e){ dataBody.innerHTML='<div class="aempty">Impossible de joindre le serveur.</div>'; }
     }
-    function renderPayload(data){
+    function fmtSize(n){ n=Number(n)||0; if(n>=1048576) return (n/1048576).toFixed(1).replace(".",",")+" Mo"; if(n>=1024) return Math.round(n/1024)+" Ko"; return n+" o"; }
+    function renderPayload(data, projectId){
       const box=document.createElement("div"); data=data||{};
       function membreLine(){ if(data._membre){ const m=document.createElement("div"); m.className="subline"; m.style.color="var(--accent-deep)"; m.innerHTML="<b>Membre :</b> "+escHtml(data._membre); box.appendChild(m); } }
+      function filesLine(){
+        if(!Array.isArray(data.fichiers) || !data.fichiers.length) return;
+        const wrap=document.createElement("div"); wrap.className="subline";
+        const lab=document.createElement("b"); lab.textContent=(data.fichiers.length>1?"Fichiers joints : ":"Fichier joint : "); wrap.appendChild(lab);
+        data.fichiers.forEach(function(fobj){
+          if(!fobj||!fobj.id) return;
+          const a=document.createElement("a");
+          a.href="/api/upload?id="+encodeURIComponent(fobj.id)+"&projectId="+encodeURIComponent(projectId||"");
+          a.textContent=(fobj.name||"fichier")+(fobj.size?(" ("+fmtSize(fobj.size)+")"):"");
+          a.setAttribute("download", fobj.name||"fichier"); a.style.marginRight="12px"; a.style.color="var(--accent-deep)";
+          wrap.appendChild(a);
+        });
+        box.appendChild(wrap);
+      }
       try{
         if(Array.isArray(data.articles)){
           data.articles.forEach(function(a){ const l=document.createElement("div"); l.className="subline"; l.textContent="• "+a.produit+" × "+a.quantite+(a.prix!=null?"  ("+a.prix+")":""); box.appendChild(l); });
           const t=document.createElement("div"); t.className="subline"; t.style.fontWeight="700"; t.textContent="Total : "+(data.total!=null?data.total:"")+" "+(data.devise||""); box.appendChild(t);
-          membreLine(); return box;
+          filesLine(); membreLine(); return box;
         }
-        Object.keys(data).forEach(function(k){ if(k.charAt(0)==="_") return; const l=document.createElement("div"); l.className="subline"; l.innerHTML="<b>"+escHtml(k)+" :</b> "+escHtml(typeof data[k]==="object"?JSON.stringify(data[k]):data[k]); box.appendChild(l); });
-        membreLine();
+        Object.keys(data).forEach(function(k){ if(k.charAt(0)==="_"||k==="fichiers") return; const l=document.createElement("div"); l.className="subline"; l.innerHTML="<b>"+escHtml(k)+" :</b> "+escHtml(typeof data[k]==="object"?JSON.stringify(data[k]):data[k]); box.appendChild(l); });
+        filesLine(); membreLine();
       }catch(e){ box.textContent=JSON.stringify(data); }
       return box;
     }
@@ -924,7 +946,7 @@
           const info=document.createElement("div"); info.style.flex="1"; info.style.minWidth="0";
           const meta=document.createElement("div"); meta.className="submeta";
           try{ meta.textContent=new Date(s.createdAt).toLocaleString("fr-FR"); }catch(e){ meta.textContent=s.createdAt||""; }
-          info.appendChild(meta); info.appendChild(renderPayload(s.data));
+          info.appendChild(meta); info.appendChild(renderPayload(s.data, s.projectId));
           const st=document.createElement("select"); st.className="substatus";
           [["nouveau","Nouveau"],["en_cours","En cours"],["pret","Prêt"],["termine","Terminé"]].forEach(function(o){ const op=document.createElement("option"); op.value=o[0]; op.textContent=o[1]; if((s.status||"nouveau")===o[0]) op.selected=true; st.appendChild(op); });
           st.addEventListener("change", function(){ setSubStatus(s.id, st.value); });

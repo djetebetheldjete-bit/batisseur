@@ -68,6 +68,17 @@ create table if not exists submissions (
 );
 alter table submissions add column if not exists status text default 'nouveau';
 
+-- --- Fichiers joints reçus par les applications (photos, PDF, documents) ---
+create table if not exists uploads (
+  id text primary key,
+  project_id text,
+  name text,
+  type text,
+  size bigint,
+  data text,                 -- contenu du fichier encodé en base64
+  created_at timestamptz default now()
+);
+
 -- --- Comptes des visiteurs des applications (espace membre) ---
 create table if not exists app_users (
   id text primary key,

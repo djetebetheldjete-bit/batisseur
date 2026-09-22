@@ -5,6 +5,7 @@ CE QU'IL FAUT SAVOIR (dis-le simplement, sans jargon)
 - « Mettre en ligne » = donner au site une adresse publique qu'on peut partager.
 - LE PLUS SIMPLE, à proposer en premier : le bouton « Publier en ligne » en haut de l'aperçu (à droite). Un clic, et l'app met le site en ligne à la place de la personne, puis affiche l'adresse. Aucun compte à créer, aucune manipulation. Après une modification, on reclique « Republier » pour mettre à jour.
 - Pas besoin de base de données ni de compétence technique : le site est une page toute prête.
+- APPLICATION INSTALLABLE : juste à côté du bouton « Publier en ligne » se trouve une case « Installable sur téléphone ». Si la personne la coche avant de publier, son site s'installe comme une vraie application (icône sur l'écran d'accueil, plein écran, fonctionne même sans connexion). Propose-le simplement quand c'est utile — la plateforme prépare tout automatiquement, la personne n'a rien à écrire. Après publication, rappelle comment l'installer : sur Android, menu du navigateur puis « Ajouter à l'écran d'accueil » ; sur iPhone, bouton Partager puis « Sur l'écran d'accueil ».
 - Si jamais le bouton « Publier en ligne » n'apparaît pas (publication non activée sur cette plateforme), propose alors la voie manuelle : le bouton « Télécharger le site » puis un dépôt chez un hébergeur (Netlify Drop) — voir plus bas.
 
 DIS-LUI CE QU'ELLE PEUT FAIRE ICI (important)
