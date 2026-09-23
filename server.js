@@ -502,6 +502,91 @@ Bâtisseur ne fait pas que des sites vitrines : c'est aussi un créateur d'appli
 - LE PAIEMENT EN LIGNE (Wave) : la personne peut activer le paiement depuis le bouton « Paiement » (en haut de l'aperçu) en collant SON lien de paiement Wave — un bouton « Payer avec Wave » apparaît alors sur sa boutique, et le bouton « Commander » propose le règlement. Les commandes payées sont signalées « Payé » dans le tableau de bord. La configuration se fait par ce bouton (jamais dans la discussion, jamais de clé à coller ici). Tu peux aussi, sur demande, ajouter un bouton de paiement dans une page : <a data-bat-pay data-amount="5000">Payer</a> (data-amount facultatif).
 Explique ces possibilités comme des idées concrètes (« on pourrait ajouter… »), sans forcer. Si une fonction demande un volet qui n'est pas activé (Boutique, Rendez-vous, Espace membre), invite gentiment la personne à cliquer « Recommencer » et à cocher le ou les volets voulus (on peut en combiner plusieurs).`;
 
+// ============================================================
+// PARCOURS « APPRENDRE LA PROGRAMMATION » (2e filière de formation)
+// ------------------------------------------------------------
+// Deux options de formation au démarrage : « site / application web » (ci-dessus)
+// et « apprendre à programmer » (ci-dessous). Ici : un tuteur IA guide l'apprenant
+// leçon par leçon (les bases, puis la pratique), avec des exercices concrets ; une
+// console intégrée (côté navigateur) permet d'ÉCRIRE et d'EXÉCUTER le code.
+// Rien n'est exécuté sur le serveur : Python tourne via Pyodide et JavaScript
+// nativement, dans le navigateur de l'apprenant.
+const LANGUAGES = {
+  python: { label: "Python", run: "python", blurb: "Le langage le plus simple pour débuter : lisible, puissant, très demandé." },
+  algo: { label: "Algorithmique", run: "python", blurb: "Apprendre à raisonner (les bases de tout programme) avant le langage. On teste les idées en Python." }
+};
+function languageLabel(k) { return (LANGUAGES[k] && LANGUAGES[k].label) || "Python"; }
+function normalizeLanguage(k) { return LANGUAGES[k] ? k : "python"; }
+
+// Programmes (leçons ordonnées). Chaque leçon : titre, objectif, notions à couvrir, exercice pratique.
+const CURRICULA = {
+  python: [
+    { key: "decouverte", title: "Découvrir Python", objectif: "Comprendre ce qu'est un programme et afficher du texte.", notions: "Ce qu'est un programme ; la fonction print() ; les chaînes de caractères entre guillemets ; les commentaires avec #.", exercice: "Écrire un programme qui affiche « Bonjour, je m'appelle ... » (avec le prénom de l'apprenant)." },
+    { key: "variables", title: "Les variables", objectif: "Stocker et réutiliser une information.", notions: "Créer une variable (nom = valeur) ; les types de base (texte, nombre entier, nombre à virgule) ; afficher une variable ; concaténer / f-strings.", exercice: "Créer deux variables prénom et âge, puis afficher une phrase qui les utilise (ex. « Awa a 20 ans »)." },
+    { key: "entrees", title: "Lire ce que tape l'utilisateur", objectif: "Rendre un programme interactif.", notions: "input() ; le résultat de input() est toujours du texte ; convertir en nombre avec int() ou float().", exercice: "Demander son prénom puis son année de naissance, et afficher l'âge approximatif (2026 moins l'année)." },
+    { key: "conditions", title: "Les conditions (si… alors)", objectif: "Faire réagir le programme selon les cas.", notions: "if / elif / else ; les comparaisons (==, !=, <, >, <=, >=) ; l'indentation qui délimite les blocs.", exercice: "Demander un nombre et afficher s'il est négatif, nul ou positif." },
+    { key: "boucles", title: "Les boucles (répéter)", objectif: "Répéter des actions sans se répéter soi-même.", notions: "la boucle for avec range() ; la boucle while ; quand choisir l'une ou l'autre.", exercice: "Afficher la table de multiplication d'un nombre demandé (de 1 à 10)." },
+    { key: "listes", title: "Les listes", objectif: "Manipuler une collection de valeurs.", notions: "créer une liste ; accéder par indice ; append() ; parcourir avec for ; len().", exercice: "Demander 5 notes, les ranger dans une liste, puis afficher la moyenne." },
+    { key: "fonctions", title: "Les fonctions", objectif: "Ranger et réutiliser son code.", notions: "def nom(parametres): ; return ; appeler une fonction ; l'intérêt (éviter les répétitions).", exercice: "Écrire une fonction est_pair(n) qui renvoie True si n est pair, et l'utiliser sur quelques nombres." },
+    { key: "projet", title: "Petit projet : le juste prix", objectif: "Assembler tout ce qui a été appris.", notions: "combiner variables, boucle while, conditions, et une fonction ; le module random (random.randint).", exercice: "Programmer le jeu du « juste prix » : l'ordinateur choisit un nombre entre 1 et 100, l'utilisateur devine, le programme répond « plus grand / plus petit » jusqu'à trouver." }
+  ],
+  algo: [
+    { key: "algo-quoi", title: "Qu'est-ce qu'un algorithme ?", objectif: "Comprendre la notion de suite d'étapes.", notions: "définition d'un algorithme (une recette) ; entrée → traitement → sortie ; l'importance de l'ordre des étapes.", exercice: "Écrire, en français puis en Python, les étapes pour calculer la somme de deux nombres saisis." },
+    { key: "algo-variables", title: "Variables et affectation", objectif: "Mémoriser une valeur et la faire évoluer.", notions: "la notion d'affectation (← ou =) ; échanger deux variables ; incrémenter (compteur = compteur + 1).", exercice: "Échanger le contenu de deux variables a et b, puis les afficher pour vérifier." },
+    { key: "algo-conditions", title: "Tests et décisions", objectif: "Choisir selon une condition.", notions: "SI … ALORS … SINON ; conditions combinées (ET, OU) ; traduction en if/elif/else.", exercice: "Déterminer si une année saisie est bissextile (divisible par 4, sauf les siècles non divisibles par 400)." },
+    { key: "algo-boucles", title: "Répétitions", objectif: "Répéter tant qu'une condition tient.", notions: "boucle TANT QUE ; boucle POUR ; la condition d'arrêt (éviter les boucles infinies).", exercice: "Calculer la factorielle d'un nombre n (n! = 1×2×…×n)." },
+    { key: "algo-tableaux", title: "Tableaux et parcours", objectif: "Traiter une série de valeurs.", notions: "un tableau (liste) ; parcourir ; accumuler (somme, maximum) ; compter.", exercice: "Trouver la plus grande valeur d'une liste de nombres, sans utiliser max()." },
+    { key: "algo-tri", title: "Un premier tri", objectif: "Découvrir un algorithme classique.", notions: "l'idée du tri ; comparer et échanger ; le tri par sélection expliqué simplement.", exercice: "Trier une petite liste de nombres du plus petit au plus grand (tri par sélection), étape par étape." }
+  ]
+};
+function lessonsOf(conv) { return CURRICULA[normalizeLanguage(conv && conv.language)] || CURRICULA.python; }
+function currentLesson(conv) { const l = lessonsOf(conv); const i = Math.min(Math.max(0, conv && conv.lesson || 0), l.length - 1); return l[i]; }
+function lessonTitles(conv) { return lessonsOf(conv).map((l) => l.title); }
+
+// Prompt du tuteur : pédagogue, en français simple, avec exercices et encouragements.
+function codeSystem(conv) {
+  const lang = normalizeLanguage(conv.language);
+  const lessons = lessonsOf(conv);
+  const idx = Math.min(Math.max(0, conv.lesson || 0), lessons.length - 1);
+  const les = lessons[idx];
+  const langLabel = languageLabel(lang);
+  const runLabel = (LANGUAGES[lang].run === "python") ? "Python" : "JavaScript";
+  return `RÔLE
+Tu es un tuteur de programmation bienveillant et patient de Bâtisseur. Tu enseignes ${langLabel} à un ou une GRANDE DÉBUTANTE, en français simple, sans jargon inutile (et si tu emploies un mot technique, tu l'expliques aussitôt). Tu es encourageant, jamais condescendant.
+
+PARCOURS
+Le programme est une suite de leçons. Voici la leçon EN COURS :
+- Leçon ${idx + 1} sur ${lessons.length} : « ${les.title} »
+- Objectif : ${les.objectif}
+- Notions à couvrir : ${les.notions}
+- Exercice de la leçon : ${les.exercice}
+
+COMMENT TU ENSEIGNES (déroulé d'une leçon)
+1. Au tout début de la leçon (ton premier message), explique la notion SIMPLEMENT, avec une image ou un exemple du quotidien, puis montre un petit exemple de code commenté. Reste court : un pas à la fois.
+2. Donne ensuite l'exercice de la leçon, clairement, et invite la personne à ÉCRIRE puis EXÉCUTER son code dans la console à droite (bouton « Exécuter ») avant de te montrer le résultat.
+3. Quand la personne te montre son code ou te pose une question, réponds avec bienveillance : félicite ce qui est juste, repère l'erreur SANS donner tout de suite la solution complète, donne un indice, laisse-la réessayer. Si elle bloque vraiment, montre la correction commentée.
+4. Quand l'exercice est réussi (ou la notion comprise), dis-le clairement, félicite, et invite à passer à la leçon suivante avec le bouton « Leçon suivante → ». N'enchaîne pas tout seul sur la leçon d'après : attends ce bouton.
+
+RÈGLES
+- Montre le code dans des blocs de code délimités par trois accents graves avec le langage (par exemple un bloc \`\`\`${LANGUAGES[lang].run}\`). Le code que tu écris s'exécute en ${runLabel} dans la console de l'apprenant.
+- Donne des exemples courts et exécutables. Évite les longues théories.
+- Pose des questions à la personne pour vérifier qu'elle suit.
+- Adapte-toi : si c'est trop dur, ré-explique autrement ; si c'est trop facile, propose une variante un peu plus difficile.
+- Un ton professionnel et chaleureux. Pas d'émojis.`;
+}
+
+// Génère la réponse du tuteur (parcours programmation). Aucune extraction HTML : le code
+// reste visible dans la discussion, et rien n'est écrit comme « site ».
+async function produceCode(conv) {
+  const system = codeSystem(conv);
+  const reply = await callClaude(system, conv.messages, MODEL);
+  const message = (reply && reply.trim()) || "Reprenons : où en êtes-vous ?";
+  conv.messages.push({ role: "assistant", content: message });
+  conv.updatedAt = new Date().toISOString();
+  await saveConv(conv);
+  return { reply: message, siteUpdated: false };
+}
+
 const DATA_DIR = path.join(__dirname, "data");
 const SITES_DIR = path.join(DATA_DIR, "sites");
 try { fs.mkdirSync(SITES_DIR, { recursive: true }); } catch (e) {}
@@ -697,12 +782,15 @@ function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name, st
 // -- Liste des projets d'un compte (résumés légers pour « Mon espace ») --
 function convTitle(conv) {
   if (conv.title) return String(conv.title).slice(0, 60);
+  if (conv && conv.track === "code") return "Programmation — " + languageLabel(conv.language);
   const firstReal = (conv.messages || []).find((m) => m.role === "user" && !m.hidden);
   if (firstReal && firstReal.content) return String(firstReal.content).replace(/\s+/g, " ").trim().slice(0, 60) || "Projet sans titre";
   return "Projet sans titre";
 }
 function convSummary(conv) {
-  return { id: conv.id, title: convTitle(conv), modules: convModules(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, updatedAt: conv.updatedAt || conv.createdAt || null };
+  const base = { id: conv.id, title: convTitle(conv), modules: convModules(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, updatedAt: conv.updatedAt || conv.createdAt || null };
+  if (conv.track === "code") { base.track = "code"; base.language = normalizeLanguage(conv.language); base.lesson = conv.lesson || 0; base.lessonCount = lessonsOf(conv).length; }
+  return base;
 }
 async function listConvsForUser(userId) {
   if (!userId) return [];
@@ -817,6 +905,7 @@ async function callClaude(system, messages, model) {
 
 // Génère la réponse de l'étape courante (et met à jour le site si c'est une étape de construction).
 async function produceCurrent(conv, baseUrl) {
+  if (conv.track === "code") return produceCode(conv);   // 2e filière : apprendre à programmer
   const step = conv.step || 0;
   const isBuild = !!STEPS[step].build;
   const mods = convModules(conv);
@@ -874,6 +963,14 @@ async function handleStart(req, res) {
     if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
     const id = crypto.randomUUID();
+    // Filière « apprendre à programmer » (2e option de formation).
+    if (p.track === "code") {
+      const language = normalizeLanguage(p.language);
+      const kickoff = `Bonjour ! Je veux apprendre ${languageLabel(language)} depuis le début. Commençons la première leçon.`;
+      const conv = { id, track: "code", language, lesson: 0, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
+      const out = await produceCurrent(conv, reqBase(req));
+      return sendJson(res, 200, { id, track: "code", language, lesson: 0, lessons: lessonTitles(conv), ...out });
+    }
     const mods = normalizeModules(p.modules, p.projectType);
     const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
     const conv = { id, step: 0, modules: mods, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
@@ -909,6 +1006,15 @@ async function handleNext(req, res) {
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
     if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
+    // Filière programmation : « Leçon suivante » avance dans le programme.
+    if (conv.track === "code") {
+      const lessons = lessonsOf(conv); const cur = Math.min(Math.max(0, conv.lesson || 0), lessons.length - 1);
+      if (cur >= lessons.length - 1) return sendJson(res, 200, { lesson: cur, atEnd: true, reply: null, siteUpdated: false });
+      conv.lesson = cur + 1;
+      conv.messages.push({ role: "user", content: `Passons à la leçon suivante : « ${lessons[conv.lesson].title} ». Explique-la depuis le début.`, hidden: true });
+      const out = await produceCurrent(conv, reqBase(req));
+      return sendJson(res, 200, { lesson: conv.lesson, atEnd: conv.lesson >= lessons.length - 1, ...out });
+    }
     const current = conv.step || 0;
     if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
     conv.step = current + 1;
@@ -945,7 +1051,9 @@ async function handleGetConversation(req, res) {
   const cu = await currentUser(req);
   if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
   if (conv.userId && !canView(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
-  sendJson(res, 200, { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) });
+  const payload = { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) };
+  if (conv.track === "code") { payload.track = "code"; payload.language = normalizeLanguage(conv.language); payload.lesson = conv.lesson || 0; payload.lessons = lessonTitles(conv); }
+  sendJson(res, 200, payload);
 }
 
 // GET /preview/<id>/<fichier> : sert le site généré (une seule page)

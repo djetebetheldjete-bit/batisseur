@@ -74,6 +74,23 @@
   .payopt{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:14px;}
   .payopt input{margin-top:3px;}
   .payopt small{color:var(--ink-soft);}
+  /* Console de programmation */
+  .runlang{font-family:var(--f-mono),monospace;font-size:11px;color:var(--ink-soft);align-self:center;padding:2px 8px;border:1px solid var(--line);border-radius:999px;}
+  .code-stage{display:none;flex-direction:column;gap:10px;flex:1;min-height:0;padding:12px;box-sizing:border-box;}
+  .code-stage.show{display:flex;}
+  #codeEditor{flex:1;min-height:180px;width:100%;box-sizing:border-box;resize:none;font-family:var(--f-mono),ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;line-height:1.55;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#0f1b2d;color:#e9eff6;tab-size:4;}
+  .code-out-wrap{display:flex;flex-direction:column;min-height:120px;max-height:42%;}
+  .code-out-head{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-soft);margin-bottom:5px;}
+  .code-out{margin:0;flex:1;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--f-mono),ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:#f6f8fb;color:#0e1b2e;}
+  .code-out.err{color:#c0392b;}
+  /* Cartes de choix (filière, langage) */
+  .bigchoice{display:flex;flex-direction:column;gap:10px;}
+  .bcard{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:15px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card,#fff);cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+  .bcard:hover{border-color:var(--accent);}
+  .bcard.sel{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent);}
+  .bcard .ic{width:40px;height:40px;flex:none;border-radius:10px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-deep,var(--accent));display:grid;place-items:center;font-weight:800;font-family:var(--f-mono),monospace;}
+  .bcard b{display:block;font-size:15px;margin-bottom:2px;}
+  .bcard span{color:var(--ink-soft);font-size:13px;}
   .modal{background:var(--surface);border:1px solid var(--line);border-radius:14px;max-width:420px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
   .modal h3{font-family:var(--f-display),sans-serif;margin:0 0 6px;color:var(--ink);font-size:1.05rem;}
   .modal p{margin:0 0 14px;color:var(--ink-faint);font-size:.86rem;}
@@ -240,11 +257,11 @@
         </form>
       </div>
 
-      <!-- PREVIEW -->
+      <!-- PREVIEW / CONSOLE -->
       <div class="previewpane pane" data-pane="preview">
         <div class="pv-head">
-          <div class="tt">Aperçu <span class="live" id="liveTag" style="display:none;">en direct</span></div>
-          <div class="pv-tools">
+          <div class="tt" id="pvTitle">Aperçu <span class="live" id="liveTag" style="display:none;">en direct</span></div>
+          <div class="pv-tools" id="siteTools">
             <button class="pubbtn" id="pubBtn" type="button" style="display:none;" title="Mettre votre site en ligne, avec une adresse à partager">Publier en ligne</button>
             <label class="pwachk" id="pwaWrap" style="display:none;" title="Le site pourra être installé comme une application sur le téléphone (icône sur l'écran d'accueil, ouverture en plein écran)."><input type="checkbox" id="pwaChk"> Installable sur téléphone</label>
             <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">Voir en ligne</a>
@@ -256,14 +273,26 @@
               <button data-dev="mobile" type="button">Mobile</button>
             </div>
           </div>
+          <div class="pv-tools" id="codeTools" style="display:none;">
+            <span class="runlang" id="runLang">Python</span>
+            <button class="pubbtn" id="runBtn" type="button" title="Exécuter votre code">Exécuter</button>
+            <button class="dlbtn" id="clearOutBtn" type="button" title="Effacer la sortie">Effacer</button>
+          </div>
         </div>
-        <div class="pv-stage">
+        <div class="pv-stage" id="siteStage">
           <div class="device" id="device">
             <div class="placeholder" id="placeholder">
               <div class="em"></div>
               <p>Votre site apparaîtra ici dès l'étape « Créer la base ». Répondez à la discussion : dès que l'assistant a l'essentiel, il le construit — puis vous modifiez tout ce que vous voulez au fil du chat.</p>
             </div>
             <iframe id="preview" title="Aperçu du site" sandbox="allow-same-origin allow-scripts allow-popups allow-top-navigation-by-user-activation" style="display:none;"></iframe>
+          </div>
+        </div>
+        <div class="code-stage" id="codeStage">
+          <textarea id="codeEditor" spellcheck="false" placeholder="# Écrivez votre code ici, puis cliquez « Exécuter »."></textarea>
+          <div class="code-out-wrap">
+            <div class="code-out-head">Résultat</div>
+            <pre class="code-out" id="codeOut">La sortie de votre programme s'affichera ici.</pre>
           </div>
         </div>
       </div>
@@ -319,6 +348,29 @@
       <p>Inscrivez vos apprenants et attribuez leur session. « Terminé » coupe l'accès à la construction (le projet reste consultable) ; « Actif » le (ré)autorise.</p>
       <div id="adminBody"><div class="aempty">Chargement…</div></div>
       <div class="row"><button id="adminClose" type="button">Fermer</button></div>
+    </div>
+  </div>
+
+  <!-- Choix de la filière de formation -->
+  <div class="modal-bg" id="startModal">
+    <div class="modal">
+      <h3>Que voulez-vous faire ?</h3>
+      <p>Deux formations sont disponibles. Choisissez celle qui vous intéresse — vous pourrez revenir en arrière avec « Recommencer ».</p>
+      <div class="bigchoice">
+        <button class="bcard" id="chooseWeb" type="button"><span class="ic">W</span><span><b>Créer un site ou une application web</b><span>Un site vitrine, une boutique, des rendez-vous, un espace membre… construit en discutant, sans coder.</span></span></button>
+        <button class="bcard" id="chooseCode" type="button"><span class="ic">&lt;/&gt;</span><span><b>Apprendre la programmation</b><span>Les bases pas à pas (algorithmique, Python), avec des exercices que vous écrivez et exécutez.</span></span></button>
+      </div>
+      <div class="row"><button id="startCancel" type="button">Annuler</button></div>
+    </div>
+  </div>
+
+  <!-- Choix du langage (filière programmation) -->
+  <div class="modal-bg" id="langModal">
+    <div class="modal">
+      <h3>Par quoi commencer ?</h3>
+      <p>Choisissez votre point de départ. On avance leçon par leçon, avec la pratique à chaque fois.</p>
+      <div class="bigchoice" id="langChoices"></div>
+      <div class="row"><button id="langBack" type="button">Retour</button></div>
     </div>
   </div>
 
@@ -401,6 +453,42 @@
     function paintChoices(){
       typeChoices.querySelectorAll(".choice").forEach((el)=>{ el.classList.toggle("sel", chooserSel.has(el.dataset.key)); });
     }
+    // --- Choix de la filière (web / programmation) ---
+    const startModal = $("startModal"), langModal = $("langModal"), langChoices = $("langChoices");
+    function openStart(){ startModal.classList.add("show"); }
+    function closeStart(){ startModal.classList.remove("show"); }
+    function openLang(){
+      langChoices.innerHTML = "";
+      Object.keys(LANG_UI).forEach((key)=>{
+        const t = LANG_UI[key];
+        const b = document.createElement("button");
+        b.className = "bcard"; b.type = "button"; b.dataset.key = key;
+        b.innerHTML = '<span class="ic"></span><span><b></b><span></span></span>';
+        b.querySelector(".ic").textContent = t.ic;
+        b.querySelector("b").textContent = t.label;
+        b.querySelector("span > span").textContent = t.blurb;
+        b.addEventListener("click", ()=>{ closeLang(); clearSavedId(); convId=null; startCode(key); });
+        langChoices.appendChild(b);
+      });
+      langModal.classList.add("show");
+    }
+    function closeLang(){ langModal.classList.remove("show"); }
+
+    // Bascule l'interface entre le mode "site web" et le mode "console de programmation".
+    function setMode(kind){
+      track = (kind === "code") ? "code" : "web";
+      const isCode = track === "code";
+      $("siteTools").style.display = isCode ? "none" : "";
+      $("codeTools").style.display = isCode ? "flex" : "none";
+      $("siteStage").style.display = isCode ? "none" : "";
+      $("codeStage").classList.toggle("show", isCode);
+      $("pvTitle").childNodes[0].nodeValue = isCode ? "Console " : "Aperçu ";
+      const tabPrev = document.querySelector('#tabs button[data-tab="preview"]'); if(tabPrev) tabPrev.textContent = isCode ? "Console" : "Aperçu";
+      if(isCode){ certBtn.style.display="none"; }
+      const soon = document.querySelector(".soon"); if(soon) soon.style.display = isCode ? "none" : "";
+      if(!buildLocked){ input.placeholder = isCode ? "Écrivez au tuteur… (une question, ou collez votre code)" : "Votre réponse… (ex. « mets le titre en bleu »)"; }
+    }
+
     function openTypeChooser(){
       chooserSel = new Set(["presentation"]);
       typeChoices.innerHTML = "";
@@ -429,6 +517,12 @@
 
     const STORAGE_KEY = "batisseur_parcours_id";
     let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null, currentModules = ["presentation"];
+    // Filière de formation : "web" (sites/applis) ou "code" (apprendre à programmer).
+    let track = "web", codeLang = "python", lesson = 0, lessons = [];
+    const LANG_UI = {
+      python: { label: "Python", ic: "Py", run: "python", blurb: "Le langage le plus simple pour débuter : lisible et très demandé." },
+      algo:   { label: "Algorithmique", ic: "Σ", run: "python", blurb: "Apprendre à raisonner (les bases de tout programme). On teste les idées en Python." }
+    };
 
     const MODULES_UI = {
       presentation: { short: "Présentation", emoji: "",  tagline: "Présenter une activité, un métier, une association." },
@@ -451,6 +545,23 @@
 
     function renderRail(){
       railInner.innerHTML = "";
+      if(track === "code"){
+        const total = lessons.length || 1;
+        lessons.forEach((title,i) => {
+          const row = document.createElement("div");
+          row.className = "mrow " + (i < lesson ? "done" : (i === lesson ? "cur" : "todo"));
+          row.innerHTML = `<span class="mk">${i < lesson ? "✓" : (i+1)}</span><span class="ml"><b></b><i>Leçon ${i+1}</i></span>`;
+          row.querySelector("b").textContent = title;
+          railInner.appendChild(row);
+        });
+        stepLabel.childNodes[0].nodeValue = lessons[lesson] || "Leçon";
+        stepSub.textContent = "Leçon " + (lesson+1) + " / " + total;
+        const atEnd = lesson >= total - 1;
+        nextBtn.disabled = atEnd;
+        nextBtn.textContent = atEnd ? "Programme terminé ✓" : "Leçon suivante →";
+        certBtn.style.display = "none";
+        return;
+      }
       STEP_LABELS.forEach((s,i) => {
         const row = document.createElement("div");
         row.className = "mrow " + (i < step ? "done" : (i === step ? "cur" : "todo"));
@@ -511,6 +622,7 @@
     }
 
     async function startNew(mods){
+      track = "web"; setMode("web");
       currentModules = normMods(mods);
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none"; payBtn.style.display="none";
@@ -528,13 +640,40 @@
       finally{ setBusy(false); }
     }
 
+    // Démarre un parcours « apprendre la programmation ».
+    async function startCode(language){
+      codeLang = LANG_UI[language] ? language : "python"; lesson = 0; lessons = [];
+      track = "code"; setMode("code");
+      thread.innerHTML=""; resumedNote.style.display="none"; typeBadge.style.display="none";
+      renderRail();
+      const typing = bubble("…","ai typing"); setBusy(true);
+      try{
+        const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:"code", language:codeLang})});
+        const data = await r.json(); typing.remove();
+        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); return; }
+        convId=data.id; lesson=data.lesson||0; lessons=data.lessons||[]; setSavedId(convId);
+        setRunLang(); renderRail(); loadEditor();
+        bubble(data.reply||"","ai");
+      }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur. Est-il bien lancé ?","err"); }
+      finally{ setBusy(false); }
+    }
+
     async function resume(id){
       try{
         const r = await fetch("/api/conversation?id="+encodeURIComponent(id));
         if(!r.ok) return false;
         const data = await r.json();
-        convId=id; step=data.step||0; currentModules=normMods(data.modules); renderTypeBadge();
+        convId=id;
         thread.innerHTML="";
+        if(data.track === "code"){
+          track="code"; codeLang=data.language||"python"; lesson=data.lesson||0; lessons=data.lessons||[];
+          setMode("code"); setRunLang();
+          (data.messages||[]).forEach(m => bubble(m.content, m.role==="user"?"user":"ai"));
+          renderRail(); loadEditor(); resumedNote.style.display="block"; setBusy(false);
+          return true;
+        }
+        track="web"; setMode("web");
+        step=data.step||0; currentModules=normMods(data.modules); renderTypeBadge();
         (data.messages||[]).forEach(m => {
           if(m.role==="user") bubble(m.content,"user");
           else bubble(stripBlocks(m.content),"ai");
@@ -547,6 +686,50 @@
         return true;
       }catch(e){ return false; }
     }
+
+    // ===== Console de programmation (exécution dans le navigateur) =====
+    const codeEditor = $("codeEditor"), codeOut = $("codeOut"), runBtn = $("runBtn"), runLang = $("runLang");
+    let pyodide = null, pyLoading = null;
+    function setRunLang(){ const meta = LANG_UI[codeLang] || LANG_UI.python; runLang.textContent = (meta.run === "python") ? "Python" : "JavaScript"; }
+    function editorKey(){ return "batisseur_code_" + (convId||"x"); }
+    function loadEditor(){
+      let saved=null; try{ saved = localStorage.getItem(editorKey()); }catch(e){}
+      codeEditor.value = (saved!=null) ? saved : "# Écrivez votre code ici, puis cliquez « Exécuter ».\n";
+      codeOut.textContent = "La sortie de votre programme s'affichera ici."; codeOut.classList.remove("err");
+    }
+    codeEditor.addEventListener("input", ()=>{ try{ localStorage.setItem(editorKey(), codeEditor.value); }catch(e){} });
+    // Tabulation dans l'éditeur = 4 espaces (indispensable en Python).
+    codeEditor.addEventListener("keydown",(e)=>{ if(e.key==="Tab"){ e.preventDefault(); const s=codeEditor.selectionStart, en=codeEditor.selectionEnd; codeEditor.value=codeEditor.value.slice(0,s)+"    "+codeEditor.value.slice(en); codeEditor.selectionStart=codeEditor.selectionEnd=s+4; } });
+    function ensurePyodide(){
+      if(pyodide) return Promise.resolve(pyodide);
+      if(pyLoading) return pyLoading;
+      codeOut.classList.remove("err"); codeOut.textContent = "Préparation de Python (première fois, quelques secondes)…";
+      pyLoading = new Promise((resolve,reject)=>{
+        const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js";
+        s.onload=async()=>{ try{ pyodide = await loadPyodide({ stdout:(t)=>appendOut(t+"\n"), stderr:(t)=>appendOut(t+"\n", true) }); resolve(pyodide); }catch(err){ reject(err); } };
+        s.onerror=()=>reject(new Error("Chargement de Python impossible (vérifiez la connexion)."));
+        document.head.appendChild(s);
+      });
+      return pyLoading;
+    }
+    function appendOut(text, isErr){ if(codeOut.dataset.fresh!=="1"){ codeOut.textContent=""; codeOut.dataset.fresh="1"; } codeOut.textContent += text; if(isErr) codeOut.classList.add("err"); }
+    async function runCode(){
+      const code = codeEditor.value;
+      codeOut.dataset.fresh="0"; codeOut.classList.remove("err"); codeOut.textContent="";
+      runBtn.disabled=true; const prev=runBtn.textContent; runBtn.textContent="…";
+      try{
+        const py = await ensurePyodide();
+        // input() → fenêtre de saisie du navigateur (les exercices interactifs fonctionnent).
+        py.setStdin({ stdin: ()=>{ const v = window.prompt("Entrée demandée par le programme :"); return v===null ? "" : v + "\n"; } });
+        codeOut.dataset.fresh="0";
+        await py.runPythonAsync(code);
+        if(codeOut.dataset.fresh!=="1"){ codeOut.textContent="(Programme terminé, aucune sortie affichée. Utilisez print(...) pour afficher un résultat.)"; }
+      }catch(err){
+        appendOut(String(err && err.message ? err.message : err), true);
+      } finally { runBtn.disabled=false; runBtn.textContent=prev; }
+    }
+    runBtn.addEventListener("click", runCode);
+    $("clearOutBtn").addEventListener("click", ()=>{ codeOut.dataset.fresh="0"; codeOut.classList.remove("err"); codeOut.textContent="La sortie de votre programme s'affichera ici."; });
 
     async function send(message){
       bubble(message,"user");
@@ -561,6 +744,21 @@
     }
 
     async function goNext(){
+      if(track === "code"){
+        if(lesson >= (lessons.length-1)) return;
+        nextBtn.disabled = true;
+        bubble("→ Leçon suivante : " + (lessons[lesson+1]||""), "step");
+        const typing = bubble("…","ai typing"); setBusy(true);
+        try{
+          const r = await fetch("/api/next",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
+          const data = await r.json(); typing.remove();
+          if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
+          if(typeof data.lesson==="number") lesson = data.lesson; renderRail();
+          if(data.reply) bubble(data.reply,"ai");
+        }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); nextBtn.disabled=(lesson>=lessons.length-1); }
+        finally{ setBusy(false); }
+        return;
+      }
       if(step >= LAST) return;
       nextBtn.disabled = true;
       bubble("→ Passage à l'étape : " + STEP_LABELS[step+1].label, "step");
@@ -578,10 +776,16 @@
 
     form.addEventListener("submit",(e)=>{ e.preventDefault(); const t=input.value.trim(); if(!t||!convId) return; input.value=""; send(t); });
     input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); form.requestSubmit(); } });
-    newBtn.addEventListener("click", ()=>{ if(canBuildUI()) openTypeChooser(); else notifyBlocked(); });
+    newBtn.addEventListener("click", ()=>{ if(canBuildUI()) openStart(); else notifyBlocked(); });
+    $("chooseWeb").addEventListener("click", ()=>{ closeStart(); openTypeChooser(); });
+    $("chooseCode").addEventListener("click", ()=>{ closeStart(); openLang(); });
+    $("startCancel").addEventListener("click", closeStart);
+    startModal.addEventListener("click",(e)=>{ if(e.target===startModal) closeStart(); });
+    $("langBack").addEventListener("click", ()=>{ closeLang(); openStart(); });
+    langModal.addEventListener("click",(e)=>{ if(e.target===langModal) closeLang(); });
     $("typeGo").addEventListener("click", confirmTypeChooser);
-    $("typeCancel").addEventListener("click", ()=>{ closeTypeChooser(); if(!convId) startNew(["presentation"]); });
-    typeModal.addEventListener("click",(e)=>{ if(e.target===typeModal){ closeTypeChooser(); if(!convId) startNew(["presentation"]); } });
+    $("typeCancel").addEventListener("click", ()=>{ closeTypeChooser(); });
+    typeModal.addEventListener("click",(e)=>{ if(e.target===typeModal){ closeTypeChooser(); } });
     nextBtn.addEventListener("click", goNext);
     pubBtn.addEventListener("click", doPublish);
     dataBtn.addEventListener("click", openData);
@@ -723,7 +927,7 @@
       if(canBuildUI()){
         const saved = getSavedId();
         if(saved && await resume(saved)) return;
-        clearSavedId(); openTypeChooser();
+        clearSavedId(); openStart();
       } else if(canViewUI()){
         const saved = getSavedId();
         if(saved && await resume(saved)) return;
@@ -1041,7 +1245,7 @@
     authModal.addEventListener("click",(e)=>{ if(e.target===authModal) closeAuth(); });
     [authEmail,authPass,authName].forEach(el=> el.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); submitAuth(); } }));
     $("espaceClose").addEventListener("click", closeEspace);
-    $("espaceNew").addEventListener("click", ()=>{ closeEspace(); if(canBuildUI()) openTypeChooser(); else notifyBlocked(); });
+    $("espaceNew").addEventListener("click", ()=>{ closeEspace(); if(canBuildUI()) openStart(); else notifyBlocked(); });
     espaceModal.addEventListener("click",(e)=>{ if(e.target===espaceModal) closeEspace(); });
 
     (async function init(){

@@ -1,5 +1,18 @@
 # Bâtisseur — parcours complet (v1.5)
 
+> **Deux formations au choix (nouveau)**
+> À l'écran de départ, l'apprenant choisit sa filière :
+> - **Créer un site / une application web** — le parcours complet existant (vitrine, boutique,
+>   rendez-vous, espace membre, fichiers, paiement, publication…).
+> - **Apprendre la programmation** — un tuteur IA guide l'apprenant **leçon par leçon**
+>   (les bases puis la pratique), avec une **console intégrée** pour **écrire ET exécuter**
+>   son code. Deux points de départ pour cette première version : **Algorithmique** et **Python**.
+>   Chaque leçon a un objectif, une explication simple, un exemple, puis un **exercice** ;
+>   l'apprenant avance avec le bouton « Leçon suivante → ». Le code s'exécute **dans le
+>   navigateur** (Python via Pyodide, chargé à la première exécution) — **rien n'est exécuté
+>   sur le serveur**, et la progression est enregistrée par projet. Programmes définis dans
+>   `CURRICULA` (server.js) ; aucune dépendance npm ; aucun changement de base de données.
+
 > **Base de données — où est le SQL ?**
 > Tout le SQL est réuni dans un seul fichier à la racine du projet : **`schema.sql`**.
 > Ce script est **idempotent** (exécutable plusieurs fois sans risque) et crée toutes les
