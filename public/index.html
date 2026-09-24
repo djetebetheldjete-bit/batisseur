@@ -1215,7 +1215,16 @@
         pbtn.title = "Autoriser cet apprenant à créer des applications avancées (atelier Premium)";
         if(l.premium){ pbtn.style.borderColor="var(--warm,#D98A2B)"; pbtn.style.color="var(--warm,#D98A2B)"; }
         pbtn.addEventListener("click", function(){ setPremium(l.id, !l.premium); });
-        row.appendChild(info); row.appendChild(csel); row.appendChild(ssel); row.appendChild(pbtn);
+        const dbtn = document.createElement("button"); dbtn.type="button"; dbtn.className="dlbtn";
+        dbtn.textContent = "Supprimer"; dbtn.title = "Supprimer définitivement ce compte et ses projets";
+        dbtn.style.borderColor = "#c0392b"; dbtn.style.color = "#c0392b";
+        var dArmed = false, dTimer = null;
+        dbtn.addEventListener("click", function(){
+          if(!dArmed){ dArmed = true; dbtn.textContent = "Confirmer ?"; dbtn.style.background = "#c0392b"; dbtn.style.color = "#fff";
+            dTimer = setTimeout(function(){ dArmed = false; dbtn.textContent = "Supprimer"; dbtn.style.background = ""; dbtn.style.color = "#c0392b"; }, 4000); return; }
+          clearTimeout(dTimer); deleteLearner(l.id);
+        });
+        row.appendChild(info); row.appendChild(csel); row.appendChild(ssel); row.appendChild(pbtn); row.appendChild(dbtn);
         list.appendChild(row);
       });
       adminBody.appendChild(list);
@@ -1236,6 +1245,14 @@
     }
     async function saveLearner(userId, status, cohortId){
       try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,status:status,cohortId:cohortId})}); if(!r.ok){ await loadAdmin(); } }catch(e){}
+    }
+    async function deleteLearner(userId){
+      try{
+        const r = await fetch("/api/admin/learner/delete",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId})});
+        const d = await r.json().catch(()=>({}));
+        if(!r.ok){ alert(d.error||"Suppression impossible."); }
+      }catch(e){ alert("Impossible de joindre le serveur."); }
+      await loadAdmin();
     }
     async function setPremium(userId, premium){
       try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,premium:premium})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Action impossible."); } }catch(e){}

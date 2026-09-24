@@ -800,6 +800,31 @@ async function updateUser(id, fields) {
   if (USE_DB) { await sb(`/users?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(fields) }); return await getUserById(id); }
   const a = loadAccounts(); if (!a.users[id]) return null; Object.assign(a.users[id], fields); saveAccounts(a); return a.users[id];
 }
+// Suppression complète d'un compte apprenant : le compte, ses sessions de connexion et ses projets.
+async function deleteUser(id) {
+  if (!id) return false;
+  if (USE_DB) {
+    try {
+      await sb(`/conversations?data->>userId=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      await sb(`/sessions?user_id=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      await sb(`/users?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    } catch (e) { console.error("deleteUser:", e.message); return false; }
+    return true;
+  }
+  const a = loadAccounts();
+  const usr = a.users[id]; if (!usr) return false;
+  delete a.users[id];
+  if (usr.email && a.emails[normEmail(usr.email)] === id) delete a.emails[normEmail(usr.email)];
+  Object.keys(a.sessions || {}).forEach((tok) => { if (a.sessions[tok] && a.sessions[tok].userId === id) delete a.sessions[tok]; });
+  saveAccounts(a);
+  try {
+    fs.readdirSync(DATA_DIR).forEach((f) => {
+      if (!f.endsWith(".json") || f === "accounts.json") return;
+      try { const c = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), "utf8")); if (c && c.userId === id) fs.unlinkSync(path.join(DATA_DIR, f)); } catch (e) {}
+    });
+  } catch (e) {}
+  return true;
+}
 
 // --- Rôles & statut d'accès ---
 function isAdmin(u) { return !!u && ADMIN_EMAILS.includes(normEmail(u.email)); }
@@ -1552,6 +1577,20 @@ async function handleAdminUpdate(req, res) {
   if (!Object.keys(fields).length) return sendJson(res, 400, { error: "Rien à modifier." });
   const updated = await updateUser(p.userId, fields);
   sendJson(res, 200, { user: publicUser(updated) });
+}
+
+// POST /api/admin/learner/delete  { userId } : supprime définitivement un compte apprenant
+async function handleAdminDelete(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  if (!p.userId) return sendJson(res, 400, { error: "Apprenant manquant." });
+  const target = await getUserById(p.userId);
+  if (!target) return sendJson(res, 404, { error: "Apprenant introuvable." });
+  if (ADMIN_EMAILS.includes(normEmail(target.email))) return sendJson(res, 400, { error: "Le compte administrateur ne peut pas être supprimé." });
+  const okDel = await deleteUser(p.userId);
+  if (!okDel) return sendJson(res, 500, { error: "Suppression impossible." });
+  sendJson(res, 200, { ok: true });
 }
 
 // --- SESSIONS DE FORMATION (cohorts) : dates + capacité + places ---
@@ -2427,6 +2466,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/admin/learners")) return handleAdminLearners(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/create") return handleAdminCreate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/update") return handleAdminUpdate(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/learner/delete") return handleAdminDelete(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/admin/cohorts")) return handleAdminCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/generate") return handleAdminCohortGenerate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/update") return handleAdminCohortUpdate(req, res);
