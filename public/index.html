@@ -353,7 +353,37 @@
       <h3>Espace formateur</h3>
       <p>Inscrivez vos apprenants et attribuez leur session. « Terminé » coupe l'accès à la construction (le projet reste consultable) ; « Actif » le (ré)autorise.</p>
       <div id="adminBody"><div class="aempty">Chargement…</div></div>
-      <div class="row"><button id="adminClose" type="button">Fermer</button></div>
+      <div class="row"><button id="adminClose" type="button">Fermer</button><button id="openResvBtn" class="primary" type="button">Réservations &amp; paiement</button></div>
+    </div>
+  </div>
+
+  <!-- Réservations de session avec paiement (formateur) -->
+  <div class="modal-bg" id="resvModal">
+    <div class="modal wide">
+      <h3>Réservations &amp; paiement</h3>
+      <p>Les personnes réservent une place et paient avec Wave pour la garder ; vous validez celles qui ont payé. Lien public à partager : <a href="/reserver" target="_blank" rel="noopener">/reserver</a></p>
+      <div class="card" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px;">
+        <b>Réglages</b>
+        <div class="stack" style="margin-top:8px;">
+          <label style="font-size:12px;color:var(--ink-soft)">Lien de paiement Wave</label>
+          <input id="setLink" type="url" placeholder="https://pay.wave.com/…">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <input id="setPrice" type="number" min="0" placeholder="Prix (ex. 15000)" style="flex:1;min-width:120px;">
+            <input id="setCur" type="text" maxlength="8" placeholder="Devise (FCFA)" style="width:120px;">
+            <label class="pwachk" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;"><input type="checkbox" id="setOpen"> Réservations ouvertes</label>
+          </div>
+          <div class="autherr" id="setErr"></div>
+          <div><button id="setSave" class="primary" type="button">Enregistrer les réglages</button></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <label style="font-size:12px;color:var(--ink-soft)">Session :</label>
+        <select id="resvSession" style="flex:1;min-width:160px;"></select>
+        <button id="resvRefresh" class="dlbtn" type="button">Actualiser</button>
+        <button id="resvTick" class="dlbtn" type="button" title="Envoyer les rappels dus et mettre à jour la file">Forcer la vérification</button>
+      </div>
+      <div id="resvBody"><div class="aempty">Choisissez une session.</div></div>
+      <div class="row"><button id="resvClose" type="button">Fermer</button></div>
     </div>
   </div>
 
@@ -1268,6 +1298,90 @@
     adminBtn.addEventListener("click", openAdmin);
     $("adminClose").addEventListener("click", closeAdmin);
     adminModal.addEventListener("click",(e)=>{ if(e.target===adminModal) closeAdmin(); });
+
+    // ===== Réservations & paiement (formateur) =====
+    const resvModal = $("resvModal"), resvSession = $("resvSession"), resvBody = $("resvBody");
+    const RESV_LABEL = { en_attente:"En attente de paiement", paiement_declare:"Paiement déclaré (à vérifier)", admis:"Admis (place confirmée)", file_attente:"File d'attente", annule:"Annulé" };
+    function escR(s){ const d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
+    async function openResv(){
+      resvModal.classList.add("show");
+      try{ const r=await fetch("/api/formation/settings"); const d=await r.json(); const s=d.settings||{}; $("setLink").value=s.payLink||""; $("setPrice").value=(s.price!=null?s.price:""); $("setCur").value=s.currency||"FCFA"; $("setOpen").checked=(s.open!==false); }catch(e){}
+      try{ const r=await fetch("/api/admin/cohorts"); const d=await r.json(); const list=(d.cohorts||[]); resvSession.innerHTML=list.map(c=>'<option value="'+c.id+'">'+escR(c.label)+(c.closed?" (fermée)":"")+'</option>').join(""); }catch(e){ resvSession.innerHTML=""; }
+      if(resvSession.value) loadResv();
+    }
+    function closeResv(){ resvModal.classList.remove("show"); }
+    async function saveSettings(){
+      $("setErr").textContent="";
+      const body={ payLink:$("setLink").value.trim(), price:$("setPrice").value.trim(), currency:$("setCur").value.trim(), open:$("setOpen").checked };
+      const b=$("setSave"); b.disabled=true; const l=b.textContent; b.textContent="…";
+      try{ const r=await fetch("/api/formation/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}); const d=await r.json(); if(!r.ok){ $("setErr").textContent=d.error||"Enregistrement impossible."; } else { $("setErr").className="autherr ok"; $("setErr").textContent="Réglages enregistrés."; } }
+      catch(e){ $("setErr").textContent="Serveur injoignable."; } finally{ b.disabled=false; b.textContent=l; }
+    }
+    async function loadResv(){
+      const cid=resvSession.value; if(!cid){ resvBody.innerHTML='<div class="aempty">Aucune session.</div>'; return; }
+      resvBody.innerHTML='<div class="aempty">Chargement…</div>';
+      try{
+        const r=await fetch("/api/formation/reservations?cohortId="+encodeURIComponent(cid));
+        const d=await r.json(); if(!r.ok){ resvBody.innerHTML='<div class="aempty">'+escR(d.error||"Erreur")+'</div>'; return; }
+        renderResv(d, cid);
+      }catch(e){ resvBody.innerHTML='<div class="aempty">Serveur injoignable.</div>'; }
+    }
+    function renderResv(d, cid){
+      const list=d.reservations||[]; const admittedN=list.filter(x=>x.status==="admis").length;
+      const cur=d.currency||"FCFA"; const price=(d.price!=null)?(d.price+" "+cur):"—";
+      let h='<div class="submeta" style="margin-bottom:8px;">Capacité : '+admittedN+' / '+(d.capacity||0)+' admis · Frais : '+escR(price)+'</div>';
+      // Ajout paiement espèces
+      h+='<div class="card" style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:12px;"><b>Ajouter un paiement en espèces</b>'
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">'
+        +'<input id="cashName" type="text" placeholder="Nom" style="flex:1;min-width:120px;">'
+        +'<input id="cashWa" type="tel" placeholder="WhatsApp" style="width:150px;">'
+        +'<button id="cashAdd" class="primary" type="button">Ajouter comme admis</button></div>'
+        +'<div class="autherr" id="cashErr"></div></div>';
+      const order=["paiement_declare","en_attente","admis","file_attente","annule"];
+      order.forEach(function(st){
+        const rows=list.filter(x=>x.status===st); if(!rows.length) return;
+        h+='<div class="asection">'+RESV_LABEL[st]+' ('+rows.length+')</div><div class="llist">';
+        rows.forEach(function(x){
+          h+='<div class="subrow"><div style="flex:1;min-width:0;"><div class="subline" style="font-weight:700;">'+escR(x.name)+(x.source==="especes"?' <span class="muted">(espèces)</span>':'')+'</div>'
+            +'<div class="submeta">'+escR(x.email||"")+(x.whatsapp?(' · '+escR(x.whatsapp)):'')+'</div></div><div style="display:flex;gap:5px;flex-wrap:wrap;">'+resvActions(x)+'</div></div>';
+        });
+        h+='</div>';
+      });
+      if((d.outbox||[]).length){
+        h+='<div class="asection">Rappels à envoyer ('+d.outbox.length+')</div><div class="llist">';
+        d.outbox.forEach(function(o){
+          h+='<div class="subrow"><div style="flex:1;min-width:0;"><div class="subline" style="font-weight:700;">'+escR(o.name)+'</div><div class="submeta">Rappel de paiement prêt</div></div><div style="display:flex;gap:6px;">'
+            +(o.wa?'<a class="dlbtn" href="'+o.wa+'" target="_blank" rel="noopener">WhatsApp</a>':'')
+            +(o.mailto?'<a class="dlbtn" href="'+o.mailto+'">E-mail</a>':'')+'</div></div>';
+        });
+        h+='</div>';
+      }
+      resvBody.innerHTML=h;
+      // Actions
+      resvBody.querySelectorAll("[data-act]").forEach(function(b){ b.addEventListener("click", function(){ setResvStatus(b.getAttribute("data-id"), b.getAttribute("data-act")); }); });
+      $("cashAdd").addEventListener("click", function(){ addCash(cid); });
+    }
+    function resvActions(x){
+      const btn=function(act,label){ return '<button class="dlbtn" data-id="'+x.id+'" data-act="'+act+'" type="button">'+label+'</button>'; };
+      if(x.status==="admis") return btn("file_attente","Retirer");
+      if(x.status==="file_attente") return btn("en_attente","Réactiver")+btn("admis","Admettre");
+      return btn("admis","Valider / Admettre")+btn("file_attente","Mettre en file");
+    }
+    async function setResvStatus(id, status){
+      try{ const r=await fetch("/api/formation/reservation/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id,status})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Action impossible."); } loadResv(); }catch(e){ loadResv(); }
+    }
+    async function addCash(cid){
+      const name=$("cashName").value.trim(), wa=$("cashWa").value.trim(); $("cashErr").textContent="";
+      if(name.length<2){ $("cashErr").textContent="Nom requis."; return; }
+      try{ const r=await fetch("/api/formation/reservation/cash",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cohortId:cid,name,whatsapp:wa})}); const d=await r.json(); if(!r.ok){ $("cashErr").textContent=d.error||"Ajout impossible."; return; } loadResv(); }catch(e){ $("cashErr").textContent="Serveur injoignable."; }
+    }
+    $("openResvBtn").addEventListener("click", openResv);
+    $("resvClose").addEventListener("click", closeResv);
+    resvModal.addEventListener("click",(e)=>{ if(e.target===resvModal) closeResv(); });
+    resvSession.addEventListener("change", loadResv);
+    $("resvRefresh").addEventListener("click", loadResv);
+    $("setSave").addEventListener("click", saveSettings);
+    $("resvTick").addEventListener("click", async function(){ const b=$("resvTick"); b.disabled=true; const l=b.textContent; b.textContent="…"; try{ await fetch("/api/formation/run-maintenance",{method:"POST",headers:{"content-type":"application/json"},body:"{}"}); }catch(e){} b.disabled=false; b.textContent=l; loadResv(); });
     authGo.addEventListener("click", submitAuth);
     $("authCancel").addEventListener("click", closeAuth);
     authModal.addEventListener("click",(e)=>{ if(e.target===authModal) closeAuth(); });

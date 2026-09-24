@@ -1,5 +1,23 @@
 # Bâtisseur — parcours complet (v1.5)
 
+> **Réservations de session avec paiement (garder sa place)**
+> Page publique **`/reserver`** : une personne choisit une session, laisse son **nom, e-mail et
+> numéro WhatsApp**, réserve, puis **paie avec Wave** (lien du formateur, montant prérempli via
+> `?amount=`) pour garder sa place. Elle clique « J'ai payé » ; le **formateur vérifie et valide**,
+> ce qui l'ajoute à la **liste des admis** de la session (capacité 15). Le **paiement en espèces**
+> est possible : le formateur l'enregistre, la personne est admise directement.
+> - **Formateur** (reconnu par son e-mail via `ADMIN_EMAILS`) : bouton **« Réservations & paiement »**
+>   dans l'Espace formateur — réglages (lien Wave, prix, ouverture), listes par statut
+>   (paiement déclaré, en attente, admis, file d'attente), validation, ajout espèces, et **outbox**
+>   des rappels (liens WhatsApp/e-mail prêts à envoyer).
+> - **Rappels automatiques** : un planificateur interne envoie un rappel (au nom de Bâtisseur,
+>   poli et professionnel) **12 h avant l'échéance** (la veille de la session) ; sans règlement,
+>   le nom **passe en file d'attente**. Envoi automatique si `WA_WEBHOOK_URL` / `MAIL_WEBHOOK_URL`
+>   sont configurés (POST `{to,text}`) ; sinon les messages restent dans l'outbox à envoyer en un clic.
+> - **Lien Wave par défaut** = votre compte Imprim USP (`https://pay.wave.com/m/M_ci_JmZaF8F6GuC-/c/ci/`),
+>   modifiable dans les réglages ou via `WAVE_FORMATION_LINK`. Nouvelles tables `settings` et
+>   `reservations` (voir `schema.sql`). Aucune dépendance npm.
+
 > **Deux formations au choix (nouveau)**
 > À l'écran de départ, l'apprenant choisit sa filière :
 > - **Créer un site / une application web** — le parcours complet existant (vitrine, boutique,

@@ -1552,6 +1552,7 @@ async function handleAdminCohortUpdate(req, res) {
   const fields = {};
   if (typeof p.closed === "boolean") fields.closed = p.closed;
   if (p.capacity !== undefined) { const c = parseInt(p.capacity, 10); if (c >= 1) fields.capacity = c; }
+  if (p.price !== undefined) { const pr = parseInt(p.price, 10); fields.price = (pr > 0) ? pr : null; }
   if (typeof p.label === "string" && p.label.trim()) fields.label = p.label.trim().slice(0, 120);
   if (!Object.keys(fields).length) return sendJson(res, 400, { error: "Rien à modifier." });
   const c = await updateCohortRec(p.id, fields);
@@ -1564,6 +1565,251 @@ function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (
 const MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
 function frDate(iso) { try { const d = new Date(iso + "T00:00:00Z"); return JOURS[d.getUTCDay()] + " " + d.getUTCDate() + " " + MOIS[d.getUTCMonth()] + " " + d.getUTCFullYear(); } catch (e) { return iso; } }
+
+// ============================================================
+// RÉSERVATIONS DE SESSION AVEC PAIEMENT (« garder sa place »)
+// ------------------------------------------------------------
+// Une personne réserve une place dans une session et paie sur Wave pour la garder ;
+// le formateur valide (l'intègre réellement). Paiement en espèces possible (le
+// formateur l'enregistre). Rappels (e-mail + WhatsApp, au nom de Bâtisseur) 12h avant
+// l'échéance (la veille de la session) ; sans règlement, la personne passe en file
+// d'attente. Aucune dépendance : stockage base (tables settings/reservations) ou fichier.
+const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
+// Lien Wave par défaut = compte du formateur (Imprim USP) ; le montant s'ajoute via ?amount=.
+const DEFAULT_WAVE_FORMATION_LINK = process.env.WAVE_FORMATION_LINK || "https://pay.wave.com/m/M_ci_JmZaF8F6GuC-/c/ci/";
+function loadSettingsLocal() { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8")); } catch (e) { return {}; } }
+function saveSettingsLocal(o) { try { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(o, null, 2)); } catch (e) {} }
+async function getSettings() {
+  if (USE_DB) { try { const r = await sb(`/settings?id=eq.formation&select=data`); return (r && r[0] && r[0].data) || {}; } catch (e) { return {}; } }
+  return loadSettingsLocal();
+}
+async function setSettings(fields) {
+  const next = Object.assign({}, await getSettings(), fields);
+  if (USE_DB) { try { await sb(`/settings?on_conflict=id`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify([{ id: "formation", data: next }]) }); } catch (e) {} }
+  else saveSettingsLocal(next);
+  return next;
+}
+function formationConfig(s) {
+  return {
+    payLink: (s && s.payLink) || DEFAULT_WAVE_FORMATION_LINK,
+    price: (s && s.price != null) ? s.price : (parseInt(process.env.FORMATION_PRICE, 10) || 5000),
+    currency: (s && s.currency) || "FCFA",
+    open: s ? (s.open !== false) : true
+  };
+}
+function waveLinkWithAmount(link, amount) {
+  if (!link) return "";
+  if (amount == null || !(amount > 0)) return link;
+  return link + (link.indexOf("?") >= 0 ? "&" : "?") + "amount=" + Math.round(amount);
+}
+
+const RESV_FILE = path.join(DATA_DIR, "reservations.json");
+const RESV_STATUSES = ["en_attente", "paiement_declare", "admis", "file_attente", "annule"];
+function loadResv() { try { return JSON.parse(fs.readFileSync(RESV_FILE, "utf8")); } catch (e) { return []; } }
+function saveResvLocal(a) { try { fs.writeFileSync(RESV_FILE, JSON.stringify(a, null, 2)); } catch (e) {} }
+function toResvRow(r) { return { id: r.id, cohort_id: r.cohortId, name: r.name, email: r.email, whatsapp: r.whatsapp, status: r.status, source: r.source, declared_at: r.declaredAt || null, admitted_at: r.admittedAt || null, reminded_at: r.remindedAt || null, created_at: r.createdAt }; }
+function fromResvRow(x) { return { id: x.id, cohortId: x.cohort_id, name: x.name, email: x.email, whatsapp: x.whatsapp, status: x.status, source: x.source, declaredAt: x.declared_at, admittedAt: x.admitted_at, remindedAt: x.reminded_at, createdAt: x.created_at }; }
+async function addReservation(rec) {
+  if (USE_DB) { try { await sb(`/reservations`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([toResvRow(rec)]) }); } catch (e) { console.error("addReservation:", e.message); throw e; } return; }
+  const a = loadResv(); a.push(rec); saveResvLocal(a);
+}
+async function listReservations(cohortId) {
+  if (USE_DB) { try { const q = cohortId ? `?cohort_id=eq.${encodeURIComponent(cohortId)}&` : `?`; const r = await sb(`/reservations${q}select=*&order=created_at.asc`); return (r || []).map(fromResvRow); } catch (e) { return []; } }
+  let a = loadResv(); if (cohortId) a = a.filter((r) => r.cohortId === cohortId);
+  return a.sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt)));
+}
+async function getReservation(id) {
+  if (USE_DB) { try { const r = await sb(`/reservations?id=eq.${encodeURIComponent(id)}&select=*`); return (r && r[0]) ? fromResvRow(r[0]) : null; } catch (e) { return null; } }
+  return loadResv().find((r) => r.id === id) || null;
+}
+async function updateReservation(id, fields) {
+  if (USE_DB) {
+    const map = { status: "status", source: "source", declaredAt: "declared_at", admittedAt: "admitted_at", remindedAt: "reminded_at", name: "name", whatsapp: "whatsapp" };
+    const row = {}; Object.keys(fields).forEach((k) => { if (map[k]) row[map[k]] = fields[k]; });
+    try { await sb(`/reservations?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(row) }); } catch (e) {}
+    return;
+  }
+  const a = loadResv(); a.forEach((r) => { if (r.id === id) Object.assign(r, fields); }); saveResvLocal(a);
+}
+function cohortPrice(cohort, cfg) { return (cohort && cohort.price != null) ? cohort.price : cfg.price; }
+async function admittedCounts() {
+  const all = await listReservations(null); const m = {};
+  all.forEach((r) => { if (r.status === "admis") m[r.cohortId] = (m[r.cohortId] || 0) + 1; });
+  return m;
+}
+
+// --- Messages au nom de Bâtisseur (polis et professionnels) ---
+function reminderMessages(resv, cohort, cfg) {
+  const dateStr = frDate(cohort.startDate);
+  const price = cohortPrice(cohort, cfg);
+  const amount = (price != null) ? (Math.round(price) + " " + cfg.currency) : "le montant de la formation";
+  const payLink = waveLinkWithAmount(cfg.payLink, price);
+  const subject = "Bâtisseur — votre place pour la session du " + dateStr;
+  const email = "Bonjour " + resv.name + ",\n\n"
+    + "Vous avez réservé une place pour la session de formation du " + dateStr + ". Pour garantir cette place, le règlement (" + amount + ") doit être effectué au plus tard la veille de la session.\n\n"
+    + "Vous pouvez régler dès maintenant avec Wave : " + payLink + "\n\n"
+    + "Sans règlement d'ici la fin de la journée, votre nom sera reporté en fin de liste d'attente afin de laisser la place à une autre personne. Si vous avez déjà payé (en ligne ou en espèces auprès du formateur), merci d'ignorer ce message.\n\n"
+    + "Nous restons à votre disposition.\nL'équipe Bâtisseur";
+  const wa = "Bonjour " + resv.name + ", ici l'équipe Bâtisseur. Pour conserver votre place à la session du " + dateStr + ", merci de régler " + amount + " avant la veille de la session. Paiement Wave : " + payLink + " — sans règlement d'ici la fin de journée, la place sera proposée à une autre personne. Merci de votre compréhension.";
+  return { subject, email, wa };
+}
+function waLink(number, text) { const n = String(number || "").replace(/[^0-9]/g, ""); return n ? ("https://wa.me/" + n + "?text=" + encodeURIComponent(text)) : ""; }
+function mailtoLink(email, subject, body) { return email ? ("mailto:" + encodeURIComponent(email) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body)) : ""; }
+// Envoi automatique si un service est configuré (webhooks) ; sinon le formateur envoie depuis l'outbox.
+async function deliverReminder(resv, msg) {
+  try {
+    if (process.env.WA_WEBHOOK_URL && resv.whatsapp) { fetch(process.env.WA_WEBHOOK_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to: resv.whatsapp, text: msg.wa }) }).catch(() => {}); }
+    if (process.env.MAIL_WEBHOOK_URL && resv.email) { fetch(process.env.MAIL_WEBHOOK_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to: resv.email, subject: msg.subject, text: msg.email }) }).catch(() => {}); }
+  } catch (e) {}
+}
+
+// --- Planificateur : rappels 12h avant l'échéance, passage en file d'attente après ---
+async function runReservationMaintenance(now) {
+  now = now || new Date();
+  const cfg = formationConfig(await getSettings());
+  const cohorts = await listCohorts();
+  const t = now.getTime();
+  for (const c of cohorts) {
+    if (!c.startDate) continue;
+    const start = new Date(c.startDate + "T00:00:00Z").getTime(); // début du jour de session
+    const deadline = start;                       // échéance = tout début du jour de session (fin de la veille)
+    const remindFrom = deadline - 12 * 3600 * 1000; // 12h avant
+    const resvs = await listReservations(c.id);
+    for (const r of resvs) {
+      if (r.status !== "en_attente") continue;
+      if (t >= deadline) { await updateReservation(r.id, { status: "file_attente" }); }
+      else if (t >= remindFrom && !r.remindedAt) {
+        const msg = reminderMessages(r, c, cfg);
+        await updateReservation(r.id, { remindedAt: now.toISOString() });
+        await deliverReminder(r, msg);
+      }
+    }
+  }
+}
+
+// GET /api/formation/sessions : sessions ouvertes à la réservation (public)
+async function handleFormationSessions(req, res) {
+  const cfg = formationConfig(await getSettings());
+  if (!cfg.open) return sendJson(res, 200, { open: false, sessions: [] });
+  const list = await listCohorts(); const admitted = await admittedCounts();
+  const sessions = list.filter((c) => !c.closed).map((c) => {
+    const seats = Math.max(0, (c.capacity || 0) - (admitted[c.id] || 0));
+    return { id: c.id, label: c.label, startDate: c.startDate, dateFr: frDate(c.startDate), capacity: c.capacity || 0, remaining: seats, full: seats <= 0, price: cohortPrice(c, cfg), currency: cfg.currency };
+  });
+  sendJson(res, 200, { open: true, currency: cfg.currency, sessions });
+}
+
+// POST /api/reservations : réserver une place (public)
+async function handleReserve(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const cfg = formationConfig(await getSettings());
+    if (!cfg.open) return sendJson(res, 403, { error: "Les réservations sont fermées pour le moment." });
+    const cohort = await getCohort(p.cohortId);
+    if (!cohort || cohort.closed) return sendJson(res, 404, { error: "Session introuvable ou fermée." });
+    const name = String(p.name || "").trim().slice(0, 80);
+    const email = normEmail(p.email);
+    const whatsapp = String(p.whatsapp || "").replace(/[^0-9+ ]/g, "").trim().slice(0, 25);
+    if (name.length < 2) return sendJson(res, 400, { error: "Indiquez votre nom." });
+    if (!validEmail(email)) return sendJson(res, 400, { error: "Adresse e-mail invalide." });
+    if (whatsapp.replace(/[^0-9]/g, "").length < 6) return sendJson(res, 400, { error: "Numéro WhatsApp invalide." });
+    const ip = (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim()) || "?";
+    if (!rateOk("resv:" + ip, 12, 60 * 60 * 1000)) return sendJson(res, 429, { error: "Trop de demandes. Réessayez plus tard." });
+    const existing = (await listReservations(cohort.id)).find((r) => r.email === email && r.status !== "annule");
+    let id;
+    if (existing) { id = existing.id; if (existing.status === "file_attente") await updateReservation(id, { status: "en_attente" }); }
+    else { id = crypto.randomUUID(); await addReservation({ id, cohortId: cohort.id, name, email, whatsapp, status: "en_attente", source: "en_ligne", createdAt: new Date().toISOString() }); }
+    const price = cohortPrice(cohort, cfg);
+    sendJson(res, 200, { id, session: { label: cohort.label, dateFr: frDate(cohort.startDate) }, price, currency: cfg.currency, payLink: waveLinkWithAmount(cfg.payLink, price) });
+  } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
+}
+
+// POST /api/reservations/declare : la personne déclare avoir payé (public) ; le formateur vérifiera
+async function handleReserveDeclare(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const r = await getReservation(p.id);
+    if (!r) return sendJson(res, 404, { error: "Réservation introuvable." });
+    if (normEmail(p.email) !== r.email) return sendJson(res, 403, { error: "Cet e-mail ne correspond pas à la réservation." });
+    if (r.status === "admis") return sendJson(res, 200, { ok: true, status: "admis" });
+    await updateReservation(r.id, { status: "paiement_declare", declaredAt: new Date().toISOString() });
+    sendJson(res, 200, { ok: true, status: "paiement_declare" });
+  } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
+}
+
+// GET /api/formation/reservations?cohortId=  (formateur) : listes + outbox des rappels
+async function handleFormationReservations(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  const uo = new URL(req.url, "http://localhost"); const cid = uo.searchParams.get("cohortId");
+  const cfg = formationConfig(await getSettings());
+  const cohort = cid ? await getCohort(cid) : null;
+  const list = await listReservations(cid || null);
+  const outbox = [];
+  if (cohort) {
+    list.forEach((r) => {
+      if (r.remindedAt && (r.status === "en_attente" || r.status === "file_attente")) {
+        const m = reminderMessages(r, cohort, cfg);
+        outbox.push({ id: r.id, name: r.name, email: r.email, whatsapp: r.whatsapp, wa: waLink(r.whatsapp, m.wa), mailto: mailtoLink(r.email, m.subject, m.email) });
+      }
+    });
+  }
+  sendJson(res, 200, { reservations: list, price: cohort ? cohortPrice(cohort, cfg) : cfg.price, currency: cfg.currency, capacity: cohort ? (cohort.capacity || 0) : 0, outbox });
+}
+
+// POST /api/formation/reservation/status { id, status }  (formateur)
+async function handleFormationReservationStatus(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const r = await getReservation(p.id); if (!r) return sendJson(res, 404, { error: "Réservation introuvable." });
+  const status = String(p.status || ""); if (!RESV_STATUSES.includes(status)) return sendJson(res, 400, { error: "Statut invalide." });
+  if (status === "admis") {
+    const cohort = await getCohort(r.cohortId);
+    const admitted = (await listReservations(r.cohortId)).filter((x) => x.status === "admis" && x.id !== r.id).length;
+    if (cohort && admitted >= (cohort.capacity || 0)) return sendJson(res, 409, { error: "Session complète : capacité atteinte." });
+  }
+  const fields = { status }; if (status === "admis") fields.admittedAt = new Date().toISOString();
+  await updateReservation(r.id, fields);
+  sendJson(res, 200, { ok: true });
+}
+
+// POST /api/formation/reservation/cash { cohortId, name, email, whatsapp }  (formateur) : paiement espèces -> admis
+async function handleFormationCash(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const cohort = await getCohort(p.cohortId); if (!cohort) return sendJson(res, 404, { error: "Session introuvable." });
+  const name = String(p.name || "").trim().slice(0, 80);
+  const email = p.email ? normEmail(p.email) : null;
+  const whatsapp = String(p.whatsapp || "").replace(/[^0-9+ ]/g, "").slice(0, 25) || null;
+  if (name.length < 2) return sendJson(res, 400, { error: "Nom requis." });
+  const admitted = (await listReservations(cohort.id)).filter((x) => x.status === "admis").length;
+  if (admitted >= (cohort.capacity || 0)) return sendJson(res, 409, { error: "Session complète." });
+  const id = crypto.randomUUID();
+  await addReservation({ id, cohortId: cohort.id, name, email, whatsapp, status: "admis", source: "especes", admittedAt: new Date().toISOString(), createdAt: new Date().toISOString() });
+  sendJson(res, 200, { ok: true, id });
+}
+
+// GET/POST /api/formation/settings  (formateur) : lien Wave, prix, ouverture
+async function handleFormationSettings(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  if (req.method === "GET") return sendJson(res, 200, { settings: formationConfig(await getSettings()) });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const fields = {};
+  if (typeof p.payLink === "string") { const l = p.payLink.trim(); if (l && !/^https:\/\//i.test(l)) return sendJson(res, 400, { error: "Le lien doit commencer par https://" }); fields.payLink = l; }
+  if (p.price !== undefined) { const n = parseInt(p.price, 10); fields.price = (n > 0) ? n : null; }
+  if (typeof p.currency === "string" && p.currency.trim()) fields.currency = p.currency.trim().slice(0, 8);
+  if (typeof p.open === "boolean") fields.open = p.open;
+  const next = await setSettings(fields);
+  sendJson(res, 200, { settings: formationConfig(next) });
+}
+
+// POST /api/formation/run-maintenance (formateur) : force la vérification (rappels / file d'attente)
+async function handleFormationTick(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {}
+  const now = (process.env.RESV_TEST === "1" && p.nowMs) ? new Date(Number(p.nowMs)) : new Date();
+  await runReservationMaintenance(now);
+  sendJson(res, 200, { ok: true });
+}
 
 // --- Registre des certificats (pour la vérification publique) ---
 const CERTS_FILE = path.join(DATA_DIR, "certificates.json");
@@ -2068,6 +2314,16 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/certificate")) return handleCertificate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/verify")) return handleVerifyApi(req, res);
   if (req.method === "GET" && req.url.startsWith("/verifier")) return handleVerifyPage(req, res);
+  // Réservations de session avec paiement
+  if (req.method === "GET" && req.url.startsWith("/api/formation/sessions")) return handleFormationSessions(req, res);
+  if (req.method === "POST" && req.url === "/api/reservations") return handleReserve(req, res);
+  if (req.method === "POST" && req.url === "/api/reservations/declare") return handleReserveDeclare(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/formation/reservations")) return handleFormationReservations(req, res);
+  if (req.method === "POST" && req.url === "/api/formation/reservation/status") return handleFormationReservationStatus(req, res);
+  if (req.method === "POST" && req.url === "/api/formation/reservation/cash") return handleFormationCash(req, res);
+  if ((req.method === "GET" || req.method === "POST") && req.url.startsWith("/api/formation/settings")) return handleFormationSettings(req, res);
+  if (req.method === "POST" && req.url === "/api/formation/run-maintenance") return handleFormationTick(req, res);
+  if (req.method === "GET" && (req.url === "/reserver" || req.url.startsWith("/reserver?"))) return serveStatic(Object.assign(req, { url: "/reserver.html" }), res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);
   if (req.method === "GET" && req.url.startsWith("/preview/")) return servePreview(req, res);
@@ -2086,6 +2342,14 @@ server.listen(PORT, () => {
   console.log(`  Comptes : activés (espace membre)`);
   console.log(`  Formateur(s) : ${ADMIN_EMAILS.length ? ADMIN_EMAILS.join(", ") : "aucun — définir ADMIN_EMAILS"}\n`);
 });
+
+// Planificateur des réservations : rappels 12h avant l'échéance, passage en file d'attente ensuite.
+if (!process.argv.includes("--selftest")) {
+  const RESV_TICK_MS = Math.max(60000, parseInt(process.env.RESV_TICK_MS, 10) || 15 * 60 * 1000);
+  setTimeout(function tick() {
+    runReservationMaintenance().catch(() => {}).finally(() => setTimeout(tick, RESV_TICK_MS));
+  }, 20000);
+}
 
 // --- Auto-test hors ligne : node server.js --selftest ---
 if (process.argv.includes("--selftest")) {

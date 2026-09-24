@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bâtisseur — Réserver une place</title>
+<style>
+  :root{ --ink:#0E1B2E; --ink-soft:#4a5a70; --line:#d8dfe9; --surface:#ffffff; --bg:#eef1f6; --accent:#147C8C; --accent-deep:#0C5866; --good:#2E8B6F; --bad:#c0392b; }
+  @media(prefers-color-scheme:dark){ :root{ --ink:#E9EFF6; --ink-soft:#AFBED2; --line:#223449; --surface:#101E30; --bg:#0A121D; } }
+  *{box-sizing:border-box}
+  body{ margin:0; font-family:system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); line-height:1.55; }
+  .wrap{ max-width:720px; margin:0 auto; padding:28px 18px 60px; }
+  header.top{ display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .logo{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#147C8C,#0C5866); color:#fff; font-weight:800; display:grid; place-items:center; }
+  h1{ font-size:1.5rem; margin:14px 0 4px; }
+  .lead{ color:var(--ink-soft); margin:0 0 20px; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:14px; box-shadow:0 8px 30px rgba(14,27,46,.06); }
+  .sess{ display:flex; gap:12px; align-items:flex-start; padding:12px; border:1px solid var(--line); border-radius:11px; cursor:pointer; margin-bottom:10px; }
+  .sess.sel{ border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 28%,transparent); }
+  .sess.full{ opacity:.55; cursor:not-allowed; }
+  .sess .r{ margin-left:auto; text-align:right; white-space:nowrap; }
+  .sess b{ display:block; }
+  .muted{ color:var(--ink-soft); font-size:.9rem; }
+  label{ display:block; font-size:.85rem; color:var(--ink-soft); margin:10px 0 4px; }
+  input{ width:100%; padding:11px 13px; border:1px solid var(--line); border-radius:10px; font-size:1rem; background:var(--surface); color:var(--ink); }
+  button{ border:none; border-radius:10px; padding:12px 18px; font-size:1rem; font-weight:600; cursor:pointer; }
+  .primary{ background:var(--accent); color:#fff; }
+  .primary:disabled{ opacity:.55; cursor:default; }
+  .wave{ display:inline-block; background:#1DC3F0; color:#062a33; font-weight:700; text-decoration:none; padding:12px 18px; border-radius:10px; }
+  .ghost{ background:transparent; border:1px solid var(--line); color:var(--ink); }
+  .steps{ counter-reset:s; margin:0 0 6px; padding:0; list-style:none; }
+  .steps li{ margin:4px 0; padding-left:26px; position:relative; color:var(--ink-soft); font-size:.92rem; }
+  .steps li:before{ counter-increment:s; content:counter(s); position:absolute; left:0; top:0; width:19px; height:19px; border-radius:50%; background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent-deep); font-size:.72rem; font-weight:700; display:grid; place-items:center; }
+  .err{ color:var(--bad); font-size:.9rem; margin-top:8px; min-height:1em; }
+  .ok{ color:var(--good); }
+  .hidden{ display:none; }
+  .foot{ color:var(--ink-soft); font-size:.8rem; text-align:center; margin-top:24px; }
+  .price{ font-weight:700; color:var(--accent-deep); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><div class="logo">B</div><strong>Bâtisseur</strong></header>
+  <h1>Réserver votre place</h1>
+  <p class="lead">Choisissez une session, réservez votre place, puis réglez avec Wave pour la garantir. Une fois votre paiement confirmé par le formateur, vous figurez sur la liste des admis.</p>
+
+  <div id="closedBox" class="card hidden"><b>Les réservations sont momentanément fermées.</b><p class="muted">Merci de revenir plus tard.</p></div>
+
+  <div id="pickBox" class="card">
+    <b>1. Choisissez votre session</b>
+    <div id="sessions" style="margin-top:12px;"><p class="muted">Chargement des sessions…</p></div>
+  </div>
+
+  <div id="formBox" class="card hidden">
+    <b>2. Vos informations</b>
+    <label for="rname">Nom et prénom</label>
+    <input id="rname" type="text" maxlength="80" autocomplete="name" placeholder="Ex. Awa Koné">
+    <label for="remail">Adresse e-mail</label>
+    <input id="remail" type="email" autocomplete="email" placeholder="vous@exemple.com">
+    <label for="rwa">Numéro WhatsApp (avec l'indicatif du pays)</label>
+    <input id="rwa" type="tel" autocomplete="tel" placeholder="Ex. +225 07 00 00 00 00">
+    <div class="err" id="formErr"></div>
+    <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="ghost" id="backBtn" type="button">← Changer de session</button>
+      <button class="primary" id="reserveBtn" type="button">Réserver et payer</button>
+    </div>
+  </div>
+
+  <div id="payBox" class="card hidden">
+    <b>3. Réglez pour garder votre place</b>
+    <p class="muted" id="paySummary" style="margin:8px 0 12px;"></p>
+    <ol class="steps">
+      <li>Cliquez sur « Payer avec Wave » et effectuez le paiement.</li>
+      <li>Revenez sur cette page et cliquez « J'ai payé ».</li>
+      <li>Le formateur vérifie le paiement et vous ajoute à la liste des admis.</li>
+    </ol>
+    <div style="margin:12px 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <a class="wave" id="payLink" href="#" target="_blank" rel="noopener">Payer avec Wave</a>
+      <button class="primary" id="declareBtn" type="button">J'ai payé</button>
+    </div>
+    <p class="muted">Vous pouvez aussi payer en espèces auprès du formateur ; il vous ajoutera directement.</p>
+    <div class="err" id="payMsg"></div>
+  </div>
+
+  <p class="foot">Paiement sécurisé via Wave. Vos informations ne servent qu'à gérer votre inscription à la formation Bâtisseur.</p>
+</div>
+
+<script>
+  var state = { sessions: [], sel: null, currency: "FCFA", resId: null };
+  var $ = function(id){ return document.getElementById(id); };
+  function money(n){ return (n==null) ? "" : (Math.round(n) + " " + state.currency); }
+  function show(id, on){ $(id).classList.toggle("hidden", !on); }
+
+  function loadSessions(){
+    fetch("/api/formation/sessions").then(function(r){ return r.json(); }).then(function(d){
+      state.currency = d.currency || "FCFA";
+      if(!d.open){ show("pickBox", false); show("closedBox", true); return; }
+      state.sessions = d.sessions || [];
+      var box = $("sessions"); box.innerHTML = "";
+      if(!state.sessions.length){ box.innerHTML = '<p class="muted">Aucune session ouverte pour le moment.</p>'; return; }
+      state.sessions.forEach(function(s){
+        var el = document.createElement("div");
+        el.className = "sess" + (s.full ? " full" : "");
+        var right = s.full ? '<span class="muted">Complet</span>' : ('<b>' + (s.remaining) + ' place' + (s.remaining>1?'s':'') + '</b><div class="muted">restantes</div>');
+        el.innerHTML = '<div><b>' + esc(s.dateFr || s.label) + '</b>' + (s.price!=null ? '<div class="muted">Frais : <span class="price">' + money(s.price) + '</span></div>' : '') + '</div><div class="r">' + right + '</div>';
+        if(!s.full){ el.addEventListener("click", function(){ pick(s); }); }
+        box.appendChild(el);
+      });
+    }).catch(function(){ $("sessions").innerHTML = '<p class="err">Impossible de charger les sessions.</p>'; });
+  }
+  function esc(s){ var d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
+
+  function pick(s){
+    state.sel = s;
+    document.querySelectorAll(".sess").forEach(function(e){ e.classList.remove("sel"); });
+    show("formBox", true); show("payBox", false);
+    $("formBox").scrollIntoView({ behavior:"smooth", block:"start" });
+  }
+  $("backBtn").addEventListener("click", function(){ show("formBox", false); show("payBox", false); window.scrollTo({top:0,behavior:"smooth"}); });
+
+  $("reserveBtn").addEventListener("click", function(){
+    if(!state.sel) return;
+    var name = $("rname").value.trim(), email = $("remail").value.trim(), wa = $("rwa").value.trim();
+    $("formErr").textContent = "";
+    if(name.length < 2){ $("formErr").textContent = "Indiquez votre nom."; return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ $("formErr").textContent = "Adresse e-mail invalide."; return; }
+    if(wa.replace(/[^0-9]/g,"").length < 6){ $("formErr").textContent = "Numéro WhatsApp invalide."; return; }
+    var btn = $("reserveBtn"); btn.disabled = true; var lbl = btn.textContent; btn.textContent = "Réservation…";
+    fetch("/api/reservations", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ cohortId: state.sel.id, name:name, email:email, whatsapp:wa }) })
+      .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
+      .then(function(res){
+        btn.disabled = false; btn.textContent = lbl;
+        if(!res.ok){ $("formErr").textContent = res.d.error || "Réservation impossible."; return; }
+        state.resId = res.d.id;
+        var pl = res.d.payLink || "#";
+        $("payLink").setAttribute("href", pl);
+        $("paySummary").innerHTML = "Session : <b>" + esc(res.d.session.dateFr) + "</b>" + (res.d.price!=null ? (" — Frais : <span class=\"price\">" + money(res.d.price) + "</span>") : "");
+        show("payBox", true); $("payBox").scrollIntoView({ behavior:"smooth", block:"start" });
+      })
+      .catch(function(){ btn.disabled=false; btn.textContent=lbl; $("formErr").textContent = "Impossible de joindre le serveur."; });
+  });
+
+  $("declareBtn").addEventListener("click", function(){
+    if(!state.resId) return;
+    var email = $("remail").value.trim();
+    var btn = $("declareBtn"); btn.disabled = true; var lbl = btn.textContent; btn.textContent = "…";
+    fetch("/api/reservations/declare", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ id: state.resId, email: email }) })
+      .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
+      .then(function(res){
+        btn.disabled = false; btn.textContent = lbl;
+        var m = $("payMsg");
+        if(!res.ok){ m.className = "err"; m.textContent = res.d.error || "Impossible d'enregistrer."; return; }
+        m.className = "err ok";
+        m.textContent = "Merci ! Votre paiement est signalé au formateur. Vous serez ajouté à la liste des admis dès vérification. Vous pouvez fermer cette page.";
+        btn.disabled = true;
+      })
+      .catch(function(){ btn.disabled=false; btn.textContent=lbl; $("payMsg").textContent = "Impossible de joindre le serveur."; });
+  });
+
+  loadSessions();
+</script>
+</body>
+</html>

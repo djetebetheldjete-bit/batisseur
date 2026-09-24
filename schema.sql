@@ -79,6 +79,28 @@ create table if not exists uploads (
   created_at timestamptz default now()
 );
 
+-- --- Réglages de la formation (lien de paiement Wave, prix, ouverture) ---
+create table if not exists settings (
+  id text primary key,
+  data jsonb,
+  updated_at timestamptz default now()
+);
+
+-- --- Réservations de session avec paiement (garder sa place) ---
+create table if not exists reservations (
+  id text primary key,
+  cohort_id text,
+  name text,
+  email text,
+  whatsapp text,
+  status text default 'en_attente',   -- en_attente | paiement_declare | admis | file_attente | annule
+  source text,                          -- en_ligne | especes
+  declared_at timestamptz,
+  admitted_at timestamptz,
+  reminded_at timestamptz,
+  created_at timestamptz default now()
+);
+
 -- --- Comptes des visiteurs des applications (espace membre) ---
 create table if not exists app_users (
   id text primary key,
