@@ -1,5 +1,17 @@
 # Bâtisseur — parcours complet (v1.5)
 
+> **Espace « Premium learner » (applications avancées)**
+> Un troisième espace, **réservé** : le formateur promeut certains apprenants (bouton
+> **« Premium »** dans la liste des apprenants de l'Espace formateur). Seuls les apprenants
+> promus voient l'option **« Application avancée (Premium) »** à l'écran de départ. Là,
+> contrairement au parcours débutant, **l'IA écrit du vrai code** (HTML + CSS + JavaScript
+> réel, dans un seul fichier), pour bâtir une application sur mesure — le kit débutant n'est pas
+> injecté. Cet atelier utilise un **modèle plus puissant (Opus)**, réglable via
+> `ANTHROPIC_MODEL_PREMIUM` (défaut `claude-opus-5-5`). L'application se prévisualise, se publie
+> et s'installe comme les autres. Portée : applications qui tournent dans le navigateur
+> (état, écrans multiples en JS, localStorage) ; le multi-utilisateur temps réel avec base
+> centrale reste une étape ultérieure. Nouvelle colonne `premium` sur `users` (voir `schema.sql`).
+
 > **Réservations de session avec paiement (garder sa place)**
 > Page publique **`/reserver`** : une personne choisit une session, laisse son **nom, e-mail et
 > numéro WhatsApp**, réserve, puis **paie avec Wave** (lien du formateur, montant prérempli via

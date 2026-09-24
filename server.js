@@ -48,6 +48,8 @@ const API_KEY = API_KEYS[0]; // compat / test de présence
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 // Modèle allégé pour les étapes de DISCUSSION (par défaut = le même modèle ; mettre p.ex. un Haiku pour réduire le coût).
 const MODEL_LIGHT = process.env.ANTHROPIC_MODEL_LIGHT || MODEL;
+// Modèle PUISSANT pour l'espace « Premium learner » (applications avancées). Opus par défaut.
+const MODEL_PREMIUM = process.env.ANTHROPIC_MODEL_PREMIUM || "claude-opus-5-5";
 const PORT = process.env.PORT || 3000;
 // Jeton d'hébergement (Palier 2) : la plateforme publie les sites des apprenants à leur place.
 const NETLIFY_TOKEN = process.env.NETLIFY_TOKEN;
@@ -615,6 +617,61 @@ async function produceCode(conv) {
   return { reply: message, siteUpdated: false };
 }
 
+// ============================================================
+// ESPACE « PREMIUM LEARNER » — applications avancées (vrai JavaScript, modèle Opus)
+// Réservé aux apprenants promus par le formateur. Ici l'IA ÉCRIT du vrai code
+// (HTML + CSS + JavaScript) dans un seul fichier index.html, sans le kit débutant.
+// ============================================================
+const PREMIUM_INSTRUCTION = `
+=== ATELIER PREMIUM (applications avancées) ===
+Tu es l'assistant de l'espace « Premium learner » de Bâtisseur, réservé aux apprenants les plus avancés qui conçoivent une vraie application. Ici, contrairement au parcours débutant, tu ÉCRIS DU VRAI CODE, JavaScript compris.
+
+DÉMARCHE
+- À ton PREMIER message : pose 2 ou 3 questions courtes pour cerner l'idée (à quoi sert l'application, ses 3-4 fonctions clés, pour qui). Ne construis pas encore.
+- Dès que l'idée est claire, construis une PREMIÈRE version fonctionnelle, puis itère avec la personne à chaque demande.
+
+FORMAT DE SORTIE
+1) Un court message à la personne (français simple, sans code, sans balise).
+2) Puis l'application ENTIÈRE dans UN SEUL bloc, exactement ainsi :
+\`\`\`html:index.html
+<!doctype html>
+<html lang="fr">
+... l'application complète (HTML + CSS + JS en ligne) ...
+</html>
+\`\`\`
+- Toujours la page ENTIÈRE (jamais un extrait, jamais « ... »). UN SEUL bloc de code. Aucun code hors du bloc. Tu pars TOUJOURS de l'état actuel fourni plus bas et tu renvoies le fichier entier à jour.
+
+CE QUE TU PEUX FAIRE (large)
+- Écrire du HTML, du CSS ET du JavaScript réels dans le même index.html (tout en ligne).
+- Créer plusieurs écrans via une navigation en JavaScript (onglets, routeur simple) : l'app peut sembler multi-pages.
+- Gérer un état applicatif, des formulaires, des calculs, des filtres, des recherches, des graphiques, des rôles côté client.
+- Conserver les données dans le navigateur avec localStorage (persistance locale, par appareil).
+- Utiliser au besoin UNE bibliothèque depuis un CDN fiable (cdnjs) — seulement si c'est vraiment utile.
+
+À DIRE HONNÊTEMENT À LA PERSONNE
+- L'application s'exécute dans le navigateur : les données en localStorage restent sur l'appareil, non partagées entre utilisateurs. Le temps réel multi-utilisateur et une base de données centrale exigent un serveur dédié — c'est une étape ultérieure, hors de cet atelier.
+
+EXIGENCE DE QUALITÉ
+- Code clair, commenté, qui FONCTIONNE. Vérifie mentalement chaque fonction. Interface soignée et professionnelle, sans émojis (sauf demande). Explique en une phrase ce que tu viens de construire ou de corriger.`;
+
+// Génère / met à jour l'application avancée (espace Premium). Modèle Opus, sans kit.
+async function producePremium(conv) {
+  let system = PREMIUM_INSTRUCTION;
+  const current = await readSite(conv.id);
+  if (current) {
+    system += "\n\n=== ÉTAT ACTUEL DE L'APPLICATION (index.html) ===\nVoici le code EXACT actuel. Pars de ce code, applique la demande, renvoie le fichier ENTIER à jour, sans rien perdre.\n```html\n" + current + "\n```";
+  }
+  const reply = await callClaude(system, conv.messages, MODEL_PREMIUM);
+  const ex = extractSite(reply);
+  let message = ex.message; let siteUpdated = false;
+  if (ex.html && await writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
+  if (!message || !message.trim()) message = siteUpdated ? "✓ Application mise à jour — regardez l'aperçu." : reply;
+  conv.messages.push({ role: "assistant", content: message });
+  conv.updatedAt = new Date().toISOString();
+  await saveConv(conv);
+  return { reply: message, siteUpdated };
+}
+
 const DATA_DIR = path.join(__dirname, "data");
 const SITES_DIR = path.join(DATA_DIR, "sites");
 try { fs.mkdirSync(SITES_DIR, { recursive: true }); } catch (e) {}
@@ -749,6 +806,9 @@ function isAdmin(u) { return !!u && ADMIN_EMAILS.includes(normEmail(u.email)); }
 function userStatus(u) { if (!u) return "none"; if (isAdmin(u)) return "active"; return u.status || "active"; }
 function canView(u) { const s = userStatus(u); return isAdmin(u) || s === "active" || s === "finished"; }
 function canBuild(u) { return isAdmin(u) || userStatus(u) === "active"; }
+// « Premium learner » : accès réservé (accordé par le formateur) à l'atelier d'applications avancées.
+function isPremium(u) { return !!u && (isAdmin(u) || u.premium === true); }
+function canPremium(u) { return canBuild(u) && isPremium(u); }
 function owns(user, conv) { if (!conv || !conv.userId) return true; return !!(user && user.id === conv.userId); }
 function buildBlockMessage(user) {
   if (!user) return { code: 401, error: "Connectez-vous pour accéder à votre formation." };
@@ -802,7 +862,7 @@ async function currentUser(req) {
   const token = parseCookies(req)[SESSION_COOKIE];
   return token ? await getSessionUser(token) : null;
 }
-function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name, status: userStatus(u), cohort: u.cohort || null, cohortId: u.cohort_id || null, isAdmin: isAdmin(u) } : null; }
+function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name, status: userStatus(u), cohort: u.cohort || null, cohortId: u.cohort_id || null, isAdmin: isAdmin(u), premium: isPremium(u) } : null; }
 
 // Un projet rattaché à un compte n'est accessible qu'à son propriétaire (voir owns()).
 // Les projets anonymes (sans userId) restent accessibles par id, comme avant.
@@ -811,6 +871,7 @@ function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name, st
 function convTitle(conv) {
   if (conv.title) return String(conv.title).slice(0, 60);
   if (conv && conv.track === "code") return "Programmation — " + languageLabel(conv.language);
+  if (conv && conv.track === "premium") return "Application avancée (Premium)";
   const firstReal = (conv.messages || []).find((m) => m.role === "user" && !m.hidden);
   if (firstReal && firstReal.content) return String(firstReal.content).replace(/\s+/g, " ").trim().slice(0, 60) || "Projet sans titre";
   return "Projet sans titre";
@@ -818,6 +879,7 @@ function convTitle(conv) {
 function convSummary(conv) {
   const base = { id: conv.id, title: convTitle(conv), modules: convModules(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, updatedAt: conv.updatedAt || conv.createdAt || null };
   if (conv.track === "code") { base.track = "code"; base.language = normalizeLanguage(conv.language); base.lesson = conv.lesson || 0; base.lessonCount = lessonsOf(conv).length; }
+  if (conv.track === "premium") base.track = "premium";
   return base;
 }
 async function listConvsForUser(userId) {
@@ -934,6 +996,7 @@ async function callClaude(system, messages, model) {
 // Génère la réponse de l'étape courante (et met à jour le site si c'est une étape de construction).
 async function produceCurrent(conv, baseUrl) {
   if (conv.track === "code") return produceCode(conv);   // 2e filière : apprendre à programmer
+  if (conv.track === "premium") return producePremium(conv); // espace Premium : applications avancées
   const step = conv.step || 0;
   const isBuild = !!STEPS[step].build;
   const mods = convModules(conv);
@@ -1003,6 +1066,14 @@ async function handleStart(req, res) {
       await saveConv(conv);
       return sendJson(res, 200, { id, track: "code", language, lesson: 0, lessons: lessonTitles(conv), reply: card, siteUpdated: false });
     }
+    // Espace « Premium learner » : atelier d'applications avancées (réservé, modèle Opus).
+    if (p.track === "premium") {
+      if (!canPremium(user)) return sendJson(res, 403, { error: "L'atelier Premium est réservé aux apprenants sélectionnés par le formateur." });
+      const kickoff = "Bonjour ! Je veux créer une application avancée. Voici mon idée : " + String(p.idea || "").slice(0, 500);
+      const conv = { id, track: "premium", userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
+      const out = await produceCurrent(conv, reqBase(req));
+      return sendJson(res, 200, { id, track: "premium", ...out });
+    }
     const mods = normalizeModules(p.modules, p.projectType);
     const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
     const conv = { id, step: 0, modules: mods, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
@@ -1021,6 +1092,7 @@ async function handleChat(req, res) {
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
     if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
+    if (conv.track === "premium" && !canPremium(user)) return sendJson(res, 403, { error: "L'atelier Premium est réservé aux apprenants sélectionnés." });
     if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
     conv.messages.push({ role: "user", content: p.message });
     const out = await produceCurrent(conv, reqBase(req));
@@ -1038,6 +1110,7 @@ async function handleNext(req, res) {
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
     if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
+    if (conv.track === "premium") return sendJson(res, 200, { atEnd: true, reply: null, siteUpdated: false }); // pas d'étapes en Premium
     // Filière programmation : « Leçon suivante » avance dans le programme.
     if (conv.track === "code") {
       const lessons = lessonsOf(conv); const cur = Math.min(Math.max(0, conv.lesson || 0), lessons.length - 1);
@@ -1089,6 +1162,7 @@ async function handleGetConversation(req, res) {
   if (conv.userId && !canView(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
   const payload = { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) };
   if (conv.track === "code") { payload.track = "code"; payload.language = normalizeLanguage(conv.language); payload.lesson = conv.lesson || 0; payload.lessons = lessonTitles(conv); }
+  if (conv.track === "premium") payload.track = "premium";
   sendJson(res, 200, payload);
 }
 
@@ -1108,7 +1182,7 @@ async function servePreview(req, res) {
   // Rafraîchit le kit avec l'état ACTUEL du projet (paiement, volets) : ainsi une
   // configuration modifiée après la construction (ex. activation du paiement) est
   // reflétée immédiatement, sans reconstruire le site.
-  if (html && conv) { try { html = injectKit(html, convModules(conv), conv, reqBase(req)); } catch (e) {} }
+  if (html && conv && conv.track !== "premium") { try { html = injectKit(html, convModules(conv), conv, reqBase(req)); } catch (e) {} }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   if (html) return res.end(html);
   // Filet : le site n'existe pas encore.
@@ -1278,7 +1352,7 @@ async function publishSite(conv, baseUrl) {
   if (!html) { const e = new Error("Aucun site à publier : construisez d'abord votre site."); e.status = 400; throw e; }
   // Rafraîchit le kit avec l'état ACTUEL (paiement, volets) au moment de la publication,
   // avec l'origine de la PLATEFORME (là où vivent /api/app) — pas l'adresse du site publié.
-  if (baseUrl) { try { html = injectKit(html, convModules(conv), conv, baseUrl); } catch (e) {} }
+  if (baseUrl && conv.track !== "premium") { try { html = injectKit(html, convModules(conv), conv, baseUrl); } catch (e) {} }
 
   // Jeu de fichiers à déployer. Site simple = index.html seul. Application
   // installable (PWA) = index.html enrichi + manifeste + service worker + icônes.
@@ -1412,7 +1486,7 @@ async function handleProjects(req, res) {
 
 // --- ESPACE FORMATEUR (admin) : gestion des apprenants & des sessions ---
 async function adminListUsers() {
-  if (USE_DB) { try { return (await sb(`/users?select=id,email,name,status,cohort,cohort_id,created_at&order=created_at.desc`)) || []; } catch (e) { console.error("adminListUsers:", e.message); return []; } }
+  if (USE_DB) { try { return (await sb(`/users?select=id,email,name,status,cohort,cohort_id,premium,created_at&order=created_at.desc`)) || []; } catch (e) { console.error("adminListUsers:", e.message); return []; } }
   const a = loadAccounts(); return Object.values(a.users).sort((x, y) => String(y.created_at || "").localeCompare(String(x.created_at || "")));
 }
 async function allConvs() {
@@ -1432,7 +1506,7 @@ async function handleAdminLearners(req, res) {
   convs.forEach((c) => { if (!c || !c.userId) return; const b = byUser[c.userId] || (byUser[c.userId] = { projects: 0, published: 0 }); b.projects++; if (c.publishedUrl) b.published++; });
   const learners = users
     .filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)))
-    .map((x) => ({ id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, cohortId: x.cohort_id || null, status: (x.status || "active"), createdAt: x.created_at || null, projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0 }));
+    .map((x) => ({ id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, cohortId: x.cohort_id || null, status: (x.status || "active"), premium: x.premium === true, createdAt: x.created_at || null, projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0 }));
   const stats = {
     total: learners.length,
     active: learners.filter((l) => l.status === "active").length,
@@ -1474,6 +1548,7 @@ async function handleAdminUpdate(req, res) {
     if (p.cohortId) { const c = await getCohort(p.cohortId); if (c) { fields.cohort_id = c.id; fields.cohort = c.label; } }
     else { fields.cohort_id = null; fields.cohort = null; }
   } else if (p.cohort !== undefined) { fields.cohort = String(p.cohort || "").trim().slice(0, 120) || null; }
+  if (typeof p.premium === "boolean") fields.premium = p.premium;   // promotion « Premium learner »
   if (!Object.keys(fields).length) return sendJson(res, 400, { error: "Rien à modifier." });
   const updated = await updateUser(p.userId, fields);
   sendJson(res, 200, { user: publicUser(updated) });

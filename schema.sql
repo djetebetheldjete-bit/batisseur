@@ -31,11 +31,13 @@ create table if not exists users (
   status text default 'active',
   cohort text,
   cohort_id text,
+  premium boolean default false,
   created_at timestamptz default now()
 );
 alter table users add column if not exists status text default 'active';
 alter table users add column if not exists cohort text;
 alter table users add column if not exists cohort_id text;
+alter table users add column if not exists premium boolean default false;
 
 create table if not exists sessions (
   token text primary key,
