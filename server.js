@@ -18,6 +18,8 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const pwa = require("./pwa.js");
+let QUIZ = null;
+try { QUIZ = require("./quiz.js"); } catch (e) { console.warn("  (quiz.js introuvable : examen désactivé)"); }
 
 function loadEnv(file) {
   try {
@@ -2050,6 +2052,57 @@ async function handleFormationActivity(req, res) {
   sendJson(res, 200, { goalMin: cfg.dailyGoalMin, week, today, learners });
 }
 
+// ============================================================
+//  EXAMEN DE PROGRAMMATION (QCM) : à réussir avant l'attestation.
+//  Stockage des résultats par apprenant (meilleur score conservé).
+// ============================================================
+const QUIZ_FILE = path.join(DATA_DIR, "quiz_results.json");
+function loadQuizLocal() { try { return JSON.parse(fs.readFileSync(QUIZ_FILE, "utf8")); } catch (e) { return {}; } }
+function saveQuizLocal(o) { try { fs.writeFileSync(QUIZ_FILE, JSON.stringify(o, null, 2)); } catch (e) {} }
+async function getQuizResult(userId, quizId) {
+  if (!userId) return null;
+  if (USE_DB) {
+    try { const r = await sb(`/quiz_results?user_id=eq.${encodeURIComponent(userId)}&quiz=eq.${encodeURIComponent(quizId)}&select=*`); return (r && r[0]) || null; }
+    catch (e) { return null; }
+  }
+  const a = loadQuizLocal(); return (a[userId] && a[userId][quizId]) || null;
+}
+async function saveQuizResult(userId, quizId, rec) {
+  if (!userId) return;
+  const row = { user_id: userId, quiz: quizId, score: rec.score, total: rec.total, passed: !!rec.passed, updated_at: new Date().toISOString() };
+  if (USE_DB) {
+    try { await sb(`/quiz_results?on_conflict=user_id,quiz`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify([row]) }); } catch (e) { console.error("saveQuizResult:", e.message); }
+    return;
+  }
+  const a = loadQuizLocal(); (a[userId] || (a[userId] = {}))[quizId] = row; saveQuizLocal(a);
+}
+
+// GET /api/quiz/programmation : questions (sans réponses) + résultat déjà obtenu par l'apprenant
+async function handleQuizGet(req, res) {
+  if (!QUIZ) return sendJson(res, 404, { error: "Examen indisponible." });
+  const u = await currentUser(req);
+  if (!u) return sendJson(res, 401, { error: "Connectez-vous pour passer l'examen." });
+  if (!canBuild(u)) return sendJson(res, 403, { error: "Votre accès à la formation n'est pas actif." });
+  const prev = await getQuizResult(u.id, QUIZ.QUIZ_PROGRAMMATION.id);
+  sendJson(res, 200, { quiz: QUIZ.quizForClient(QUIZ.QUIZ_PROGRAMMATION), result: prev ? { score: prev.score, total: prev.total, passed: !!prev.passed } : null });
+}
+
+// POST /api/quiz/programmation/submit { answers:{qId:index} } : notation + enregistrement (meilleur score)
+async function handleQuizSubmit(req, res) {
+  if (!QUIZ) return sendJson(res, 404, { error: "Examen indisponible." });
+  const u = await currentUser(req);
+  if (!u) return sendJson(res, 401, { error: "Connectez-vous pour passer l'examen." });
+  if (!canBuild(u)) return sendJson(res, 403, { error: "Votre accès à la formation n'est pas actif." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const graded = QUIZ.gradeQuiz(QUIZ.QUIZ_PROGRAMMATION, p.answers || {});
+  const prev = await getQuizResult(u.id, QUIZ.QUIZ_PROGRAMMATION.id);
+  // on conserve le meilleur score / le statut « réussi » une fois obtenu
+  const bestScore = prev ? Math.max(prev.score || 0, graded.score) : graded.score;
+  const everPassed = (prev && prev.passed) || graded.passed;
+  await saveQuizResult(u.id, QUIZ.QUIZ_PROGRAMMATION.id, { score: bestScore, total: graded.total, passed: everPassed });
+  sendJson(res, 200, { score: graded.score, total: graded.total, passPct: graded.passPct, passed: graded.passed, everPassed, details: graded.details });
+}
+
 // POST /api/formation/run-maintenance (formateur) : force la vérification (rappels / file d'attente)
 async function handleFormationTick(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
@@ -2128,6 +2181,22 @@ async function handleCertificate(req, res) {
   const cu = await currentUser(req);
   if (!owns(cu, conv)) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Ce projet appartient à un autre compte."); }
   if (conv.userId && !canView(cu)) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Accès non autorisé pour le moment."); }
+  const track = (conv.track === "code") ? "code" : (conv.track === "premium" ? "premium" : "web");
+  // Piste programmation : l'attestation n'est délivrée qu'après réussite de l'examen.
+  let quizMention = "";
+  if (track === "code") {
+    const qr = QUIZ ? await getQuizResult(conv.userId, QUIZ.QUIZ_PROGRAMMATION.id) : null;
+    if (!qr || !qr.passed) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Pour obtenir l'attestation de programmation, vous devez d'abord réussir l'examen de programmation."); }
+    quizMention = `Examen de programmation réussi : ${qr.score}/${qr.total}`;
+  }
+  const titleByTrack = { web: "Parcours de création de site web", code: "Parcours de programmation", premium: "Atelier d'applications avancées" };
+  const descByTrack = {
+    web: "a suivi et complété le parcours Bâtisseur, et a créé son propre site web en dialoguant avec l'assistant — de l'idée jusqu'à la mise en ligne.",
+    code: "a suivi et complété le parcours de programmation Bâtisseur (algorithmique et Python), et a réussi l'examen de validation des connaissances.",
+    premium: "a conçu et réalisé une application avancée dans l'atelier Premium de Bâtisseur."
+  };
+  const h1title = titleByTrack[track];
+  const certDesc = descByTrack[track];
   // Le nom du compte fait foi ; sinon, le nom saisi ; sinon un libellé neutre.
   // Le nom du compte fait foi (empêche d'émettre un certificat au nom d'un autre).
   let name = (conv.ownerName || u.searchParams.get("name") || "").trim().slice(0, 80);
@@ -2183,11 +2252,11 @@ async function handleCertificate(req, res) {
   <div class="sheet"><div class="frame"></div><div class="inner">
     <div class="brand"><span class="logo">B</span><b>Bâtisseur</b></div>
     <div class="kicker">Certificat de réussite</div>
-    <h1>Parcours de création de site web</h1>
+    <h1>${escapeHtml(h1title)}</h1>
     <div class="sub">Ce certificat atteste que</div>
     <div class="name">${escapeHtml(name)}</div>
-    <div class="desc">a suivi et complété le parcours Bâtisseur, et a créé son propre site web en dialoguant avec l'assistant — de l'idée jusqu'à la mise en ligne.</div>
-    ${online}
+    <div class="desc">${certDesc}</div>
+    ${quizMention ? `<div class="online">${escapeHtml(quizMention)}</div>` : online}
     <div class="meta">
       <div>Délivré le<b>${dateStr}</b></div>
       <div>Certificat n°<b>${num}</b></div>
@@ -2618,6 +2687,8 @@ const server = http.createServer((req, res) => {
   if ((req.method === "GET" || req.method === "POST") && req.url.startsWith("/api/formation/settings")) return handleFormationSettings(req, res);
   if (req.method === "POST" && req.url === "/api/activity/ping") return handleActivityPing(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/formation/activity")) return handleFormationActivity(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/quiz/programmation")) return handleQuizGet(req, res);
+  if (req.method === "POST" && req.url === "/api/quiz/programmation/submit") return handleQuizSubmit(req, res);
   if (req.method === "POST" && req.url === "/api/formation/run-maintenance") return handleFormationTick(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/access") return handleFormationAccess(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cron/maintenance")) return handleCronMaintenance(req, res);

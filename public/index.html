@@ -230,6 +230,26 @@
   .actcell.none{ color:var(--ink-faint); }
   .actcell.wk{ background:transparent; border:none; }
   .actcell.wk b{ font-size:14px; color:var(--ink); } .actcell.wk span{ font-size:11px; color:var(--ink-faint); }
+  /* --- Examen (QCM) --- */
+  #quizModal .modal{ max-width:640px; max-height:88vh; display:flex; flex-direction:column; }
+  #quizBody{ overflow-y:auto; }
+  .qcard{ border:1px solid var(--line); border-radius:12px; padding:14px 14px 10px; margin-bottom:12px; background:var(--surface); }
+  .qcard .qnum{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent-deep); }
+  .qcard .qq{ font-size:14px; color:var(--ink); margin:4px 0 8px; line-height:1.45; }
+  .qcard pre.qcode{ background:#0f1b2d; color:#e9eff6; border-radius:9px; padding:11px 13px; overflow-x:auto; font-family:var(--f-mono),ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; margin:0 0 10px; white-space:pre; }
+  .qopt{ display:flex; gap:10px; align-items:flex-start; padding:9px 11px; border:1px solid var(--line); border-radius:9px; margin-bottom:7px; cursor:pointer; font-size:13.5px; color:var(--ink); background:var(--surface-2); }
+  .qopt:hover{ border-color:var(--accent); }
+  .qopt input{ width:auto; margin:2px 0 0; flex:none; }
+  .qopt.correct{ border-color:var(--good); background:color-mix(in srgb,var(--good) 12%,transparent); }
+  .qopt.wrong{ border-color:var(--bad); background:color-mix(in srgb,var(--bad) 12%,transparent); }
+  .qexplain{ font-size:12.5px; color:var(--ink-soft); margin:2px 2px 2px; padding-left:2px; }
+  .qexplain b{ color:var(--good); }
+  .qexplain.ko b{ color:var(--bad); }
+  .quizresult{ border-radius:12px; padding:14px 16px; margin-bottom:14px; text-align:center; }
+  .quizresult.ok{ background:color-mix(in srgb,var(--good) 16%,transparent); border:1px solid var(--good); }
+  .quizresult.ko{ background:color-mix(in srgb,var(--warm) 14%,transparent); border:1px solid var(--warm); }
+  .quizresult .big{ font-size:26px; font-weight:800; color:var(--ink); }
+  .quizresult .msg{ font-size:13.5px; color:var(--ink-soft); margin-top:4px; }
 </style>
 </head>
 <body>
@@ -270,6 +290,7 @@
           <div class="st" id="stepLabel">Comprendre le projet<small id="stepSub">Orientation</small></div>
           <div class="ch-actions">
             <span class="typebadge" id="typeBadge" style="display:none;"></span>
+            <button class="certbtn" id="examBtn" type="button" style="display:none;background:#0C5866;color:#fff;">Passer l'examen</button>
             <button class="certbtn" id="certBtn" type="button" style="display:none;">Mon attestation</button>
             <button class="nextbtn" id="nextBtn" type="button" disabled>Étape suivante →</button>
           </div>
@@ -400,6 +421,19 @@
     </div>
   </div>
 
+  <!-- Examen de programmation (QCM) -->
+  <div class="modal-bg" id="quizModal">
+    <div class="modal wide">
+      <h3 id="quizTitle">Examen de programmation</h3>
+      <p id="quizIntro">Répondez à chaque question. Une seule réponse est correcte par question.</p>
+      <div id="quizBody"><div class="aempty">Chargement…</div></div>
+      <div class="row" style="margin-top:14px;">
+        <button id="quizClose" type="button">Fermer</button>
+        <button id="quizSubmit" class="primary" type="button">Valider mes réponses</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Réservations de session avec paiement (formateur) -->
   <div class="modal-bg" id="resvModal">
     <div class="modal wide">
@@ -517,7 +551,8 @@
 
     const $ = (id) => document.getElementById(id);
     const thread = $("thread"), form = $("form"), input = $("input"), sendBtn = $("send");
-    const newBtn = $("newBtn"), nextBtn = $("nextBtn"), resumedNote = $("resumed"), certBtn = $("certBtn");
+    const newBtn = $("newBtn"), nextBtn = $("nextBtn"), resumedNote = $("resumed"), certBtn = $("certBtn"), examBtn = $("examBtn");
+    let quizPassed = false;
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
     const pubBtn = $("pubBtn"), pubLink = $("pubLink"), pwaChk = $("pwaChk"), pwaWrap = $("pwaWrap");
@@ -653,7 +688,7 @@
         row.innerHTML='<span class="mk">★</span><span class="ml"><b>Atelier Premium</b><i>Application avancée</i></span>';
         railInner.appendChild(row);
         stepLabel.childNodes[0].nodeValue="Atelier Premium"; stepSub.textContent="Application avancée";
-        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none";
+        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none"; examBtn.style.display="none";
         return;
       }
       nextBtn.style.display="";
@@ -671,9 +706,12 @@
         const atEnd = lesson >= total - 1;
         nextBtn.disabled = atEnd;
         nextBtn.textContent = atEnd ? "Programme terminé ✓" : "Leçon suivante →";
-        certBtn.style.display = "none";
+        examBtn.style.display = (convId && atEnd) ? "inline-block" : "none";
+        examBtn.textContent = quizPassed ? "Examen réussi ✓ — revoir" : "Passer l'examen";
+        certBtn.style.display = (convId && atEnd && quizPassed) ? "inline-block" : "none";
         return;
       }
+      examBtn.style.display = "none";
       STEP_LABELS.forEach((s,i) => {
         const row = document.createElement("div");
         row.className = "mrow " + (i < step ? "done" : (i === step ? "cur" : "todo"));
@@ -803,6 +841,7 @@
           setMode("code"); setRunLang();
           (data.messages||[]).forEach(m => { if(m.role==="user") bubble(m.content,"user"); else bubbleRich(m.content,"ai"); });
           renderRail(); loadEditor(); resumedNote.style.display="block"; setBusy(false);
+          if(lesson >= lessons.length-1) refreshQuizStatus();
           return true;
         }
         if(data.track === "premium"){
@@ -897,6 +936,7 @@
           const data = await r.json(); typing.remove();
           if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
           if(typeof data.lesson==="number") lesson = data.lesson; renderRail();
+          if(lesson >= lessons.length-1) refreshQuizStatus();
           if(data.reply) aiBubble(data.reply);
         }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); nextBtn.disabled=(lesson>=lessons.length-1); }
         finally{ setBusy(false); }
@@ -1574,6 +1614,101 @@
     $("activityClose").addEventListener("click", closeActivity);
     $("activityRefresh").addEventListener("click", loadActivity);
     $("goalSave").addEventListener("click", saveGoal);
+
+    // ===== Examen de programmation (QCM) =====
+    const quizModal = $("quizModal"), quizBody = $("quizBody");
+    let currentQuiz = null;
+    async function refreshQuizStatus(){
+      if(track !== "code" || !me){ return; }
+      try{
+        const r = await fetch("/api/quiz/programmation");
+        if(!r.ok) return;
+        const d = await r.json();
+        currentQuiz = d.quiz || null;
+        quizPassed = !!(d.result && d.result.passed);
+        renderRail();
+      }catch(e){}
+    }
+    function renderQuizQuestions(quiz){
+      quizBody.innerHTML = "";
+      $("quizTitle").textContent = quiz.title || "Examen de programmation";
+      $("quizIntro").textContent = (quiz.intro || "") + " Il faut " + quiz.passPct + "% de bonnes réponses pour réussir.";
+      quiz.questions.forEach(function(q, idx){
+        const card = document.createElement("div"); card.className = "qcard"; card.dataset.qid = q.id;
+        const num = document.createElement("div"); num.className = "qnum"; num.textContent = "Question " + (idx+1) + " / " + quiz.total; card.appendChild(num);
+        const qq = document.createElement("div"); qq.className = "qq"; qq.textContent = q.question; card.appendChild(qq);
+        if(q.code){ const pre = document.createElement("pre"); pre.className = "qcode"; pre.textContent = q.code; card.appendChild(pre); }
+        q.options.forEach(function(opt, oi){
+          const lab = document.createElement("label"); lab.className = "qopt";
+          const inp = document.createElement("input"); inp.type = "radio"; inp.name = "q_" + q.id; inp.value = String(oi);
+          const sp = document.createElement("span"); sp.textContent = opt;
+          lab.appendChild(inp); lab.appendChild(sp); card.appendChild(lab);
+        });
+        quizBody.appendChild(card);
+      });
+    }
+    async function openExam(){
+      quizModal.classList.add("show");
+      quizBody.innerHTML = '<div class="aempty">Chargement…</div>';
+      $("quizSubmit").style.display = "";
+      $("quizSubmit").disabled = false;
+      try{
+        const r = await fetch("/api/quiz/programmation");
+        const d = await r.json();
+        if(!r.ok){ quizBody.innerHTML = '<div class="aempty">'+(d.error||"Examen indisponible.")+'</div>'; $("quizSubmit").style.display="none"; return; }
+        currentQuiz = d.quiz;
+        renderQuizQuestions(d.quiz);
+      }catch(e){ quizBody.innerHTML = '<div class="aempty">Impossible de charger l\'examen.</div>'; $("quizSubmit").style.display="none"; }
+    }
+    function closeExam(){ quizModal.classList.remove("show"); }
+    async function submitQuiz(){
+      if(!currentQuiz) return;
+      const answers = {};
+      let missing = 0;
+      currentQuiz.questions.forEach(function(q){
+        const sel = quizBody.querySelector('input[name="q_'+q.id+'"]:checked');
+        if(sel) answers[q.id] = parseInt(sel.value,10); else missing++;
+      });
+      if(missing > 0){ if(!confirm("Il reste "+missing+" question(s) sans réponse. Valider quand même ?")) return; }
+      $("quizSubmit").disabled = true;
+      try{
+        const r = await fetch("/api/quiz/programmation/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({answers:answers})});
+        const d = await r.json();
+        if(!r.ok){ alert(d.error||"Envoi impossible."); $("quizSubmit").disabled=false; return; }
+        showQuizResult(d);
+        quizPassed = !!d.everPassed;
+        renderRail();
+      }catch(e){ alert("Serveur injoignable."); $("quizSubmit").disabled=false; }
+    }
+    function showQuizResult(d){
+      // bandeau de résultat + correction question par question
+      const banner = document.createElement("div");
+      banner.className = "quizresult " + (d.passed ? "ok" : "ko");
+      banner.innerHTML = '<div class="big">'+d.score+' / '+d.total+'</div><div class="msg">'+
+        (d.passed ? "Réussi ✓ — vous pouvez obtenir votre attestation de programmation."
+                  : ("Il faut "+d.passPct+"% pour réussir. Revoyez les corrections ci-dessous et retentez quand vous voulez."))+
+        '</div>';
+      // marquer chaque option correcte/incorrecte + explication
+      const byId = {}; d.details.forEach(function(x){ byId[x.id]=x; });
+      Array.prototype.forEach.call(quizBody.querySelectorAll(".qcard"), function(card){
+        const info = byId[card.dataset.qid]; if(!info) return;
+        const opts = card.querySelectorAll(".qopt");
+        opts.forEach(function(lab, oi){
+          const inp = lab.querySelector("input"); inp.disabled = true;
+          if(oi === info.correct) lab.classList.add("correct");
+          if(info.given === oi && !info.ok) lab.classList.add("wrong");
+        });
+        const ex = document.createElement("div"); ex.className = "qexplain" + (info.ok ? "" : " ko");
+        ex.innerHTML = '<b>'+(info.ok ? "Correct" : "À revoir")+' :</b> ' + escHtml(info.explain);
+        card.appendChild(ex);
+      });
+      quizBody.insertBefore(banner, quizBody.firstChild);
+      quizBody.scrollTop = 0;
+      $("quizSubmit").style.display = "none";
+    }
+    examBtn.addEventListener("click", openExam);
+    $("quizClose").addEventListener("click", closeExam);
+    $("quizSubmit").addEventListener("click", submitQuiz);
 
     // ===== Assiduité : battement d'activité + badge « aujourd'hui » =====
     const workBadge = $("workBadge");

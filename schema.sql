@@ -112,6 +112,17 @@ create table if not exists activity (
   primary key (user_id, day)
 );
 
+-- --- Résultats de l'examen de programmation (QCM) ---
+create table if not exists quiz_results (
+  user_id text not null,
+  quiz text not null,
+  score integer default 0,
+  total integer default 0,
+  passed boolean default false,
+  updated_at timestamptz default now(),
+  primary key (user_id, quiz)
+);
+
 -- --- Comptes des visiteurs des applications (espace membre) ---
 create table if not exists app_users (
   id text primary key,
