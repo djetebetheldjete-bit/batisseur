@@ -382,6 +382,7 @@
         <button id="resvRefresh" class="dlbtn" type="button">Actualiser</button>
         <button id="resvTick" class="dlbtn" type="button" title="Envoyer les rappels dus et mettre à jour la file">Forcer la vérification</button>
       </div>
+      <div id="accessNote" style="display:none;background:color-mix(in srgb,var(--good) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--good) 45%,var(--line));border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.9rem;"></div>
       <div id="resvBody"><div class="aempty">Choisissez une session.</div></div>
       <div class="row"><button id="resvClose" type="button">Fermer</button></div>
     </div>
@@ -1304,7 +1305,7 @@
     const RESV_LABEL = { en_attente:"En attente de paiement", paiement_declare:"Paiement déclaré (à vérifier)", admis:"Admis (place confirmée)", file_attente:"File d'attente", annule:"Annulé" };
     function escR(s){ const d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
     async function openResv(){
-      resvModal.classList.add("show");
+      resvModal.classList.add("show"); $("accessNote").style.display="none";
       try{ const r=await fetch("/api/formation/settings"); const d=await r.json(); const s=d.settings||{}; $("setLink").value=s.payLink||""; $("setPrice").value=(s.price!=null?s.price:""); $("setCur").value=s.currency||"FCFA"; $("setOpen").checked=(s.open!==false); }catch(e){}
       try{ const r=await fetch("/api/admin/cohorts"); const d=await r.json(); const list=(d.cohorts||[]); resvSession.innerHTML=list.map(c=>'<option value="'+c.id+'">'+escR(c.label)+(c.closed?" (fermée)":"")+'</option>').join(""); }catch(e){ resvSession.innerHTML=""; }
       if(resvSession.value) loadResv();
@@ -1333,9 +1334,11 @@
       // Ajout paiement espèces
       h+='<div class="card" style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:12px;"><b>Ajouter un paiement en espèces</b>'
         +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">'
-        +'<input id="cashName" type="text" placeholder="Nom" style="flex:1;min-width:120px;">'
-        +'<input id="cashWa" type="tel" placeholder="WhatsApp" style="width:150px;">'
+        +'<input id="cashName" type="text" placeholder="Nom" style="flex:1;min-width:110px;">'
+        +'<input id="cashEmail" type="email" placeholder="E-mail (pour l\'accès)" style="flex:1;min-width:140px;">'
+        +'<input id="cashWa" type="tel" placeholder="WhatsApp" style="width:140px;">'
         +'<button id="cashAdd" class="primary" type="button">Ajouter comme admis</button></div>'
+        +'<div class="submeta" style="margin-top:4px;">Avec un e-mail, un compte d\'accès est créé automatiquement.</div>'
         +'<div class="autherr" id="cashErr"></div></div>';
       const order=["paiement_declare","en_attente","admis","file_attente","annule"];
       order.forEach(function(st){
@@ -1358,27 +1361,37 @@
       }
       resvBody.innerHTML=h;
       // Actions
-      resvBody.querySelectorAll("[data-act]").forEach(function(b){ b.addEventListener("click", function(){ setResvStatus(b.getAttribute("data-id"), b.getAttribute("data-act")); }); });
+      resvBody.querySelectorAll("[data-act]").forEach(function(b){ b.addEventListener("click", function(){ const act=b.getAttribute("data-act"), id=b.getAttribute("data-id"); if(act==="access") regenAccess(id); else setResvStatus(id, act); }); });
       $("cashAdd").addEventListener("click", function(){ addCash(cid); });
     }
     function resvActions(x){
       const btn=function(act,label){ return '<button class="dlbtn" data-id="'+x.id+'" data-act="'+act+'" type="button">'+label+'</button>'; };
-      if(x.status==="admis") return btn("file_attente","Retirer");
+      if(x.status==="admis") return btn("file_attente","Retirer")+(x.email?btn("access","Renvoyer l'accès"):"");
       if(x.status==="file_attente") return btn("en_attente","Réactiver")+btn("admis","Admettre");
       return btn("admis","Valider / Admettre")+btn("file_attente","Mettre en file");
     }
+    function showAccess(a){
+      const el=$("accessNote"); if(!a || !a.email){ el.style.display="none"; return; }
+      var msg = a.created
+        ? ("Compte d'accès créé pour <b>"+escR(a.email)+"</b>. Identifiants à transmettre à l'apprenant (par WhatsApp/e-mail) : e-mail <b>"+escR(a.email)+"</b>, mot de passe temporaire <b>"+escR(a.password||"")+"</b>. Il pourra se connecter et suivre la formation.")
+        : (a.password ? ("Nouvel accès pour <b>"+escR(a.email)+"</b> : mot de passe temporaire <b>"+escR(a.password)+"</b>.") : ("Accès activé pour <b>"+escR(a.email)+"</b> (compte existant)."));
+      el.innerHTML=msg; el.style.display="block"; el.scrollIntoView({behavior:"smooth",block:"nearest"});
+    }
     async function setResvStatus(id, status){
-      try{ const r=await fetch("/api/formation/reservation/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id,status})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Action impossible."); } loadResv(); }catch(e){ loadResv(); }
+      try{ const r=await fetch("/api/formation/reservation/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id,status})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Action impossible."); } else if(d.access){ showAccess(d.access); } loadResv(); }catch(e){ loadResv(); }
+    }
+    async function regenAccess(id){
+      try{ const r=await fetch("/api/formation/reservation/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Impossible."); } else { showAccess(d.access); } }catch(e){}
     }
     async function addCash(cid){
-      const name=$("cashName").value.trim(), wa=$("cashWa").value.trim(); $("cashErr").textContent="";
+      const name=$("cashName").value.trim(), email=($("cashEmail")?$("cashEmail").value.trim():""), wa=$("cashWa").value.trim(); $("cashErr").textContent="";
       if(name.length<2){ $("cashErr").textContent="Nom requis."; return; }
-      try{ const r=await fetch("/api/formation/reservation/cash",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cohortId:cid,name,whatsapp:wa})}); const d=await r.json(); if(!r.ok){ $("cashErr").textContent=d.error||"Ajout impossible."; return; } loadResv(); }catch(e){ $("cashErr").textContent="Serveur injoignable."; }
+      try{ const r=await fetch("/api/formation/reservation/cash",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cohortId:cid,name,email,whatsapp:wa})}); const d=await r.json(); if(!r.ok){ $("cashErr").textContent=d.error||"Ajout impossible."; return; } if(d.access){ showAccess(d.access); } loadResv(); }catch(e){ $("cashErr").textContent="Serveur injoignable."; }
     }
     $("openResvBtn").addEventListener("click", openResv);
     $("resvClose").addEventListener("click", closeResv);
     resvModal.addEventListener("click",(e)=>{ if(e.target===resvModal) closeResv(); });
-    resvSession.addEventListener("change", loadResv);
+    resvSession.addEventListener("change", function(){ $("accessNote").style.display="none"; loadResv(); });
     $("resvRefresh").addEventListener("click", loadResv);
     $("setSave").addEventListener("click", saveSettings);
     $("resvTick").addEventListener("click", async function(){ const b=$("resvTick"); b.disabled=true; const l=b.textContent; b.textContent="…"; try{ await fetch("/api/formation/run-maintenance",{method:"POST",headers:{"content-type":"application/json"},body:"{}"}); }catch(e){} b.disabled=false; b.textContent=l; loadResv(); });

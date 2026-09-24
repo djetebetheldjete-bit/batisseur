@@ -1769,7 +1769,9 @@ async function handleFormationReservationStatus(req, res) {
   }
   const fields = { status }; if (status === "admis") fields.admittedAt = new Date().toISOString();
   await updateReservation(r.id, fields);
-  sendJson(res, 200, { ok: true });
+  let access = null;
+  if (status === "admis") { try { access = await grantAccessForReservation(Object.assign({}, r, fields)); } catch (e) {} }
+  sendJson(res, 200, { ok: true, access });
 }
 
 // POST /api/formation/reservation/cash { cohortId, name, email, whatsapp }  (formateur) : paiement espèces -> admis
@@ -1784,8 +1786,10 @@ async function handleFormationCash(req, res) {
   const admitted = (await listReservations(cohort.id)).filter((x) => x.status === "admis").length;
   if (admitted >= (cohort.capacity || 0)) return sendJson(res, 409, { error: "Session complète." });
   const id = crypto.randomUUID();
-  await addReservation({ id, cohortId: cohort.id, name, email, whatsapp, status: "admis", source: "especes", admittedAt: new Date().toISOString(), createdAt: new Date().toISOString() });
-  sendJson(res, 200, { ok: true, id });
+  const rec = { id, cohortId: cohort.id, name, email, whatsapp, status: "admis", source: "especes", admittedAt: new Date().toISOString(), createdAt: new Date().toISOString() };
+  await addReservation(rec);
+  let access = null; try { access = await grantAccessForReservation(rec); } catch (e) {}
+  sendJson(res, 200, { ok: true, id, access });
 }
 
 // GET/POST /api/formation/settings  (formateur) : lien Wave, prix, ouverture
@@ -1809,6 +1813,50 @@ async function handleFormationTick(req, res) {
   const now = (process.env.RESV_TEST === "1" && p.nowMs) ? new Date(Number(p.nowMs)) : new Date();
   await runReservationMaintenance(now);
   sendJson(res, 200, { ok: true });
+}
+
+// GET /api/cron/maintenance?key=... : déclencheur EXTERNE (pinger) pour faire tourner les rappels
+// même quand l'hébergeur met l'app en veille. Protégé par la variable d'environnement CRON_KEY.
+async function handleCronMaintenance(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  if (!process.env.CRON_KEY) { res.writeHead(501, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: "CRON_KEY non configuré sur la plateforme." })); }
+  if ((u.searchParams.get("key") || "") !== process.env.CRON_KEY) { res.writeHead(403, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: "Clé invalide." })); }
+  try { await runReservationMaintenance(); } catch (e) {}
+  res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, at: new Date().toISOString() }));
+}
+
+// --- ADMISSION -> ACCÈS : créer/activer le compte de l'apprenant admis ---
+function genTempPassword() { return "BAT-" + crypto.randomBytes(3).toString("hex").toUpperCase(); }
+async function grantAccessForReservation(resv) {
+  if (!resv || !resv.email) return { created: false, email: null };
+  const cohort = resv.cohortId ? await getCohort(resv.cohortId) : null;
+  const existing = await findUserByEmail(resv.email);
+  if (existing) {
+    const fields = { status: "active" };
+    if (cohort) { fields.cohort_id = cohort.id; fields.cohort = cohort.label; }
+    try { await updateUser(existing.id, fields); } catch (e) {}
+    return { created: false, email: resv.email };
+  }
+  const tempPass = genTempPassword();
+  try { await createUser({ email: resv.email, name: resv.name, password: tempPass, status: "active", cohort: cohort ? cohort.label : null, cohortId: cohort ? cohort.id : null }); }
+  catch (e) { return { created: false, email: resv.email, error: true }; }
+  return { created: true, email: resv.email, password: tempPass };
+}
+
+// POST /api/formation/reservation/access { id } (formateur) : (re)génère un mot de passe d'accès
+async function handleFormationAccess(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const r = await getReservation(p.id); if (!r) return sendJson(res, 404, { error: "Réservation introuvable." });
+  if (!r.email) return sendJson(res, 400, { error: "Aucune adresse e-mail sur cette réservation." });
+  const cohort = r.cohortId ? await getCohort(r.cohortId) : null;
+  const tempPass = genTempPassword();
+  const existing = await findUserByEmail(r.email);
+  try {
+    if (existing) { const fields = { status: "active", pass: hashPassword(tempPass) }; if (cohort) { fields.cohort_id = cohort.id; fields.cohort = cohort.label; } await updateUser(existing.id, fields); }
+    else { await createUser({ email: r.email, name: r.name, password: tempPass, status: "active", cohort: cohort ? cohort.label : null, cohortId: cohort ? cohort.id : null }); }
+  } catch (e) { return sendJson(res, 500, { error: "Impossible de générer l'accès." }); }
+  sendJson(res, 200, { access: { created: !existing, email: r.email, password: tempPass } });
 }
 
 // --- Registre des certificats (pour la vérification publique) ---
@@ -2323,6 +2371,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/formation/reservation/cash") return handleFormationCash(req, res);
   if ((req.method === "GET" || req.method === "POST") && req.url.startsWith("/api/formation/settings")) return handleFormationSettings(req, res);
   if (req.method === "POST" && req.url === "/api/formation/run-maintenance") return handleFormationTick(req, res);
+  if (req.method === "POST" && req.url === "/api/formation/reservation/access") return handleFormationAccess(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/cron/maintenance")) return handleCronMaintenance(req, res);
   if (req.method === "GET" && (req.url === "/reserver" || req.url.startsWith("/reserver?"))) return serveStatic(Object.assign(req, { url: "/reserver.html" }), res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);

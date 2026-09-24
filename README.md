@@ -15,8 +15,19 @@
 >   le nom **passe en file d'attente**. Envoi automatique si `WA_WEBHOOK_URL` / `MAIL_WEBHOOK_URL`
 >   sont configurés (POST `{to,text}`) ; sinon les messages restent dans l'outbox à envoyer en un clic.
 > - **Lien Wave par défaut** = votre compte Imprim USP (`https://pay.wave.com/m/M_ci_JmZaF8F6GuC-/c/ci/`),
->   modifiable dans les réglages ou via `WAVE_FORMATION_LINK`. Nouvelles tables `settings` et
->   `reservations` (voir `schema.sql`). Aucune dépendance npm.
+>   modifiable dans les réglages ou via `WAVE_FORMATION_LINK`. **Prix par défaut : 5000 FCFA**
+>   (`FORMATION_PRICE`). Nouvelles tables `settings` et `reservations` (voir `schema.sql`).
+>   Aucune dépendance npm.
+> - **Admission → accès automatique** : quand le formateur valide un admis qui a un e-mail, la
+>   plateforme **crée (ou réactive) son compte apprenant** (statut actif, session attribuée) et
+>   renvoie **un mot de passe temporaire** à transmettre — l'apprenant peut alors se connecter et
+>   suivre la formation. Bouton « Renvoyer l'accès » pour régénérer un mot de passe. Le paiement
+>   espèces avec e-mail crée aussi l'accès.
+> - **Rappels fiables même quand l'hébergeur dort** : une adresse externe protégée par clé,
+>   `GET /api/cron/maintenance?key=CRON_KEY`, fait tourner les rappels/la file d'attente. Réglez
+>   `CRON_KEY` dans Render, puis pointez un pinger gratuit (UptimeRobot, cron-job.org…) toutes les
+>   ~15 min sur cette adresse : cela réveille l'app **et** déclenche la vérification. Le formateur
+>   a aussi le bouton « Forcer la vérification ».
 
 > **Deux formations au choix (nouveau)**
 > À l'écran de départ, l'apprenant choisit sa filière :
