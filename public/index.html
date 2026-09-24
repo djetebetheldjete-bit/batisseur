@@ -1412,14 +1412,20 @@
       }
       resvBody.innerHTML=h;
       // Actions
-      resvBody.querySelectorAll("[data-act]").forEach(function(b){ b.addEventListener("click", function(){ const act=b.getAttribute("data-act"), id=b.getAttribute("data-id"); if(act==="access") regenAccess(id); else setResvStatus(id, act); }); });
+      resvBody.querySelectorAll("[data-act]").forEach(function(b){ b.addEventListener("click", function(){ const act=b.getAttribute("data-act"), id=b.getAttribute("data-id"); if(act==="access") regenAccess(id); else if(act==="delete") delReservation(id); else setResvStatus(id, act); }); });
       $("cashAdd").addEventListener("click", function(){ addCash(cid); });
     }
     function resvActions(x){
       const btn=function(act,label){ return '<button class="dlbtn" data-id="'+x.id+'" data-act="'+act+'" type="button">'+label+'</button>'; };
-      if(x.status==="admis") return btn("file_attente","Retirer")+(x.email?btn("access","Renvoyer l'accès"):"");
-      if(x.status==="file_attente") return btn("en_attente","Réactiver")+btn("admis","Admettre");
-      return btn("admis","Valider / Admettre")+btn("file_attente","Mettre en file");
+      const del='<button class="dlbtn" data-id="'+x.id+'" data-act="delete" type="button" style="border-color:var(--bad);color:var(--bad);">Supprimer</button>';
+      if(x.status==="admis") return btn("file_attente","Retirer")+(x.email?btn("access","Renvoyer l'accès"):"")+del;
+      if(x.status==="file_attente") return btn("en_attente","Réactiver")+btn("admis","Admettre")+del;
+      return btn("admis","Valider / Admettre")+btn("file_attente","Mettre en file")+del;
+    }
+    async function delReservation(id){
+      if(!window.confirm("Supprimer définitivement cette réservation ?")) return;
+      try{ const r=await fetch("/api/formation/reservation/delete",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Suppression impossible."); } }catch(e){}
+      loadResv();
     }
     function showAccess(a){
       const el=$("accessNote"); if(!a || !a.email){ el.style.display="none"; return; }

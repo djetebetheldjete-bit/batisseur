@@ -1,5 +1,13 @@
 # Bâtisseur — parcours complet (v1.5)
 
+> **Page d'accueil publique & gestion des réservations**
+> Nouvelle page vitrine à l'adresse **`/accueil`** : elle présente les deux formations,
+> affiche les prochaines sessions et leurs frais (en direct), et renvoie vers `/reserver`
+> et l'atelier. C'est le lien à partager pour le lancement. Côté formateur, chaque réservation
+> a désormais un bouton **« Supprimer »** (pour annuler une réservation de test ou indésirable).
+> Modèle Premium confirmé : identifiant Opus **`claude-opus-5-5`** (à mettre dans
+> `ANTHROPIC_MODEL_PREMIUM`).
+
 > **Espace « Premium learner » (applications avancées)**
 > Un troisième espace, **réservé** : le formateur promeut certains apprenants (bouton
 > **« Premium »** dans la liste des apprenants de l'Espace formateur). Seuls les apprenants

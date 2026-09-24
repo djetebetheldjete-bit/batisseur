@@ -1849,6 +1849,19 @@ async function handleFormationReservationStatus(req, res) {
   sendJson(res, 200, { ok: true, access });
 }
 
+async function deleteReservation(id) {
+  if (USE_DB) { try { await sb(`/reservations?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); } catch (e) {} return; }
+  saveResvLocal(loadResv().filter((r) => r.id !== id));
+}
+// POST /api/formation/reservation/delete { id }  (formateur) : supprimer/annuler une réservation
+async function handleFormationReservationDelete(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const r = await getReservation(p.id); if (!r) return sendJson(res, 404, { error: "Réservation introuvable." });
+  await deleteReservation(p.id);
+  sendJson(res, 200, { ok: true });
+}
+
 // POST /api/formation/reservation/cash { cohortId, name, email, whatsapp }  (formateur) : paiement espèces -> admis
 async function handleFormationCash(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
@@ -2443,12 +2456,14 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/reservations/declare") return handleReserveDeclare(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/formation/reservations")) return handleFormationReservations(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/status") return handleFormationReservationStatus(req, res);
+  if (req.method === "POST" && req.url === "/api/formation/reservation/delete") return handleFormationReservationDelete(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/cash") return handleFormationCash(req, res);
   if ((req.method === "GET" || req.method === "POST") && req.url.startsWith("/api/formation/settings")) return handleFormationSettings(req, res);
   if (req.method === "POST" && req.url === "/api/formation/run-maintenance") return handleFormationTick(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/access") return handleFormationAccess(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cron/maintenance")) return handleCronMaintenance(req, res);
   if (req.method === "GET" && (req.url === "/reserver" || req.url.startsWith("/reserver?"))) return serveStatic(Object.assign(req, { url: "/reserver.html" }), res);
+  if (req.method === "GET" && (req.url === "/accueil" || req.url.startsWith("/accueil?"))) return serveStatic(Object.assign(req, { url: "/accueil.html" }), res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);
   if (req.method === "GET" && req.url.startsWith("/preview/")) return servePreview(req, res);

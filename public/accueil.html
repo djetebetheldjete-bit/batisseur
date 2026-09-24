@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bâtisseur — Formation à la création web et à la programmation</title>
+<meta name="description" content="Bâtisseur : apprenez à créer des sites et applications web, ou à programmer, accompagné par une intelligence artificielle. Réservez votre place.">
+<style>
+  :root{ --ink:#0E1B2E; --ink-soft:#4a5a70; --line:#d8dfe9; --surface:#ffffff; --surface-2:#f4f7fb; --bg:#eef1f6; --accent:#147C8C; --accent-deep:#0C5866; --warm:#D98A2B; --good:#2E8B6F; }
+  @media(prefers-color-scheme:dark){ :root{ --ink:#E9EFF6; --ink-soft:#AFBED2; --line:#223449; --surface:#101E30; --surface-2:#15263B; --bg:#0A121D; } }
+  *{box-sizing:border-box}
+  body{ margin:0; font-family:system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; }
+  a{ color:var(--accent-deep); }
+  .wrap{ max-width:960px; margin:0 auto; padding:0 18px; }
+  header.nav{ display:flex; align-items:center; gap:10px; padding:16px 0; }
+  .logo{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#147C8C,#0C5866); color:#fff; font-weight:800; display:grid; place-items:center; }
+  .nav .sp{ margin-left:auto; display:flex; gap:8px; }
+  .btn{ display:inline-block; border:none; border-radius:10px; padding:11px 18px; font-size:1rem; font-weight:600; cursor:pointer; text-decoration:none; }
+  .btn.primary{ background:var(--accent); color:#fff; }
+  .btn.ghost{ background:transparent; border:1px solid var(--line); color:var(--ink); }
+  .btn.warm{ background:var(--warm); color:#231202; }
+  .hero{ padding:34px 0 8px; }
+  .hero h1{ font-size:2rem; line-height:1.2; margin:6px 0 12px; }
+  .hero p.lead{ color:var(--ink-soft); font-size:1.08rem; max-width:62ch; margin:0 0 20px; }
+  .cta{ display:flex; gap:10px; flex-wrap:wrap; }
+  section{ padding:26px 0; }
+  h2{ font-size:1.3rem; margin:0 0 14px; }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media(max-width:680px){ .grid{ grid-template-columns:1fr; } .hero h1{ font-size:1.6rem; } }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px; }
+  .card h3{ margin:0 0 6px; font-size:1.1rem; }
+  .card ul{ margin:8px 0 0; padding-left:18px; color:var(--ink-soft); }
+  .card ul li{ margin:3px 0; }
+  .pill{ display:inline-block; font-size:.75rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--accent-deep); background:color-mix(in srgb,var(--accent) 14%,transparent); border-radius:999px; padding:3px 9px; margin-bottom:8px; }
+  .pill.warm{ color:var(--warm); background:color-mix(in srgb,var(--warm) 16%,transparent); }
+  .sessions{ background:var(--surface-2); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .srow{ display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--line); }
+  .srow:last-child{ border-bottom:none; }
+  .srow .d{ font-weight:600; }
+  .srow .r{ margin-left:auto; color:var(--ink-soft); font-size:.92rem; }
+  .price{ color:var(--accent-deep); font-weight:700; }
+  .steps{ counter-reset:s; list-style:none; padding:0; margin:0; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media(max-width:680px){ .steps{ grid-template-columns:1fr; } }
+  .steps li{ position:relative; padding:10px 12px 10px 40px; background:var(--surface); border:1px solid var(--line); border-radius:11px; color:var(--ink-soft); }
+  .steps li:before{ counter-increment:s; content:counter(s); position:absolute; left:12px; top:11px; width:20px; height:20px; border-radius:50%; background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent-deep); font-size:.75rem; font-weight:700; display:grid; place-items:center; }
+  footer{ padding:26px 0 46px; color:var(--ink-soft); font-size:.85rem; border-top:1px solid var(--line); margin-top:12px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="nav">
+      <div class="logo">B</div><strong>Bâtisseur</strong>
+      <div class="sp">
+        <a class="btn ghost" href="/">Se connecter</a>
+        <a class="btn primary" href="/reserver">Réserver ma place</a>
+      </div>
+    </header>
+
+    <div class="hero">
+      <span class="pill">Formation accompagnée par l'intelligence artificielle</span>
+      <h1>Créez votre site web, ou apprenez à programmer.</h1>
+      <p class="lead">Bâtisseur est une plateforme de formation où vous avancez pas à pas, guidé par une intelligence artificielle. Deux parcours au choix : créer un vrai site ou une application web sans coder, ou apprendre les bases de la programmation avec des exercices pratiques.</p>
+      <div class="cta">
+        <a class="btn primary" href="/reserver">Réserver ma place</a>
+        <a class="btn ghost" href="/">Ouvrir l'atelier</a>
+      </div>
+    </div>
+
+    <section>
+      <h2>Deux formations</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="pill">Sans coder</span>
+          <h3>Créer un site ou une application web</h3>
+          <p style="color:var(--ink-soft);margin:6px 0 0;">En discutant avec l'assistant, vous construisez un site professionnel, puis vous le mettez en ligne.</p>
+          <ul>
+            <li>Site vitrine, boutique avec panier, prise de rendez-vous</li>
+            <li>Espace membre, réception de commandes et de fichiers</li>
+            <li>Paiement en ligne et application installable sur téléphone</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="pill">Pratique</span>
+          <h3>Apprendre la programmation</h3>
+          <p style="color:var(--ink-soft);margin:6px 0 0;">Les bases expliquées simplement, avec une console pour écrire et exécuter votre code.</p>
+          <ul>
+            <li>Algorithmique et Python, leçon par leçon</li>
+            <li>Un cours écrit clair, puis des exercices concrets</li>
+            <li>Un tuteur qui corrige et s'adapte à votre niveau</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Prochaines sessions</h2>
+      <div class="sessions" id="sessions"><p style="color:var(--ink-soft);margin:0;">Chargement des sessions…</p></div>
+      <p style="margin-top:12px;"><a class="btn warm" href="/reserver">Réserver une place</a></p>
+    </section>
+
+    <section>
+      <h2>Comment ça se passe</h2>
+      <ol class="steps">
+        <li>Vous choisissez une session et réservez votre place.</li>
+        <li>Vous réglez les frais avec Wave pour garantir votre place.</li>
+        <li>Le formateur valide votre inscription et vous recevez vos accès.</li>
+        <li>Vous suivez la formation à votre rythme, accompagné par l'IA.</li>
+      </ol>
+    </section>
+
+    <footer>
+      Bâtisseur — formation à la création web et à la programmation. Pour toute question, contactez le formateur.
+    </footer>
+  </div>
+
+  <script>
+    function esc(s){ var d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
+    fetch("/api/formation/sessions").then(function(r){ return r.json(); }).then(function(d){
+      var box = document.getElementById("sessions");
+      if(!d.open){ box.innerHTML = '<p style="color:var(--ink-soft);margin:0;">Les réservations sont momentanément fermées. Revenez bientôt.</p>'; return; }
+      var s = d.sessions || [];
+      if(!s.length){ box.innerHTML = '<p style="color:var(--ink-soft);margin:0;">Aucune session ouverte pour le moment.</p>'; return; }
+      var cur = d.currency || "FCFA";
+      box.innerHTML = s.map(function(x){
+        var right = x.full ? "Complet" : (x.remaining + " place" + (x.remaining>1?"s":"") + " restantes");
+        var price = (x.price!=null) ? (' · <span class="price">' + Math.round(x.price) + ' ' + esc(cur) + '</span>') : "";
+        return '<div class="srow"><div class="d">' + esc(x.dateFr || x.label) + '</div><div class="r">' + right + price + '</div></div>';
+      }).join("");
+    }).catch(function(){ document.getElementById("sessions").innerHTML = '<p style="color:var(--ink-soft);margin:0;">Impossible de charger les sessions pour le moment.</p>'; });
+  </script>
+</body>
+</html>
