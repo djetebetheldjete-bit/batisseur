@@ -103,6 +103,15 @@ create table if not exists reservations (
   created_at timestamptz default now()
 );
 
+-- --- Assiduité : temps de travail quotidien par apprenant (secondes/jour) ---
+create table if not exists activity (
+  user_id text not null,
+  day date not null,
+  seconds integer not null default 0,
+  updated_at timestamptz default now(),
+  primary key (user_id, day)
+);
+
 -- --- Comptes des visiteurs des applications (espace membre) ---
 create table if not exists app_users (
   id text primary key,

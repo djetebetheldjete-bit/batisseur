@@ -212,6 +212,24 @@
     .pane[data-pane].show{display:flex;}
     .railpane.pane.show{display:block;}
   }
+  /* --- Suivi & assiduité --- */
+  #activityModal .modal{ max-width:680px; }
+  .actwrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .actrow{ display:grid; grid-template-columns:minmax(130px,1.5fr) repeat(5,1fr) .95fr; gap:6px; align-items:stretch; margin-bottom:6px; min-width:560px; }
+  .acthead{ font-weight:700; color:var(--ink-soft); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .actname{ display:flex; flex-direction:column; justify-content:center; overflow:hidden; }
+  .actname b{ font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--ink); }
+  .actname .em{ font-size:11px; color:var(--ink-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .actname .pg{ font-size:11px; font-weight:600; color:var(--accent-deep); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+  .actname .pg.pub{ color:var(--good); }
+  .actcell{ display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; border-radius:8px; padding:7px 4px; background:var(--surface-2); border:1px solid var(--line); font-size:12px; color:var(--ink-soft); }
+  .acthead .actcell{ background:transparent; border:none; padding:2px; }
+  .acthead .actcell span{ display:block; font-size:10px; color:var(--ink-faint); font-weight:600; letter-spacing:0; }
+  .actcell.met{ background:color-mix(in srgb,var(--good) 18%,transparent); border-color:var(--good); color:var(--good); font-weight:700; }
+  .actcell.part{ background:color-mix(in srgb,var(--warm) 14%,transparent); border-color:color-mix(in srgb,var(--warm) 45%,var(--line)); color:var(--ink); }
+  .actcell.none{ color:var(--ink-faint); }
+  .actcell.wk{ background:transparent; border:none; }
+  .actcell.wk b{ font-size:14px; color:var(--ink); } .actcell.wk span{ font-size:11px; color:var(--ink-faint); }
 </style>
 </head>
 <body>
@@ -222,6 +240,7 @@
       <span class="grow"></span>
       <button class="topbtn solid" id="loginOpenBtn" type="button" style="display:none;">Se connecter</button>
       <span class="acctname" id="acctName" style="display:none;"><span class="av" id="acctAv">?</span><span id="acctLabel"></span></span>
+      <span class="topbtn" id="workBadge" style="display:none;cursor:default;"></span>
       <button class="topbtn" id="adminBtn" type="button" style="display:none;">Espace formateur</button>
       <button class="topbtn" id="espaceBtn" type="button" style="display:none;">Mon espace</button>
       <button class="topbtn" id="logoutBtn" type="button" style="display:none;">Se déconnecter</button>
@@ -353,7 +372,31 @@
       <h3>Espace formateur</h3>
       <p>Inscrivez vos apprenants et attribuez leur session. « Terminé » coupe l'accès à la construction (le projet reste consultable) ; « Actif » le (ré)autorise.</p>
       <div id="adminBody"><div class="aempty">Chargement…</div></div>
-      <div class="row"><button id="adminClose" type="button">Fermer</button><button id="openResvBtn" class="primary" type="button">Réservations &amp; paiement</button></div>
+      <div class="row"><button id="adminClose" type="button">Fermer</button><button id="openActivityBtn" type="button">Suivi &amp; assiduité</button><button id="openResvBtn" class="primary" type="button">Réservations &amp; paiement</button></div>
+    </div>
+  </div>
+
+  <!-- Suivi & assiduité (temps de travail quotidien) -->
+  <div class="modal-bg" id="activityModal">
+    <div class="modal wide">
+      <h3>Suivi &amp; assiduité</h3>
+      <p>Temps de travail de chaque apprenant, jour par jour (lundi → vendredi). Une case <b>verte ✓</b> = l'objectif du jour est atteint.</p>
+      <div class="card" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px;">
+        <b>Objectif quotidien</b>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+          <label style="font-size:12px;color:var(--ink-soft)">Minutes par jour :</label>
+          <select id="goalSel" style="width:130px;">
+            <option value="30">30 minutes</option>
+            <option value="60">1 heure</option>
+            <option value="90">1 h 30</option>
+            <option value="120">2 heures</option>
+          </select>
+          <button id="goalSave" class="primary" type="button">Enregistrer</button>
+          <span id="goalMsg" style="font-size:12px;color:var(--good,#2E8B6F);"></span>
+        </div>
+      </div>
+      <div id="activityBody"><div class="aempty">Chargement…</div></div>
+      <div class="row" style="margin-top:12px;"><button id="activityClose" type="button">Fermer</button><button id="activityRefresh" type="button">Actualiser</button></div>
     </div>
   </div>
 
@@ -1002,6 +1045,7 @@
         adminBtn.style.display = "none";
         espaceBtn.style.display = "none";
         logoutBtn.style.display = "none";
+        var wb = document.getElementById("workBadge"); if(wb) wb.style.display = "none";
       }
     }
     async function loadMe(){
@@ -1086,7 +1130,7 @@
         const r = await fetch(url, { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body) });
         const d = await r.json();
         if(!r.ok){ authErr.textContent = d.error || "Impossible pour le moment."; return; }
-        me = d.user; renderAccount(); closeAuth(); startFlow();
+        me = d.user; renderAccount(); closeAuth(); lastPing = Date.now(); activityPing(0); startFlow();
       }catch(e){ authErr.textContent = "Impossible de joindre le serveur."; }
       finally{ authGo.disabled = false; authGo.textContent = prev; }
     }
@@ -1477,10 +1521,100 @@
     $("espaceNew").addEventListener("click", ()=>{ closeEspace(); if(canBuildUI()) openStart(); else notifyBlocked(); });
     espaceModal.addEventListener("click",(e)=>{ if(e.target===espaceModal) closeEspace(); });
 
+    // ===== Suivi & assiduité (vue formateur) =====
+    const activityModal = $("activityModal"), activityBody = $("activityBody");
+    function fmtDur(sec){ const m=Math.floor((sec||0)/60); if(m>=60){ const h=Math.floor(m/60), r=m%60; return h+" h"+(r>0?(" "+(r<10?"0":"")+r):""); } return m+" min"; }
+    async function openActivity(){ activityModal.classList.add("show"); await loadActivity(); }
+    function closeActivity(){ activityModal.classList.remove("show"); }
+    async function loadActivity(){
+      activityBody.innerHTML = '<div class="aempty">Chargement…</div>';
+      try{
+        const r = await fetch("/api/formation/activity");
+        const d = await r.json();
+        if(!r.ok){ activityBody.innerHTML = '<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; }
+        const gs = $("goalSel"); if(gs) gs.value = String(d.goalMin||60);
+        renderActivity(d);
+      }catch(e){ activityBody.innerHTML = '<div class="aempty">Impossible de joindre le serveur.</div>'; }
+    }
+    function renderActivity(d){
+      const week = d.week||[]; const goalSec = (d.goalMin||60)*60; const DOW=["Lun","Mar","Mer","Jeu","Ven"];
+      if(!d.learners || !d.learners.length){ activityBody.innerHTML='<div class="aempty">Aucun apprenant pour le moment.</div>'; return; }
+      const wrap=document.createElement("div"); wrap.className="actwrap";
+      const head=document.createElement("div"); head.className="actrow acthead";
+      head.innerHTML='<div class="actname">Apprenant</div>'+week.map(function(dt,i){ return '<div class="actcell">'+DOW[i]+'<span>'+dt.slice(8,10)+"/"+dt.slice(5,7)+'</span></div>'; }).join("")+'<div class="actcell">Semaine</div>';
+      wrap.appendChild(head);
+      d.learners.forEach(function(l){
+        const row=document.createElement("div"); row.className="actrow";
+        const nm=document.createElement("div"); nm.className="actname"; nm.innerHTML='<b></b><span class="em"></span><span class="pg"></span>';
+        nm.querySelector("b").textContent=l.name; nm.querySelector(".em").textContent=l.email;
+        const pgEl=nm.querySelector(".pg");
+        if(l.progress){ pgEl.textContent=l.progress.text; if(l.progress.published>0) pgEl.classList.add("pub"); }
+        row.appendChild(nm);
+        week.forEach(function(dt){
+          const sec=(l.days&&l.days[dt])||0; const met=sec>=goalSec;
+          const c=document.createElement("div"); c.className="actcell "+(met?"met":(sec>0?"part":"none"));
+          c.innerHTML = sec>0 ? (fmtDur(sec)+(met?' ✓':'')) : '—';
+          row.appendChild(c);
+        });
+        const wk=document.createElement("div"); wk.className="actcell wk"; wk.innerHTML='<b>'+l.daysMetThisWeek+'/5</b><span>'+fmtDur(l.weekTotal)+'</span>';
+        row.appendChild(wk);
+        wrap.appendChild(row);
+      });
+      activityBody.innerHTML=""; activityBody.appendChild(wrap);
+    }
+    async function saveGoal(){
+      const g=parseInt($("goalSel").value,10)||60; const msg=$("goalMsg"); msg.textContent="";
+      try{
+        const r=await fetch("/api/formation/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({dailyGoalMin:g})});
+        const d=await r.json(); if(!r.ok){ msg.style.color="var(--bad,#c0392b)"; msg.textContent=d.error||"Erreur"; return; }
+        msg.style.color="var(--good,#2E8B6F)"; msg.textContent="Enregistré ✓"; await loadActivity();
+      }catch(e){ msg.style.color="var(--bad,#c0392b)"; msg.textContent="Serveur injoignable."; }
+    }
+    $("openActivityBtn").addEventListener("click", openActivity);
+    $("activityClose").addEventListener("click", closeActivity);
+    $("activityRefresh").addEventListener("click", loadActivity);
+    $("goalSave").addEventListener("click", saveGoal);
+
+    // ===== Assiduité : battement d'activité + badge « aujourd'hui » =====
+    const workBadge = $("workBadge");
+    let lastInteract = Date.now(), lastPing = Date.now();
+    ["mousemove","keydown","mousedown","touchstart","scroll","input"].forEach(function(ev){
+      document.addEventListener(ev, function(){ lastInteract = Date.now(); }, {passive:true});
+    });
+    function renderWorkBadge(todaySec, goalMin){
+      if(!workBadge) return;
+      if(!me || me.isAdmin){ workBadge.style.display = "none"; return; }
+      const m = Math.floor((todaySec||0)/60), g = goalMin || 60;
+      workBadge.style.display = "inline-flex";
+      workBadge.textContent = "Aujourd'hui : " + m + " / " + g + " min" + (m>=g ? " ✓" : "");
+      workBadge.style.borderColor = (m>=g) ? "#2E8B6F" : "var(--nav-line)";
+      workBadge.style.color = (m>=g) ? "#7fe0c0" : "#9fb3c9";
+      workBadge.title = (m>=g) ? "Objectif du jour atteint — bravo !" : "Temps de travail d'aujourd'hui. Objectif : " + g + " min.";
+    }
+    async function activityPing(seconds){
+      if(!me || me.isAdmin) return;
+      try{
+        const r = await fetch("/api/activity/ping",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({s:seconds})});
+        if(!r.ok) return;
+        const d = await r.json();
+        renderWorkBadge(d.todaySeconds, d.goalMin);
+      }catch(e){}
+    }
+    function heartbeat(){
+      if(!me || me.isAdmin){ lastPing = Date.now(); return; }   // seuls les apprenants sont suivis
+      if(document.hidden){ lastPing = Date.now(); return; }     // onglet en arrière-plan : non compté
+      if(Date.now() - lastInteract > 120000){ lastPing = Date.now(); return; } // inactif > 2 min : non compté
+      const elapsed = Math.round((Date.now() - lastPing)/1000);
+      lastPing = Date.now();
+      if(elapsed > 0) activityPing(Math.min(elapsed, 120));
+    }
+    setInterval(heartbeat, 60000);
+
     (async function init(){
       renderRail();
       await loadConfig();
       await loadMe();
+      activityPing(0);   // affiche le temps déjà cumulé aujourd'hui, sans rien créditer
       await startFlow();
     })();
   </script>

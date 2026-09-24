@@ -1708,7 +1708,8 @@ function formationConfig(s) {
     payLink: (s && s.payLink) || DEFAULT_WAVE_FORMATION_LINK,
     price: (s && s.price != null) ? s.price : (parseInt(process.env.FORMATION_PRICE, 10) || 5000),
     currency: (s && s.currency) || "FCFA",
-    open: s ? (s.open !== false) : true
+    open: s ? (s.open !== false) : true,
+    dailyGoalMin: (s && s.dailyGoalMin != null) ? s.dailyGoalMin : (parseInt(process.env.DAILY_GOAL_MIN, 10) || 60)
   };
 }
 function waveLinkWithAmount(link, amount) {
@@ -1929,8 +1930,124 @@ async function handleFormationSettings(req, res) {
   if (p.price !== undefined) { const n = parseInt(p.price, 10); fields.price = (n > 0) ? n : null; }
   if (typeof p.currency === "string" && p.currency.trim()) fields.currency = p.currency.trim().slice(0, 8);
   if (typeof p.open === "boolean") fields.open = p.open;
+  if (p.dailyGoalMin !== undefined) { const n = parseInt(p.dailyGoalMin, 10); if (!(n >= 5 && n <= 600)) return sendJson(res, 400, { error: "Objectif quotidien : entre 5 et 600 minutes." }); fields.dailyGoalMin = n; }
   const next = await setSettings(fields);
   sendJson(res, 200, { settings: formationConfig(next) });
+}
+
+// ============================================================
+//  ASSIDUITÉ : temps de travail quotidien par apprenant.
+//  Le navigateur envoie un « battement » tant que la personne travaille (page
+//  ouverte, visible, activité récente) ; le serveur cumule les secondes par jour.
+//  Le formateur consulte l'assiduité de la semaine (lundi → vendredi).
+//  Abidjan étant à UTC+0, la date UTC correspond au jour local.
+// ============================================================
+const ACTIVITY_FILE = path.join(DATA_DIR, "activity.json");
+function loadActivityLocal() { try { return JSON.parse(fs.readFileSync(ACTIVITY_FILE, "utf8")); } catch (e) { return {}; } }
+function saveActivityLocal(o) { try { fs.writeFileSync(ACTIVITY_FILE, JSON.stringify(o, null, 2)); } catch (e) {} }
+const DAY_CAP_SECONDS = 16 * 3600; // plafond de sécurité : 16 h/jour maximum
+function dayKey(d) { return new Date(d).toISOString().slice(0, 10); }
+function weekdaysThisWeek() {
+  const now = new Date();
+  const dow = now.getUTCDay();                       // 0=dim … 6=sam
+  const toMonday = (dow === 0 ? -6 : 1 - dow);
+  const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + toMonday));
+  const days = [];
+  for (let i = 0; i < 5; i++) days.push(dayKey(new Date(monday.getTime() + i * 86400000)));
+  return days;                                        // [lun, mar, mer, jeu, ven]
+}
+async function addActivity(userId, addSeconds) {
+  if (!userId || !(addSeconds > 0)) return 0;
+  const day = dayKey(new Date());
+  if (USE_DB) {
+    try {
+      const r = await sb(`/activity?user_id=eq.${encodeURIComponent(userId)}&day=eq.${day}&select=seconds`);
+      const cur = (r && r[0] && r[0].seconds) || 0;
+      const next = Math.min(DAY_CAP_SECONDS, cur + addSeconds);
+      await sb(`/activity?on_conflict=user_id,day`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify([{ user_id: userId, day, seconds: next, updated_at: new Date().toISOString() }]) });
+      return next;
+    } catch (e) { console.error("addActivity:", e.message); return 0; }
+  }
+  const a = loadActivityLocal();
+  const u = a[userId] || (a[userId] = {});
+  u[day] = Math.min(DAY_CAP_SECONDS, (u[day] || 0) + addSeconds);
+  saveActivityLocal(a);
+  return u[day];
+}
+async function activityForUsers(userIds, dayKeys) {
+  const out = {}; userIds.forEach((id) => (out[id] = {}));
+  if (!userIds.length || !dayKeys.length) return out;
+  if (USE_DB) {
+    try {
+      const uin = userIds.map((d) => `"${d}"`).join(",");
+      const din = dayKeys.map((d) => `"${d}"`).join(",");
+      const r = await sb(`/activity?user_id=in.(${uin})&day=in.(${din})&select=user_id,day,seconds`);
+      (r || []).forEach((row) => { const uid = row.user_id, dk = String(row.day).slice(0, 10); if (!out[uid]) out[uid] = {}; out[uid][dk] = row.seconds || 0; });
+    } catch (e) {}
+    return out;
+  }
+  const a = loadActivityLocal();
+  userIds.forEach((id) => { const u = a[id] || {}; dayKeys.forEach((d) => { out[id][d] = u[d] || 0; }); });
+  return out;
+}
+
+// POST /api/activity/ping  { s } : battement d'activité (secondes travaillées depuis le dernier envoi)
+async function handleActivityPing(req, res) {
+  const u = await currentUser(req);
+  if (!u) return sendJson(res, 401, { error: "Non connecté." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {}
+  let s = parseInt(p.s, 10); if (isNaN(s)) s = 60;
+  s = Math.max(0, Math.min(s, 120));                  // un battement crédite au plus 120 s ; 0 = simple lecture
+  const cfg = formationConfig(await getSettings());
+  let today = 0;
+  if (!isAdmin(u)) {                                   // le formateur n'est pas suivi
+    if (s > 0) today = await addActivity(u.id, s);
+    else { const day = dayKey(new Date()); const m = await activityForUsers([u.id], [day]); today = (m[u.id] && m[u.id][day]) || 0; }
+  }
+  sendJson(res, 200, { ok: true, todaySeconds: today, goalMin: cfg.dailyGoalMin });
+}
+
+// Résumé d'avancement d'un apprenant à partir de ses projets (étapes / leçons franchies).
+function progressSummary(list) {
+  if (!list || !list.length) return { projects: 0, published: 0, text: "Pas encore de projet", frac: 0 };
+  const published = list.filter((c) => c.publishedUrl).length;
+  function frac(c) {
+    if (c.track === "code") { const tot = (lessonsOf(c).length || 1); return Math.min(1, (c.lesson || 0) / tot); }
+    if (c.track === "premium") { return c.publishedUrl ? 1 : 0.5; }
+    return Math.min(1, (c.step || 0) / (LAST_STEP || 1));
+  }
+  const best = list.slice().sort((a, b) => frac(b) - frac(a))[0];
+  let head;
+  if (best.track === "code") { const tot = lessonsOf(best).length; head = "Prog. leçon " + Math.min((best.lesson || 0) + 1, tot) + "/" + tot; }
+  else if (best.track === "premium") { head = best.publishedUrl ? "App. avancée publiée" : "App. avancée"; }
+  else { const tot = STEPS.length; head = best.publishedUrl ? "Site publié ✓" : ("Site — étape " + Math.min((best.step || 0) + 1, tot) + "/" + tot); }
+  return { projects: list.length, published, text: head + (list.length > 1 ? " · " + list.length + " projets" : ""), frac: frac(best) };
+}
+
+// GET /api/formation/activity : assiduité de la semaine (lun–ven) + avancement par apprenant (formateur)
+async function handleFormationActivity(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  const cfg = formationConfig(await getSettings());
+  const goalSec = cfg.dailyGoalMin * 60;
+  const users = (await adminListUsers()).filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)));
+  const week = weekdaysThisWeek();
+  const today = dayKey(new Date());
+  const allDays = Array.from(new Set(week.concat([today])));
+  const act = await activityForUsers(users.map((x) => x.id), allDays);
+  // avancement : projets par apprenant
+  const convs = await allConvs();
+  const byUser = {};
+  convs.forEach((c) => { if (!c || !c.userId) return; (byUser[c.userId] || (byUser[c.userId] = [])).push(c); });
+  const learners = users.map((x) => {
+    const a = act[x.id] || {};
+    const days = {}; let daysMet = 0, weekTotal = 0;
+    week.forEach((d) => { const sec = a[d] || 0; days[d] = sec; weekTotal += sec; if (sec >= goalSec) daysMet++; });
+    const todaySec = a[today] || 0;
+    return { id: x.id, name: x.name, email: x.email, cohort: x.cohort || null, status: x.status || "active", today: todaySec, metToday: todaySec >= goalSec, days, daysMetThisWeek: daysMet, weekTotal, progress: progressSummary(byUser[x.id] || []) };
+  });
+  learners.sort((A, B) => (A.metToday - B.metToday) || (B.today - A.today));
+  sendJson(res, 200, { goalMin: cfg.dailyGoalMin, week, today, learners });
 }
 
 // POST /api/formation/run-maintenance (formateur) : force la vérification (rappels / file d'attente)
@@ -2499,6 +2616,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/formation/reservation/delete") return handleFormationReservationDelete(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/cash") return handleFormationCash(req, res);
   if ((req.method === "GET" || req.method === "POST") && req.url.startsWith("/api/formation/settings")) return handleFormationSettings(req, res);
+  if (req.method === "POST" && req.url === "/api/activity/ping") return handleActivityPing(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/formation/activity")) return handleFormationActivity(req, res);
   if (req.method === "POST" && req.url === "/api/formation/run-maintenance") return handleFormationTick(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/access") return handleFormationAccess(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cron/maintenance")) return handleCronMaintenance(req, res);
