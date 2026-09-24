@@ -163,6 +163,12 @@
   @media(prefers-color-scheme:dark){.msg.step{color:var(--accent);}}
   .msg.err{align-self:center;border:1px dashed var(--bad);color:var(--bad);font-size:.85rem;}
   .msg.typing{color:var(--ink-faint);font-style:italic;}
+  .msg.rich{white-space:normal;line-height:1.55;max-width:92%;}
+  .msg.rich p{margin:0 0 8px;white-space:pre-wrap;}
+  .msg.rich p:last-child{margin-bottom:0;}
+  .msg.rich pre.cblk{margin:8px 0;background:#0f1b2d;color:#e9eff6;padding:10px 12px;border-radius:9px;overflow:auto;font-family:var(--f-mono),ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;}
+  .msg.rich code{background:color-mix(in srgb,var(--accent) 12%,var(--surface));padding:1px 5px;border-radius:5px;font-family:var(--f-mono),monospace;font-size:.9em;}
+  .msg.rich pre.cblk code{background:none;padding:0;color:inherit;}
   form{display:flex;gap:8px;padding:11px 12px;border-top:1px solid var(--line);flex:0 0 auto;}
   textarea{flex:1;resize:none;font-family:inherit;font-size:.93rem;padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);min-height:44px;max-height:130px;}
   textarea:disabled{opacity:.6;}
@@ -541,6 +547,28 @@
 
     let buildLocked = false;
     function bubble(text, cls){ const d=document.createElement("div"); d.className="msg "+cls; d.textContent=text; thread.appendChild(d); thread.scrollTop=thread.scrollHeight; return d; }
+    // Rendu enrichi (cours et réponses du tuteur) : blocs de code ``` ``` et `code` en ligne.
+    function escHtmlMsg(s){ const d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
+    function renderRichInto(el, text){
+      const parts = String(text||"").split(/```/);
+      for(let i=0;i<parts.length;i++){
+        if(i%2===1){
+          const pre=document.createElement("pre"); pre.className="cblk";
+          let body=parts[i].replace(/^[a-zA-Z0-9_+-]*\r?\n/, ""); // enlève l'étiquette de langage
+          const code=document.createElement("code"); code.textContent=body.replace(/\s+$/,"");
+          pre.appendChild(code); el.appendChild(pre);
+        } else {
+          if(!parts[i]) continue;
+          const chunk=parts[i].replace(/^\n+/,"").replace(/\n+$/,"");
+          if(!chunk) continue;
+          const p=document.createElement("p");
+          p.innerHTML=escHtmlMsg(chunk).replace(/`([^`\n]+)`/g,'<code>$1</code>');
+          el.appendChild(p);
+        }
+      }
+    }
+    function bubbleRich(text, cls){ const d=document.createElement("div"); d.className="msg "+cls+" rich"; renderRichInto(d, text); thread.appendChild(d); thread.scrollTop=thread.scrollHeight; return d; }
+    function aiBubble(text){ return track==="code" ? bubbleRich(text,"ai") : bubble(text,"ai"); }
     function setBusy(b){ input.disabled = b || buildLocked; sendBtn.disabled = b || buildLocked; if(!b && !buildLocked) input.focus(); }
 
     function renderRail(){
@@ -653,7 +681,7 @@
         if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); return; }
         convId=data.id; lesson=data.lesson||0; lessons=data.lessons||[]; setSavedId(convId);
         setRunLang(); renderRail(); loadEditor();
-        bubble(data.reply||"","ai");
+        aiBubble(data.reply||"");
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur. Est-il bien lancé ?","err"); }
       finally{ setBusy(false); }
     }
@@ -668,7 +696,7 @@
         if(data.track === "code"){
           track="code"; codeLang=data.language||"python"; lesson=data.lesson||0; lessons=data.lessons||[];
           setMode("code"); setRunLang();
-          (data.messages||[]).forEach(m => bubble(m.content, m.role==="user"?"user":"ai"));
+          (data.messages||[]).forEach(m => { if(m.role==="user") bubble(m.content,"user"); else bubbleRich(m.content,"ai"); });
           renderRail(); loadEditor(); resumedNote.style.display="block"; setBusy(false);
           return true;
         }
@@ -738,7 +766,7 @@
         const r = await fetch("/api/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId,message})});
         const data = await r.json(); typing.remove();
         if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); }
-        else { bubble(data.reply||"","ai"); if(data.siteUpdated) reloadPreview(); }
+        else { aiBubble(data.reply||""); if(data.siteUpdated) reloadPreview(); }
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); }
       finally{ setBusy(false); }
     }
@@ -754,7 +782,7 @@
           const data = await r.json(); typing.remove();
           if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
           if(typeof data.lesson==="number") lesson = data.lesson; renderRail();
-          if(data.reply) bubble(data.reply,"ai");
+          if(data.reply) aiBubble(data.reply);
         }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); nextBtn.disabled=(lesson>=lessons.length-1); }
         finally{ setBusy(false); }
         return;

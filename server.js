@@ -522,12 +522,15 @@ function normalizeLanguage(k) { return LANGUAGES[k] ? k : "python"; }
 const CURRICULA = {
   python: [
     { key: "decouverte", title: "Découvrir Python", objectif: "Comprendre ce qu'est un programme et afficher du texte.", notions: "Ce qu'est un programme ; la fonction print() ; les chaînes de caractères entre guillemets ; les commentaires avec #.", exercice: "Écrire un programme qui affiche « Bonjour, je m'appelle ... » (avec le prénom de l'apprenant)." },
-    { key: "variables", title: "Les variables", objectif: "Stocker et réutiliser une information.", notions: "Créer une variable (nom = valeur) ; les types de base (texte, nombre entier, nombre à virgule) ; afficher une variable ; concaténer / f-strings.", exercice: "Créer deux variables prénom et âge, puis afficher une phrase qui les utilise (ex. « Awa a 20 ans »)." },
+    { key: "variables", title: "Variables et types", objectif: "Stocker et réutiliser une information.", notions: "Créer une variable (nom = valeur) ; les types de base (texte str, entier int, décimal float, booléen bool) ; afficher une variable ; f-strings.", exercice: "Créer deux variables prénom et âge, puis afficher une phrase qui les utilise (ex. « Awa a 20 ans »)." },
+    { key: "operateurs", title: "Opérateurs et calculs", objectif: "Calculer et comparer des valeurs.", notions: "opérateurs arithmétiques (+, -, *, /, //, %, **) et priorités ; comparaisons (==, !=, <, >) ; opérateurs logiques (and, or, not).", exercice: "Afficher le quotient et le reste de 2026 par 7, puis tester si 2026 est pair." },
     { key: "entrees", title: "Lire ce que tape l'utilisateur", objectif: "Rendre un programme interactif.", notions: "input() ; le résultat de input() est toujours du texte ; convertir en nombre avec int() ou float().", exercice: "Demander son prénom puis son année de naissance, et afficher l'âge approximatif (2026 moins l'année)." },
-    { key: "conditions", title: "Les conditions (si… alors)", objectif: "Faire réagir le programme selon les cas.", notions: "if / elif / else ; les comparaisons (==, !=, <, >, <=, >=) ; l'indentation qui délimite les blocs.", exercice: "Demander un nombre et afficher s'il est négatif, nul ou positif." },
-    { key: "boucles", title: "Les boucles (répéter)", objectif: "Répéter des actions sans se répéter soi-même.", notions: "la boucle for avec range() ; la boucle while ; quand choisir l'une ou l'autre.", exercice: "Afficher la table de multiplication d'un nombre demandé (de 1 à 10)." },
-    { key: "listes", title: "Les listes", objectif: "Manipuler une collection de valeurs.", notions: "créer une liste ; accéder par indice ; append() ; parcourir avec for ; len().", exercice: "Demander 5 notes, les ranger dans une liste, puis afficher la moyenne." },
+    { key: "conditions", title: "Les conditions (si… alors)", objectif: "Faire réagir le programme selon les cas.", notions: "if / elif / else ; les comparaisons ; l'indentation qui délimite les blocs ; conditions imbriquées.", exercice: "Demander un nombre et afficher s'il est négatif, nul ou positif." },
+    { key: "boucles", title: "Les boucles (répéter)", objectif: "Répéter des actions sans se répéter soi-même.", notions: "la boucle for avec range([début], fin, [pas]) ; la boucle while ; break ; quand choisir l'une ou l'autre.", exercice: "Afficher la table de multiplication d'un nombre demandé (de 1 à 10)." },
+    { key: "listes", title: "Les listes", objectif: "Manipuler une collection de valeurs.", notions: "créer une liste ; accéder par indice (et indices négatifs) ; append() ; parcourir avec for ; len().", exercice: "Demander 5 notes, les ranger dans une liste, puis afficher la moyenne." },
+    { key: "dictionnaires", title: "Les dictionnaires", objectif: "Associer des valeurs à des clés.", notions: "créer un dictionnaire {cle: valeur} ; accéder par clé ; ajouter une clé ; parcourir un dictionnaire.", exercice: "Décrire un produit (nom, prix, quantité) dans un dictionnaire et afficher chaque information." },
     { key: "fonctions", title: "Les fonctions", objectif: "Ranger et réutiliser son code.", notions: "def nom(parametres): ; return ; appeler une fonction ; l'intérêt (éviter les répétitions).", exercice: "Écrire une fonction est_pair(n) qui renvoie True si n est pair, et l'utiliser sur quelques nombres." },
+    { key: "fichiers", title: "Fichiers et erreurs", objectif: "Lire/écrire un fichier et gérer une erreur.", notions: "open() et le bloc with ; write() et parcours ligne à ligne ; les exceptions avec try / except.", exercice: "Écrire trois prénoms dans un fichier, puis le relire pour les afficher." },
     { key: "projet", title: "Petit projet : le juste prix", objectif: "Assembler tout ce qui a été appris.", notions: "combiner variables, boucle while, conditions, et une fonction ; le module random (random.randint).", exercice: "Programmer le jeu du « juste prix » : l'ordinateur choisit un nombre entre 1 et 100, l'utilisateur devine, le programme répond « plus grand / plus petit » jusqu'à trouver." }
   ],
   algo: [
@@ -539,9 +542,28 @@ const CURRICULA = {
     { key: "algo-tri", title: "Un premier tri", objectif: "Découvrir un algorithme classique.", notions: "l'idée du tri ; comparer et échanger ; le tri par sélection expliqué simplement.", exercice: "Trier une petite liste de nombres du plus petit au plus grand (tri par sélection), étape par étape." }
   ]
 };
+// Contenu ÉCRIT des cours (rédigé à l'avance) : affiché directement à l'apprenant,
+// sans appel à l'IA. Le tuteur IA vient ensuite par-dessus (questions, correction).
+let COURSES = {};
+try { COURSES = require("./courses.js"); } catch (e) { console.warn("  (courses.js introuvable : cours écrits désactivés)"); }
+Object.keys(CURRICULA).forEach((lang) => { CURRICULA[lang].forEach((l) => { l.cours = (COURSES[lang] && COURSES[lang][l.key]) || ""; }); });
+
 function lessonsOf(conv) { return CURRICULA[normalizeLanguage(conv && conv.language)] || CURRICULA.python; }
 function currentLesson(conv) { const l = lessonsOf(conv); const i = Math.min(Math.max(0, conv && conv.lesson || 0), l.length - 1); return l[i]; }
 function lessonTitles(conv) { return lessonsOf(conv).map((l) => l.title); }
+// Texte affiché quand l'apprenant arrive sur une leçon : le cours écrit (ou, à défaut, l'objectif + l'exercice).
+function lessonCard(conv) {
+  const lessons = lessonsOf(conv);
+  const idx = Math.min(Math.max(0, conv.lesson || 0), lessons.length - 1);
+  const l = lessons[idx];
+  const header = "Leçon " + (idx + 1) + " / " + lessons.length + " — " + l.title + "\n\n";
+  const body = l.cours ? l.cours : (l.objectif + "\n\nExercice : " + l.exercice + "\n\nÉcrivez votre solution dans la console, puis montrez-moi le résultat.");
+  // Sur la toute première leçon, on invite l'apprenant à préciser sa filière (pour adapter les exemples).
+  const intro = (idx === 0)
+    ? "Bienvenue dans votre formation. Pour adapter les exemples à vous, dites-moi en un mot votre domaine ou votre filière (informatique, gestion, sciences, lycée, autodidacte…). Vous pouvez me poser une question à tout moment, et écrire puis exécuter votre code dans la console à droite.\n\n"
+    : "";
+  return intro + header + body;
+}
 
 // Prompt du tuteur : pédagogue, en français simple, avec exercices et encouragements.
 function codeSystem(conv) {
@@ -552,27 +574,33 @@ function codeSystem(conv) {
   const langLabel = languageLabel(lang);
   const runLabel = (LANGUAGES[lang].run === "python") ? "Python" : "JavaScript";
   return `RÔLE
-Tu es un tuteur de programmation bienveillant et patient de Bâtisseur. Tu enseignes ${langLabel} à un ou une GRANDE DÉBUTANTE, en français simple, sans jargon inutile (et si tu emploies un mot technique, tu l'expliques aussitôt). Tu es encourageant, jamais condescendant.
+Tu es un tuteur de programmation bienveillant et patient de Bâtisseur. Tu enseignes ${langLabel} à un ou une GRANDE DÉBUTANTE, en français simple, sans jargon inutile (et si tu emploies un mot technique, tu l'expliques aussitôt). Tu es encourageant, jamais condescendant. Ton objectif : donner une VRAIE base solide.
 
-PARCOURS
-Le programme est une suite de leçons. Voici la leçon EN COURS :
+LEÇON EN COURS
 - Leçon ${idx + 1} sur ${lessons.length} : « ${les.title} »
 - Objectif : ${les.objectif}
-- Notions à couvrir : ${les.notions}
-- Exercice de la leçon : ${les.exercice}
+- Notions : ${les.notions}
+- Exercice : ${les.exercice}
 
-COMMENT TU ENSEIGNES (déroulé d'une leçon)
-1. Au tout début de la leçon (ton premier message), explique la notion SIMPLEMENT, avec une image ou un exemple du quotidien, puis montre un petit exemple de code commenté. Reste court : un pas à la fois.
-2. Donne ensuite l'exercice de la leçon, clairement, et invite la personne à ÉCRIRE puis EXÉCUTER son code dans la console à droite (bouton « Exécuter ») avant de te montrer le résultat.
-3. Quand la personne te montre son code ou te pose une question, réponds avec bienveillance : félicite ce qui est juste, repère l'erreur SANS donner tout de suite la solution complète, donne un indice, laisse-la réessayer. Si elle bloque vraiment, montre la correction commentée.
-4. Quand l'exercice est réussi (ou la notion comprise), dis-le clairement, félicite, et invite à passer à la leçon suivante avec le bouton « Leçon suivante → ». N'enchaîne pas tout seul sur la leçon d'après : attends ce bouton.
+LE COURS ÉCRIT EST DÉJÀ AFFICHÉ À L'APPRENANT (ne le répète pas en entier). Le voici pour t'y appuyer et rester COHÉRENT avec lui (mêmes notations, même progression) :
+--- DÉBUT DU COURS ---
+${les.cours || "(cours écrit indisponible : explique la notion simplement toi-même)"}
+--- FIN DU COURS ---
+
+TON RÔLE, PAR-DESSUS LE COURS ÉCRIT
+- Réponds aux questions de l'apprenant sur ce cours, donne d'AUTRES exemples, reformule autrement si besoin.
+- Quand la personne montre son code ou son résultat, corrige avec bienveillance : félicite ce qui est juste, repère l'erreur SANS donner tout de suite toute la solution, donne un indice, laisse réessayer. Si elle bloque vraiment, montre la correction commentée.
+- Invite à ÉCRIRE puis EXÉCUTER le code dans la console à droite (bouton « Exécuter ») avant de te montrer le résultat.
+- Quand l'exercice est réussi ou la notion comprise, félicite et invite à passer à la leçon suivante avec le bouton « Leçon suivante → ». N'enchaîne pas seul : attends ce bouton.
+
+ADAPTER À LA FILIÈRE DE L'APPRENANT
+- Si tu ne connais pas encore la filière ou le domaine d'études de la personne (par ex. informatique, gestion, sciences, lycée, autodidacte…), DEMANDE-LE dès ton premier message, gentiment, en une phrase — pour adapter tes exemples et tes comparaisons.
+- Ensuite, choisis des exemples proches de son domaine pour faciliter la compréhension, tout en gardant le cours écrit comme fil conducteur.
 
 RÈGLES
-- Montre le code dans des blocs de code délimités par trois accents graves avec le langage (par exemple un bloc \`\`\`${LANGUAGES[lang].run}\`). Le code que tu écris s'exécute en ${runLabel} dans la console de l'apprenant.
-- Donne des exemples courts et exécutables. Évite les longues théories.
-- Pose des questions à la personne pour vérifier qu'elle suit.
-- Adapte-toi : si c'est trop dur, ré-explique autrement ; si c'est trop facile, propose une variante un peu plus difficile.
-- Un ton professionnel et chaleureux. Pas d'émojis.`;
+- Montre le code dans des blocs délimités par trois accents graves avec le langage (un bloc \`\`\`${LANGUAGES[lang].run}\`). Le code s'exécute en ${runLabel} dans la console.
+- Exemples courts et exécutables. Évite les longues théories. Vérifie régulièrement que la personne suit.
+- Ton professionnel et chaleureux. Pas d'émojis.`;
 }
 
 // Génère la réponse du tuteur (parcours programmation). Aucune extraction HTML : le code
@@ -966,10 +994,14 @@ async function handleStart(req, res) {
     // Filière « apprendre à programmer » (2e option de formation).
     if (p.track === "code") {
       const language = normalizeLanguage(p.language);
-      const kickoff = `Bonjour ! Je veux apprendre ${languageLabel(language)} depuis le début. Commençons la première leçon.`;
+      const kickoff = `Bonjour ! Je veux apprendre ${languageLabel(language)} depuis le début.`;
       const conv = { id, track: "code", language, lesson: 0, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
-      const out = await produceCurrent(conv, reqBase(req));
-      return sendJson(res, 200, { id, track: "code", language, lesson: 0, lessons: lessonTitles(conv), ...out });
+      // Le cours écrit s'affiche directement (aucun appel à l'IA pour le délivrer).
+      const card = lessonCard(conv);
+      conv.messages.push({ role: "assistant", content: card });
+      conv.updatedAt = new Date().toISOString();
+      await saveConv(conv);
+      return sendJson(res, 200, { id, track: "code", language, lesson: 0, lessons: lessonTitles(conv), reply: card, siteUpdated: false });
     }
     const mods = normalizeModules(p.modules, p.projectType);
     const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
@@ -1011,9 +1043,13 @@ async function handleNext(req, res) {
       const lessons = lessonsOf(conv); const cur = Math.min(Math.max(0, conv.lesson || 0), lessons.length - 1);
       if (cur >= lessons.length - 1) return sendJson(res, 200, { lesson: cur, atEnd: true, reply: null, siteUpdated: false });
       conv.lesson = cur + 1;
-      conv.messages.push({ role: "user", content: `Passons à la leçon suivante : « ${lessons[conv.lesson].title} ». Explique-la depuis le début.`, hidden: true });
-      const out = await produceCurrent(conv, reqBase(req));
-      return sendJson(res, 200, { lesson: conv.lesson, atEnd: conv.lesson >= lessons.length - 1, ...out });
+      // Le cours écrit de la nouvelle leçon s'affiche directement (aucun appel à l'IA).
+      conv.messages.push({ role: "user", content: `Leçon suivante : « ${lessons[conv.lesson].title} ».`, hidden: true });
+      const card = lessonCard(conv);
+      conv.messages.push({ role: "assistant", content: card });
+      conv.updatedAt = new Date().toISOString();
+      await saveConv(conv);
+      return sendJson(res, 200, { lesson: conv.lesson, atEnd: conv.lesson >= lessons.length - 1, reply: card, siteUpdated: false });
     }
     const current = conv.step || 0;
     if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
