@@ -9,7 +9,7 @@ const QUIZ_PROGRAMMATION = {
   id: "programmation",
   title: "Examen de programmation",
   intro: "Un questionnaire pour valider vos bases avant l'attestation. Prenez votre temps : chaque question a une seule bonne réponse.",
-  passRatio: 0.7,          // 70 % de bonnes réponses pour réussir
+  passRatio: 0.8,          // 80 % de bonnes réponses pour réussir
   questions: [
     {
       id: "q1",
