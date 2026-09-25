@@ -517,6 +517,8 @@ Explique ces possibilités comme des idées concrètes (« on pourrait ajouter�
 // nativement, dans le navigateur de l'apprenant.
 const LANGUAGES = {
   python: { label: "Python", run: "python", blurb: "Le langage le plus simple pour débuter : lisible, puissant, très demandé." },
+  javascript: { label: "JavaScript", run: "js", blurb: "Le langage du web : il s'exécute directement dans le navigateur. Vos programmes tournent ici même." },
+  java: { label: "Java", run: "none", blurb: "Un grand classique très demandé en entreprise. Ici, on lit et on écrit du code que le tuteur corrige (pas d'exécution en direct)." },
   algo: { label: "Algorithmique", run: "python", blurb: "Apprendre à raisonner (les bases de tout programme) avant le langage. On teste les idées en Python." }
 };
 function languageLabel(k) { return (LANGUAGES[k] && LANGUAGES[k].label) || "Python"; }
@@ -536,6 +538,28 @@ const CURRICULA = {
     { key: "fonctions", title: "Les fonctions", objectif: "Ranger et réutiliser son code.", notions: "def nom(parametres): ; return ; appeler une fonction ; l'intérêt (éviter les répétitions).", exercice: "Écrire une fonction est_pair(n) qui renvoie True si n est pair, et l'utiliser sur quelques nombres." },
     { key: "fichiers", title: "Fichiers et erreurs", objectif: "Lire/écrire un fichier et gérer une erreur.", notions: "open() et le bloc with ; write() et parcours ligne à ligne ; les exceptions avec try / except.", exercice: "Écrire trois prénoms dans un fichier, puis le relire pour les afficher." },
     { key: "projet", title: "Petit projet : le juste prix", objectif: "Assembler tout ce qui a été appris.", notions: "combiner variables, boucle while, conditions, et une fonction ; le module random (random.randint).", exercice: "Programmer le jeu du « juste prix » : l'ordinateur choisit un nombre entre 1 et 100, l'utilisateur devine, le programme répond « plus grand / plus petit » jusqu'à trouver." }
+  ],
+  javascript: [
+    { key: "decouverte", title: "Découvrir JavaScript", objectif: "Comprendre ce qu'est un programme et afficher du texte.", notions: "ce qu'est un programme ; console.log() pour afficher ; le texte entre guillemets ; les commentaires avec //.", exercice: "Afficher « Bonjour, je m'appelle ... » avec le prénom de l'apprenant, via console.log." },
+    { key: "variables", title: "Variables et types", objectif: "Stocker et réutiliser une information.", notions: "déclarer avec let et const ; les types (texte string, nombre number, booléen boolean) ; les gabarits `texte ${variable}` (accent grave).", exercice: "Créer prenom et age, puis afficher une phrase qui les combine (ex. « Awa a 20 ans »)." },
+    { key: "operateurs", title: "Opérateurs et calculs", objectif: "Calculer et comparer.", notions: "opérateurs + - * / % ** ; comparaisons ===, !==, <, > ; opérateurs logiques &&, ||, !.", exercice: "Afficher le reste de 2026 divisé par 7, puis tester si 2026 est pair." },
+    { key: "entrees", title: "Lire une saisie", objectif: "Rendre un programme interactif.", notions: "prompt() ouvre une fenêtre de saisie ; le résultat est du texte ; convertir en nombre avec Number().", exercice: "Demander l'année de naissance et afficher l'âge approximatif (2026 moins l'année)." },
+    { key: "conditions", title: "Les conditions (if… else)", objectif: "Faire réagir le programme selon les cas.", notions: "if / else if / else ; les accolades { } qui délimitent les blocs ; les comparaisons.", exercice: "Demander un nombre et afficher s'il est négatif, nul ou positif." },
+    { key: "boucles", title: "Les boucles (répéter)", objectif: "Répéter des actions.", notions: "la boucle for (let i = 0; i < n; i++) ; la boucle while ; break.", exercice: "Afficher la table de multiplication d'un nombre (de 1 à 10)." },
+    { key: "tableaux", title: "Les tableaux", objectif: "Manipuler une collection de valeurs.", notions: "créer un tableau [ ] ; accéder par indice (à partir de 0) ; push() ; length ; parcourir avec for…of.", exercice: "Ranger 5 notes dans un tableau et afficher leur moyenne." },
+    { key: "objets", title: "Les objets", objectif: "Regrouper des informations liées.", notions: "un objet { cle: valeur } ; accéder avec objet.cle ; ajouter une propriété.", exercice: "Décrire un produit (nom, prix, quantité) dans un objet et afficher chaque information." },
+    { key: "fonctions", title: "Les fonctions", objectif: "Ranger et réutiliser son code.", notions: "function nom(parametres) { … return … } ; les fonctions fléchées const f = (x) => … ; l'intérêt (éviter les répétitions).", exercice: "Écrire estPair(n) qui renvoie true si n est pair, et l'utiliser sur quelques nombres." },
+    { key: "projet", title: "Petit projet : le juste prix", objectif: "Assembler ce qui a été appris.", notions: "combiner variables, boucle while, conditions, une fonction ; Math.floor(Math.random()*100)+1 pour un nombre au hasard.", exercice: "Programmer le « juste prix » : l'ordinateur choisit un nombre entre 1 et 100, on devine, le programme répond « plus grand / plus petit »." }
+  ],
+  java: [
+    { key: "decouverte", title: "Découvrir Java", objectif: "Comprendre la structure d'un programme Java et afficher du texte.", notions: "la classe et la méthode main ; System.out.println() pour afficher ; les commentaires // ; le point-virgule à la fin des instructions.", exercice: "Écrire un programme qui affiche « Bonjour, je m'appelle ... ». Écris-le dans la console et montre-le-moi : je le corrige." },
+    { key: "variables", title: "Variables et types", objectif: "Déclarer une variable en indiquant son type.", notions: "en Java, on déclare le type : int (entier), double (décimal), String (texte), boolean ; ex. int age = 20; ; l'affectation avec =.", exercice: "Déclarer String prenom et int age, puis afficher une phrase qui les combine (avec + )." },
+    { key: "operateurs", title: "Opérateurs et calculs", objectif: "Calculer et comparer.", notions: "opérateurs + - * / % ; attention à la division entière (int / int) ; comparaisons ==, !=, <, > ; logiques &&, ||, !.", exercice: "Calculer et afficher le reste de 2026 divisé par 7, puis tester si 2026 est pair." },
+    { key: "entrees", title: "Lire une saisie", objectif: "Rendre un programme interactif.", notions: "la classe Scanner ; Scanner sc = new Scanner(System.in); ; sc.nextInt() pour un entier, sc.nextLine() pour du texte.", exercice: "Demander l'année de naissance et afficher l'âge approximatif (2026 moins l'année)." },
+    { key: "conditions", title: "Les conditions (if… else)", objectif: "Choisir selon une condition.", notions: "if / else if / else ; les accolades { } ; les comparaisons ; conditions combinées.", exercice: "Demander un nombre et afficher s'il est négatif, nul ou positif." },
+    { key: "boucles", title: "Les boucles (répéter)", objectif: "Répéter des actions.", notions: "la boucle for (int i = 0; i < n; i++) ; la boucle while ; break.", exercice: "Afficher la table de multiplication d'un nombre (de 1 à 10)." },
+    { key: "tableaux", title: "Les tableaux", objectif: "Traiter une série de valeurs.", notions: "déclarer un tableau int[] t = {…} ; accéder par indice (à partir de 0) ; t.length ; parcourir avec for.", exercice: "Trouver la plus grande valeur d'un tableau de nombres, sans fonction toute faite." },
+    { key: "methodes", title: "Les méthodes (fonctions)", objectif: "Ranger et réutiliser son code.", notions: "une méthode : type de retour, nom, paramètres typés ; ex. static boolean estPair(int n) { return n % 2 == 0; } ; l'appel.", exercice: "Écrire estPair(int n) qui renvoie true si n est pair, et l'utiliser sur quelques nombres." }
   ],
   algo: [
     { key: "algo-quoi", title: "Qu'est-ce qu'un algorithme ?", objectif: "Comprendre la notion de suite d'étapes.", notions: "définition d'un algorithme (une recette) ; entrée → traitement → sortie ; l'importance de l'ordre des étapes.", exercice: "Écrire, en français puis en Python, les étapes pour calculer la somme de deux nombres saisis." },
@@ -1711,7 +1735,8 @@ function formationConfig(s) {
     price: (s && s.price != null) ? s.price : (parseInt(process.env.FORMATION_PRICE, 10) || 5000),
     currency: (s && s.currency) || "FCFA",
     open: s ? (s.open !== false) : true,
-    dailyGoalMin: (s && s.dailyGoalMin != null) ? s.dailyGoalMin : (parseInt(process.env.DAILY_GOAL_MIN, 10) || 60)
+    dailyGoalMin: (s && s.dailyGoalMin != null) ? s.dailyGoalMin : (parseInt(process.env.DAILY_GOAL_MIN, 10) || 60),
+    proofRequired: (s && typeof s.proofRequired === "boolean") ? s.proofRequired : false
   };
 }
 function waveLinkWithAmount(link, amount) {
@@ -1773,10 +1798,34 @@ function reminderMessages(resv, cohort, cfg) {
 function waLink(number, text) { const n = String(number || "").replace(/[^0-9]/g, ""); return n ? ("https://wa.me/" + n + "?text=" + encodeURIComponent(text)) : ""; }
 function mailtoLink(email, subject, body) { return email ? ("mailto:" + encodeURIComponent(email) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body)) : ""; }
 // Envoi automatique si un service est configuré (webhooks) ; sinon le formateur envoie depuis l'outbox.
+// L'envoi e-mail automatique est actif dès qu'une clé Brevo (BREVO_API_KEY + MAIL_FROM)
+// ou un webhook (MAIL_WEBHOOK_URL) est configuré dans les variables d'environnement Render.
+function emailAutoConfigured() { return !!((process.env.BREVO_API_KEY && process.env.MAIL_FROM) || process.env.MAIL_WEBHOOK_URL); }
+async function sendReminderEmail(to, subject, text) {
+  if (!to) return false;
+  const key = process.env.BREVO_API_KEY, from = process.env.MAIL_FROM;
+  if (key && from) {
+    try {
+      const r = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: { "api-key": key, "content-type": "application/json", "accept": "application/json" },
+        body: JSON.stringify({ sender: { email: from, name: process.env.MAIL_FROM_NAME || "Bâtisseur" }, to: [{ email: to }], subject, textContent: text })
+      });
+      if (r.ok) return true;
+      console.error("E-mail (Brevo) échec:", r.status, (await r.text().catch(() => "")).slice(0, 200));
+    } catch (e) { console.error("E-mail (Brevo):", e.message); }
+  }
+  if (process.env.MAIL_WEBHOOK_URL) {
+    try { const r = await fetch(process.env.MAIL_WEBHOOK_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to, subject, text }) }); return !!(r && r.ok); } catch (e) {}
+  }
+  return false;
+}
 async function deliverReminder(resv, msg) {
   try {
+    // WhatsApp : envoi automatique uniquement si un webhook est fourni ; sinon lien prêt à envoyer côté formateur.
     if (process.env.WA_WEBHOOK_URL && resv.whatsapp) { fetch(process.env.WA_WEBHOOK_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to: resv.whatsapp, text: msg.wa }) }).catch(() => {}); }
-    if (process.env.MAIL_WEBHOOK_URL && resv.email) { fetch(process.env.MAIL_WEBHOOK_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to: resv.email, subject: msg.subject, text: msg.email }) }).catch(() => {}); }
+    // E-mail : envoi automatique via Brevo ou webhook si configuré.
+    if (resv.email) { await sendReminderEmail(resv.email, msg.subject, msg.email); }
   } catch (e) {}
 }
 
@@ -1813,7 +1862,7 @@ async function handleFormationSessions(req, res) {
     const seats = Math.max(0, (c.capacity || 0) - (admitted[c.id] || 0));
     return { id: c.id, label: c.label, startDate: c.startDate, dateFr: frDate(c.startDate), capacity: c.capacity || 0, remaining: seats, full: seats <= 0, price: cohortPrice(c, cfg), currency: cfg.currency };
   });
-  sendJson(res, 200, { open: true, currency: cfg.currency, sessions });
+  sendJson(res, 200, { open: true, currency: cfg.currency, proofRequired: !!cfg.proofRequired, sessions });
 }
 
 // POST /api/reservations : réserver une place (public)
@@ -1849,6 +1898,11 @@ async function handleReserveDeclare(req, res) {
     if (!r) return sendJson(res, 404, { error: "Réservation introuvable." });
     if (normEmail(p.email) !== r.email) return sendJson(res, 403, { error: "Cet e-mail ne correspond pas à la réservation." });
     if (r.status === "admis") return sendJson(res, 200, { ok: true, status: "admis" });
+    const cfg0 = formationConfig(await getSettings());
+    if (cfg0.proofRequired) {                                    // preuve obligatoire : refuser la déclaration sans capture
+      const existing = await getUpload(r.id, "reservation_proof");
+      if (!existing) return sendJson(res, 400, { error: "La preuve de paiement (capture) est obligatoire. Joignez-la pour valider." });
+    }
     await updateReservation(r.id, { status: "paiement_declare", declaredAt: new Date().toISOString() });
     sendJson(res, 200, { ok: true, status: "paiement_declare" });
   } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
@@ -1911,7 +1965,7 @@ async function handleFormationReservations(req, res) {
       }
     });
   }
-  sendJson(res, 200, { reservations: list, price: cohort ? cohortPrice(cohort, cfg) : cfg.price, currency: cfg.currency, capacity: cohort ? (cohort.capacity || 0) : 0, outbox });
+  sendJson(res, 200, { reservations: list, price: cohort ? cohortPrice(cohort, cfg) : cfg.price, currency: cfg.currency, capacity: cohort ? (cohort.capacity || 0) : 0, outbox, emailAuto: emailAutoConfigured() });
 }
 
 // GET /api/formation/roster?cohortId=  (formateur) : liste imprimable (PDF) des admis d'une session
@@ -1926,11 +1980,14 @@ async function handleFormationRoster(req, res) {
   list.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "fr"));
   const dateStr = frDate(cohort.startDate);
   const title = cohort.label || ("Session du " + dateStr);
+  const price = cohortPrice(cohort, cfg);
+  const amountStr = (price != null) ? (Math.round(price) + " " + cfg.currency) : "—";
+  const paidStr = (iso) => { if (!iso) return "—"; const d = new Date(iso); if (isNaN(d.getTime())) return "—"; return String(d.getUTCDate()).padStart(2, "0") + "/" + String(d.getUTCMonth() + 1).padStart(2, "0") + "/" + d.getUTCFullYear(); };
   const now = new Date();
   const genStr = now.getUTCDate() + " " + MOIS[now.getUTCMonth()] + " " + now.getUTCFullYear();
   const rowsHtml = list.length
-    ? list.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${escapeHtml(r.name || "")}</td><td>${escapeHtml(r.email || "")}</td><td>${escapeHtml(r.whatsapp || "")}</td><td class="sig"></td></tr>`).join("")
-    : `<tr><td colspan="5" class="empty">Aucun apprenant admis pour le moment.</td></tr>`;
+    ? list.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${escapeHtml(r.name || "")}</td><td class="em">${escapeHtml(r.email || "")}</td><td>${escapeHtml(r.whatsapp || "")}</td><td>${escapeHtml(amountStr)}</td><td>${paidStr(r.declaredAt)}</td><td class="sig"></td></tr>`).join("")
+    : `<tr><td colspan="7" class="empty">Aucun apprenant admis pour le moment.</td></tr>`;
   const html = `<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Liste des admis — ${escapeHtml(title)}</title>
@@ -1947,12 +2004,12 @@ async function handleFormationRoster(req, res) {
   .meta{ color:#4a5a70; font-size:14px; margin-bottom:2px; }
   .meta b{ color:#0C5866; }
   .count{ margin:14px 0 8px; font-weight:700; color:#0E1B2E; }
-  table{ width:100%; border-collapse:collapse; font-size:13.5px; }
-  th,td{ border:1px solid #cdd6e2; padding:9px 10px; text-align:left; vertical-align:middle; }
-  th{ background:#f1f5fa; color:#0C5866; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
-  td.n{ width:34px; text-align:center; color:#6B7A90; }
-  td.sig{ width:150px; }
-  th.sig{ width:150px; }
+  table{ width:100%; border-collapse:collapse; font-size:11.5px; table-layout:fixed; }
+  th,td{ border:1px solid #cdd6e2; padding:7px 7px; text-align:left; vertical-align:middle; word-wrap:break-word; overflow-wrap:anywhere; }
+  th{ background:#f1f5fa; color:#0C5866; font-size:10.5px; text-transform:uppercase; letter-spacing:.02em; }
+  td.n{ width:26px; text-align:center; color:#6B7A90; }
+  td.em{ font-size:10.5px; }
+  td.sig, th.sig{ width:96px; }
   td.empty{ text-align:center; color:#6B7A90; padding:20px; }
   tr:nth-child(even) td{ background:#fafcfe; }
   .foot{ margin-top:22px; display:flex; justify-content:space-between; color:#6B7A90; font-size:12px; }
@@ -1969,7 +2026,7 @@ async function handleFormationRoster(req, res) {
     <div class="meta">Date de la session : <b>${escapeHtml(dateStr)}</b></div>
     <div class="count">${list.length} apprenant${list.length > 1 ? "s" : ""} admis${cohort.capacity ? " / " + cohort.capacity + " places" : ""}</div>
     <table>
-      <thead><tr><th class="n">N°</th><th>Nom et prénom</th><th>E-mail</th><th>WhatsApp</th><th class="sig">Émargement</th></tr></thead>
+      <thead><tr><th class="n">N°</th><th>Nom et prénom</th><th>E-mail</th><th>WhatsApp</th><th>Montant</th><th>Payé le</th><th class="sig">Émargement</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>
     <div class="sign"><span class="line">Le formateur</span></div>
@@ -2040,6 +2097,7 @@ async function handleFormationSettings(req, res) {
   if (typeof p.currency === "string" && p.currency.trim()) fields.currency = p.currency.trim().slice(0, 8);
   if (typeof p.open === "boolean") fields.open = p.open;
   if (p.dailyGoalMin !== undefined) { const n = parseInt(p.dailyGoalMin, 10); if (!(n >= 5 && n <= 600)) return sendJson(res, 400, { error: "Objectif quotidien : entre 5 et 600 minutes." }); fields.dailyGoalMin = n; }
+  if (typeof p.proofRequired === "boolean") fields.proofRequired = p.proofRequired;
   const next = await setSettings(fields);
   sendJson(res, 200, { settings: formationConfig(next) });
 }

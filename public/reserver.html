@@ -94,7 +94,7 @@
 </div>
 
 <script>
-  var state = { sessions: [], sel: null, currency: "FCFA", resId: null };
+  var state = { sessions: [], sel: null, currency: "FCFA", resId: null, proofRequired: false };
   var $ = function(id){ return document.getElementById(id); };
   function money(n){ return (n==null) ? "" : (Math.round(n) + " " + state.currency); }
   function show(id, on){ $(id).classList.toggle("hidden", !on); }
@@ -102,6 +102,7 @@
   function loadSessions(){
     fetch("/api/formation/sessions").then(function(r){ return r.json(); }).then(function(d){
       state.currency = d.currency || "FCFA";
+      state.proofRequired = (d.proofRequired === true);
       if(!d.open){ show("pickBox", false); show("closedBox", true); return; }
       state.sessions = d.sessions || [];
       var box = $("sessions"); box.innerHTML = "";
@@ -143,6 +144,10 @@
         var pl = res.d.payLink || "#";
         $("payLink").setAttribute("href", pl);
         $("paySummary").innerHTML = "Session : <b>" + esc(res.d.session.dateFr) + "</b>" + (res.d.price!=null ? (" — Frais : <span class=\"price\">" + money(res.d.price) + "</span>") : "");
+        if(state.proofRequired){
+          document.querySelector('label[for="proofFile"]').innerHTML = "Preuve de paiement (capture d'écran) — <span style=\"color:#c0392b;\">obligatoire</span>";
+          $("proofInfo").textContent = "Joignez la capture d'écran de votre paiement Wave : elle est obligatoire pour valider votre place.";
+        }
         show("payBox", true); $("payBox").scrollIntoView({ behavior:"smooth", block:"start" });
       })
       .catch(function(){ btn.disabled=false; btn.textContent=lbl; $("formErr").textContent = "Impossible de joindre le serveur."; });
@@ -162,6 +167,7 @@
     if(!state.resId) return;
     var email = $("remail").value.trim();
     var f = $("proofFile").files && $("proofFile").files[0];
+    if(state.proofRequired && !f){ var mm=$("payMsg"); mm.className="err"; mm.textContent="La preuve de paiement (capture) est obligatoire. Joignez-la, puis validez."; return; }
     var btn = $("declareBtn"); btn.disabled = true; var lbl = btn.textContent; btn.textContent = "…";
     var done = function(res){
       btn.disabled = false; btn.textContent = lbl;

@@ -448,6 +448,7 @@
             <input id="setPrice" type="number" min="0" placeholder="Prix (ex. 15000)" style="flex:1;min-width:120px;">
             <input id="setCur" type="text" maxlength="8" placeholder="Devise (FCFA)" style="width:120px;">
             <label class="pwachk" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;"><input type="checkbox" id="setOpen"> Réservations ouvertes</label>
+            <label class="pwachk" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;"><input type="checkbox" id="setProof"> Preuve de paiement obligatoire</label>
           </div>
           <div class="autherr" id="setErr"></div>
           <div><button id="setSave" class="primary" type="button">Enregistrer les réglages</button></div>
@@ -638,6 +639,8 @@
     let track = "web", codeLang = "python", lesson = 0, lessons = [];
     const LANG_UI = {
       python: { label: "Python", ic: "Py", run: "python", blurb: "Le langage le plus simple pour débuter : lisible et très demandé." },
+      javascript: { label: "JavaScript", ic: "JS", run: "js", blurb: "Le langage du web. Vos programmes s'exécutent en direct, ici dans la console." },
+      java: { label: "Java", ic: "Jv", run: "none", blurb: "Très demandé en entreprise. On lit et on écrit du code que le tuteur corrige (sans exécution en direct)." },
       algo:   { label: "Algorithmique", ic: "Σ", run: "python", blurb: "Apprendre à raisonner (les bases de tout programme). On teste les idées en Python." }
     };
 
@@ -873,11 +876,21 @@
     // ===== Console de programmation (exécution dans le navigateur) =====
     const codeEditor = $("codeEditor"), codeOut = $("codeOut"), runBtn = $("runBtn"), runLang = $("runLang");
     let pyodide = null, pyLoading = null;
-    function setRunLang(){ const meta = LANG_UI[codeLang] || LANG_UI.python; runLang.textContent = (meta.run === "python") ? "Python" : "JavaScript"; }
+    function setRunLang(){
+      const meta = LANG_UI[codeLang] || LANG_UI.python;
+      runLang.textContent = meta.label || "Python";
+      // Java ne s'exécute pas dans le navigateur : on masque le bouton « Exécuter ».
+      if(meta.run === "none"){ runBtn.style.display = "none"; }
+      else { runBtn.style.display = ""; }
+    }
     function editorKey(){ return "batisseur_code_" + (convId||"x"); }
     function loadEditor(){
       let saved=null; try{ saved = localStorage.getItem(editorKey()); }catch(e){}
-      codeEditor.value = (saved!=null) ? saved : "# Écrivez votre code ici, puis cliquez « Exécuter ».\n";
+      const meta0 = LANG_UI[codeLang] || LANG_UI.python;
+      const starter = (meta0.run === "python") ? "# Écrivez votre code ici, puis cliquez « Exécuter ».\n"
+        : (meta0.run === "js") ? "// Écrivez votre code ici, puis cliquez « Exécuter ».\n"
+        : "// Écrivez votre code Java ici, puis envoyez-le au tuteur pour correction.\n";
+      codeEditor.value = (saved!=null) ? saved : starter;
       codeOut.textContent = "La sortie de votre programme s'affichera ici."; codeOut.classList.remove("err");
     }
     codeEditor.addEventListener("input", ()=>{ try{ localStorage.setItem(editorKey(), codeEditor.value); }catch(e){} });
@@ -896,9 +909,31 @@
       return pyLoading;
     }
     function appendOut(text, isErr){ if(codeOut.dataset.fresh!=="1"){ codeOut.textContent=""; codeOut.dataset.fresh="1"; } codeOut.textContent += text; if(isErr) codeOut.classList.add("err"); }
+    // Exécution de JavaScript dans le navigateur : on capture console.log / print.
+    function runJavaScript(code){
+      codeOut.dataset.fresh="0";
+      const out = (...args)=>{ appendOut(args.map(function(a){ return (typeof a==="string") ? a : (function(){ try{ return JSON.stringify(a); }catch(e){ return String(a); } })(); }).join(" ") + "\n"); };
+      try{
+        // eslint-disable-next-line no-new-func
+        const fn = new Function("console", "print", "prompt", "alert", code);
+        fn({ log: out, info: out, warn: out, error: (...a)=>appendOut(a.join(" ")+"\n", true) }, out, window.prompt.bind(window), function(m){ out(m); });
+        if(codeOut.dataset.fresh!=="1"){ codeOut.textContent="(Programme terminé, aucune sortie affichée. Utilisez console.log(...) pour afficher un résultat.)"; }
+      }catch(err){ appendOut(String(err && err.message ? err.message : err), true); }
+    }
     async function runCode(){
       const code = codeEditor.value;
+      const meta = LANG_UI[codeLang] || LANG_UI.python;
       codeOut.dataset.fresh="0"; codeOut.classList.remove("err"); codeOut.textContent="";
+      if(meta.run === "none"){
+        codeOut.dataset.fresh="1";
+        codeOut.textContent = "Java ne s'exécute pas dans le navigateur. Écrivez votre code, puis envoyez-le au tuteur (dans le chat) : il le corrige et vous explique.";
+        return;
+      }
+      if(meta.run === "js"){
+        runBtn.disabled=true; const prev=runBtn.textContent; runBtn.textContent="…";
+        try{ runJavaScript(code); } finally { runBtn.disabled=false; runBtn.textContent=prev; }
+        return;
+      }
       runBtn.disabled=true; const prev=runBtn.textContent; runBtn.textContent="…";
       try{
         const py = await ensurePyodide();
@@ -1459,14 +1494,14 @@
     function escR(s){ const d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
     async function openResv(){
       resvModal.classList.add("show"); $("accessNote").style.display="none";
-      try{ const r=await fetch("/api/formation/settings"); const d=await r.json(); const s=d.settings||{}; $("setLink").value=s.payLink||""; $("setPrice").value=(s.price!=null?s.price:""); $("setCur").value=s.currency||"FCFA"; $("setOpen").checked=(s.open!==false); }catch(e){}
+      try{ const r=await fetch("/api/formation/settings"); const d=await r.json(); const s=d.settings||{}; $("setLink").value=s.payLink||""; $("setPrice").value=(s.price!=null?s.price:""); $("setCur").value=s.currency||"FCFA"; $("setOpen").checked=(s.open!==false); $("setProof").checked=(s.proofRequired===true); }catch(e){}
       try{ const r=await fetch("/api/admin/cohorts"); const d=await r.json(); const list=(d.cohorts||[]); resvSession.innerHTML=list.map(c=>'<option value="'+c.id+'">'+escR(c.label)+(c.closed?" (fermée)":"")+'</option>').join(""); }catch(e){ resvSession.innerHTML=""; }
       if(resvSession.value) loadResv();
     }
     function closeResv(){ resvModal.classList.remove("show"); }
     async function saveSettings(){
       $("setErr").textContent="";
-      const body={ payLink:$("setLink").value.trim(), price:$("setPrice").value.trim(), currency:$("setCur").value.trim(), open:$("setOpen").checked };
+      const body={ payLink:$("setLink").value.trim(), price:$("setPrice").value.trim(), currency:$("setCur").value.trim(), open:$("setOpen").checked, proofRequired:$("setProof").checked };
       const b=$("setSave"); b.disabled=true; const l=b.textContent; b.textContent="…";
       try{ const r=await fetch("/api/formation/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}); const d=await r.json(); if(!r.ok){ $("setErr").textContent=d.error||"Enregistrement impossible."; } else { $("setErr").className="autherr ok"; $("setErr").textContent="Réglages enregistrés."; } }
       catch(e){ $("setErr").textContent="Serveur injoignable."; } finally{ b.disabled=false; b.textContent=l; }
@@ -1506,11 +1541,14 @@
         h+='</div>';
       });
       if((d.outbox||[]).length){
-        h+='<div class="asection">Rappels à envoyer ('+d.outbox.length+')</div><div class="llist">';
+        var autoNote = d.emailAuto ? ' <span style="color:var(--good);font-weight:600;">— e-mail envoyé automatiquement</span>' : '';
+        h+='<div class="asection">Rappels à envoyer ('+d.outbox.length+')</div>'
+          + (d.emailAuto ? '<div class="submeta" style="margin:-4px 0 8px;">Les rappels e-mail partent automatiquement. Le rappel WhatsApp reste à envoyer d\'un clic.</div>' : '')
+          + '<div class="llist">';
         d.outbox.forEach(function(o){
-          h+='<div class="subrow"><div style="flex:1;min-width:0;"><div class="subline" style="font-weight:700;">'+escR(o.name)+'</div><div class="submeta">Rappel de paiement prêt</div></div><div style="display:flex;gap:6px;">'
+          h+='<div class="subrow"><div style="flex:1;min-width:0;"><div class="subline" style="font-weight:700;">'+escR(o.name)+'</div><div class="submeta">Rappel de paiement prêt'+autoNote+'</div></div><div style="display:flex;gap:6px;">'
             +(o.wa?'<a class="dlbtn" href="'+o.wa+'" target="_blank" rel="noopener">WhatsApp</a>':'')
-            +(o.mailto?'<a class="dlbtn" href="'+o.mailto+'">E-mail</a>':'')+'</div></div>';
+            +((!d.emailAuto && o.mailto)?'<a class="dlbtn" href="'+o.mailto+'">E-mail</a>':'')+'</div></div>';
         });
         h+='</div>';
       }
