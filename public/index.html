@@ -1497,8 +1497,10 @@
         const rows=list.filter(x=>x.status===st); if(!rows.length) return;
         h+='<div class="asection">'+RESV_LABEL[st]+' ('+rows.length+')</div><div class="llist">';
         rows.forEach(function(x){
+          var proofTag = x.hasProof ? ' · <span style="color:var(--good);font-weight:600;">preuve jointe ✓</span>' : '';
+          var proofBtn = x.hasProof ? '<a class="dlbtn" href="/api/reservation/proof?id='+encodeURIComponent(x.id)+'" target="_blank" rel="noopener" style="border-color:var(--good);color:var(--good);">Voir la preuve</a>' : '';
           h+='<div class="subrow"><div style="flex:1;min-width:0;"><div class="subline" style="font-weight:700;">'+escR(x.name)+(x.source==="especes"?' <span class="muted">(espèces)</span>':'')+'</div>'
-            +'<div class="submeta">'+escR(x.email||"")+(x.whatsapp?(' · '+escR(x.whatsapp)):'')+'</div></div><div style="display:flex;gap:5px;flex-wrap:wrap;">'+resvActions(x)+'</div></div>';
+            +'<div class="submeta">'+escR(x.email||"")+(x.whatsapp?(' · '+escR(x.whatsapp)):'')+proofTag+'</div></div><div style="display:flex;gap:5px;flex-wrap:wrap;">'+proofBtn+resvActions(x)+'</div></div>';
         });
         h+='</div>';
       });

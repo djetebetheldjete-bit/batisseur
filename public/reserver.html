@@ -76,7 +76,15 @@
     </ol>
     <div style="margin:12px 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
       <a class="wave" id="payLink" href="#" target="_blank" rel="noopener">Payer avec Wave</a>
-      <button class="primary" id="declareBtn" type="button">J'ai payé</button>
+    </div>
+    <div style="margin:12px 0;">
+      <label for="proofFile" style="font-weight:600; display:block;">Preuve de paiement (capture d'écran)</label>
+      <input id="proofFile" type="file" accept="image/*" style="display:block; margin-top:6px;">
+      <div class="muted" id="proofInfo" style="margin-top:4px;">Joignez la capture d'écran de votre paiement Wave : cela accélère la validation par le formateur.</div>
+      <img id="proofPreview" alt="" style="display:none; max-width:200px; margin-top:8px; border-radius:8px; border:1px solid #d8dfe9;">
+    </div>
+    <div style="margin:12px 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <button class="primary" id="declareBtn" type="button">J'ai payé — envoyer</button>
     </div>
     <p class="muted">Vous pouvez aussi payer en espèces auprès du formateur ; il vous ajoutera directement.</p>
     <div class="err" id="payMsg"></div>
@@ -140,21 +148,39 @@
       .catch(function(){ btn.disabled=false; btn.textContent=lbl; $("formErr").textContent = "Impossible de joindre le serveur."; });
   });
 
+  function fileToDataURL(file){ return new Promise(function(resolve,reject){ var fr=new FileReader(); fr.onload=function(){ resolve(fr.result); }; fr.onerror=reject; fr.readAsDataURL(file); }); }
+  $("proofFile").addEventListener("change", function(){
+    var f = this.files && this.files[0]; var pv = $("proofPreview"); var info = $("proofInfo");
+    if(!f){ pv.style.display="none"; return; }
+    if(!/^image\//.test(f.type)){ info.innerHTML = '<span style="color:#c0392b;">Choisissez une image (capture d\'écran).</span>'; this.value=""; pv.style.display="none"; return; }
+    if(f.size > 3*1024*1024){ info.innerHTML = '<span style="color:#c0392b;">Image trop lourde (max 3 Mo).</span>'; this.value=""; pv.style.display="none"; return; }
+    pv.src = URL.createObjectURL(f); pv.style.display = "block";
+    info.textContent = "Capture sélectionnée : " + f.name;
+  });
+
   $("declareBtn").addEventListener("click", function(){
     if(!state.resId) return;
     var email = $("remail").value.trim();
+    var f = $("proofFile").files && $("proofFile").files[0];
     var btn = $("declareBtn"); btn.disabled = true; var lbl = btn.textContent; btn.textContent = "…";
-    fetch("/api/reservations/declare", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ id: state.resId, email: email }) })
-      .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
-      .then(function(res){
-        btn.disabled = false; btn.textContent = lbl;
-        var m = $("payMsg");
-        if(!res.ok){ m.className = "err"; m.textContent = res.d.error || "Impossible d'enregistrer."; return; }
-        m.className = "err ok";
-        m.textContent = "Merci ! Votre paiement est signalé au formateur. Vous serez ajouté à la liste des admis dès vérification. Vous pouvez fermer cette page.";
-        btn.disabled = true;
-      })
-      .catch(function(){ btn.disabled=false; btn.textContent=lbl; $("payMsg").textContent = "Impossible de joindre le serveur."; });
+    var done = function(res){
+      btn.disabled = false; btn.textContent = lbl;
+      var m = $("payMsg");
+      if(!res.ok){ m.className = "err"; m.textContent = res.d.error || "Impossible d'enregistrer."; return; }
+      m.className = "err ok";
+      m.textContent = (f ? "Merci ! Votre paiement et votre preuve ont été transmis au formateur." : "Merci ! Votre paiement est signalé au formateur.")
+        + " Vous serez ajouté à la liste des admis dès vérification. Vous pouvez fermer cette page.";
+      btn.disabled = true;
+    };
+    var fail = function(){ btn.disabled=false; btn.textContent=lbl; $("payMsg").className="err"; $("payMsg").textContent = "Impossible de joindre le serveur."; };
+    if(f){
+      fileToDataURL(f).then(function(durl){
+        return fetch("/api/reservations/proof", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ id: state.resId, email: email, image: durl, name: f.name }) });
+      }).then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); }).then(done).catch(fail);
+    } else {
+      fetch("/api/reservations/declare", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ id: state.resId, email: email }) })
+        .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); }).then(done).catch(fail);
+    }
   });
 
   loadSessions();

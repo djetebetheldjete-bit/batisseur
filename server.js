@@ -1854,13 +1854,54 @@ async function handleReserveDeclare(req, res) {
   } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
 }
 
+// POST /api/reservations/proof : la personne joint la capture de son paiement (public)
+async function handleReserveProof(req, res) {
+  try {
+    if (!rateOk("proof:" + (req.socket && req.socket.remoteAddress || "x"), 20, 60000)) return sendJson(res, 429, { error: "Trop de tentatives, réessayez dans un instant." });
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const r = await getReservation(p.id);
+    if (!r) return sendJson(res, 404, { error: "Réservation introuvable." });
+    if (normEmail(p.email) !== r.email) return sendJson(res, 403, { error: "Cet e-mail ne correspond pas à la réservation." });
+    const m = /^data:([a-z0-9.+/-]+);base64,(.+)$/i.exec(String(p.image || ""));
+    if (!m) return sendJson(res, 400, { error: "Image invalide." });
+    const type = m[1].toLowerCase();
+    if (!/^image\/(png|jpe?g|webp|gif|heic|heif)$/.test(type)) return sendJson(res, 400, { error: "Joignez une image (PNG, JPG, WEBP…)." });
+    const data = m[2];
+    const size = Math.floor(data.length * 3 / 4);
+    if (size > UPLOAD_MAX_BYTES) return sendJson(res, 413, { error: "Image trop lourde (max 3 Mo)." });
+    await deleteUpload(r.id, "reservation_proof");                 // remplace une éventuelle preuve précédente
+    await addUpload({ id: r.id, projectId: "reservation_proof", name: safeName(p.name || "preuve"), type, size, data, createdAt: new Date().toISOString() });
+    if (r.status !== "admis") await updateReservation(r.id, { status: "paiement_declare", declaredAt: new Date().toISOString() });
+    sendJson(res, 200, { ok: true, status: r.status === "admis" ? "admis" : "paiement_declare" });
+  } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
+}
+
+// GET /api/reservation/proof?id=  (formateur) : afficher l'image de la preuve
+async function handleReserveProofView(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Réservé au formateur."); }
+  const uo = new URL(req.url, "http://localhost"); const id = uo.searchParams.get("id");
+  const up = await getUpload(id, "reservation_proof");
+  if (!up) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Aucune preuve pour cette réservation."); }
+  const buf = Buffer.from(up.data, "base64");
+  res.writeHead(200, { "content-type": up.type || "image/png", "Content-Length": buf.length, "Cache-Control": "private, max-age=60" });
+  res.end(buf);
+}
+
+// Ensemble des ids de réservation disposant d'une preuve (affichage formateur)
+async function proofIdSet() {
+  if (USE_DB) { try { const r = await sb(`/uploads?project_id=eq.reservation_proof&select=id`); return new Set((r || []).map((x) => x.id)); } catch (e) { return new Set(); } }
+  return new Set(loadUploads().filter((u) => u.projectId === "reservation_proof").map((u) => u.id));
+}
+
 // GET /api/formation/reservations?cohortId=  (formateur) : listes + outbox des rappels
 async function handleFormationReservations(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
   const uo = new URL(req.url, "http://localhost"); const cid = uo.searchParams.get("cohortId");
   const cfg = formationConfig(await getSettings());
   const cohort = cid ? await getCohort(cid) : null;
-  const list = await listReservations(cid || null);
+  const rawList = await listReservations(cid || null);
+  const proofs = await proofIdSet();
+  const list = rawList.map((r) => Object.assign({}, r, { hasProof: proofs.has(r.id) }));
   const outbox = [];
   if (cohort) {
     list.forEach((r) => {
@@ -2680,6 +2721,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/formation/sessions")) return handleFormationSessions(req, res);
   if (req.method === "POST" && req.url === "/api/reservations") return handleReserve(req, res);
   if (req.method === "POST" && req.url === "/api/reservations/declare") return handleReserveDeclare(req, res);
+  if (req.method === "POST" && req.url === "/api/reservations/proof") return handleReserveProof(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/reservation/proof")) return handleReserveProofView(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/formation/reservations")) return handleFormationReservations(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/status") return handleFormationReservationStatus(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/delete") return handleFormationReservationDelete(req, res);
