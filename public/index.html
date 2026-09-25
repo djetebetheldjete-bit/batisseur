@@ -458,6 +458,7 @@
         <select id="resvSession" style="flex:1;min-width:160px;"></select>
         <button id="resvRefresh" class="dlbtn" type="button">Actualiser</button>
         <button id="resvTick" class="dlbtn" type="button" title="Envoyer les rappels dus et mettre à jour la file">Forcer la vérification</button>
+        <button id="resvRoster" class="dlbtn" type="button" title="Ouvrir la liste imprimable des admis (PDF)" style="border-color:var(--accent);color:var(--accent-deep);">Liste des admis (PDF)</button>
       </div>
       <div id="accessNote" style="display:none;background:color-mix(in srgb,var(--good) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--good) 45%,var(--line));border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.9rem;"></div>
       <div id="resvBody"><div class="aempty">Choisissez une session.</div></div>
@@ -1553,6 +1554,7 @@
     resvModal.addEventListener("click",(e)=>{ if(e.target===resvModal) closeResv(); });
     resvSession.addEventListener("change", function(){ $("accessNote").style.display="none"; loadResv(); });
     $("resvRefresh").addEventListener("click", loadResv);
+    $("resvRoster").addEventListener("click", function(){ const cid=resvSession.value; if(!cid){ alert("Choisissez d'abord une session."); return; } window.open("/api/formation/roster?cohortId="+encodeURIComponent(cid), "_blank"); });
     $("setSave").addEventListener("click", saveSettings);
     $("resvTick").addEventListener("click", async function(){ const b=$("resvTick"); b.disabled=true; const l=b.textContent; b.textContent="…"; try{ await fetch("/api/formation/run-maintenance",{method:"POST",headers:{"content-type":"application/json"},body:"{}"}); }catch(e){} b.disabled=false; b.textContent=l; loadResv(); });
     authGo.addEventListener("click", submitAuth);

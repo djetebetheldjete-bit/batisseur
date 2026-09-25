@@ -1914,6 +1914,72 @@ async function handleFormationReservations(req, res) {
   sendJson(res, 200, { reservations: list, price: cohort ? cohortPrice(cohort, cfg) : cfg.price, currency: cfg.currency, capacity: cohort ? (cohort.capacity || 0) : 0, outbox });
 }
 
+// GET /api/formation/roster?cohortId=  (formateur) : liste imprimable (PDF) des admis d'une session
+async function handleFormationRoster(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Réservé au formateur."); }
+  const uo = new URL(req.url, "http://localhost"); const cid = uo.searchParams.get("cohortId");
+  const cohort = cid ? await getCohort(cid) : null;
+  if (!cohort) { res.writeHead(404, { "content-type": "text/html; charset=utf-8" }); return res.end("Session introuvable."); }
+  const cfg = formationConfig(await getSettings());
+  const list = (await listReservations(cid)).filter((r) => r.status === "admis");
+  list.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "fr"));
+  const dateStr = frDate(cohort.startDate);
+  const title = cohort.label || ("Session du " + dateStr);
+  const now = new Date();
+  const genStr = now.getUTCDate() + " " + MOIS[now.getUTCMonth()] + " " + now.getUTCFullYear();
+  const rowsHtml = list.length
+    ? list.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${escapeHtml(r.name || "")}</td><td>${escapeHtml(r.email || "")}</td><td>${escapeHtml(r.whatsapp || "")}</td><td class="sig"></td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">Aucun apprenant admis pour le moment.</td></tr>`;
+  const html = `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Liste des admis — ${escapeHtml(title)}</title>
+<style>
+  @page{ size:A4 portrait; margin:14mm; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",Arial,sans-serif; color:#0E1B2E; background:#eef1f6; padding:24px; }
+  .print{ position:fixed; top:16px; right:16px; background:#147C8C; color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; box-shadow:0 4px 14px rgba(20,124,140,.35); }
+  .sheet{ max-width:820px; margin:0 auto; background:#fff; padding:34px 38px; box-shadow:0 12px 44px rgba(14,27,46,.14); }
+  .head{ display:flex; align-items:center; gap:12px; border-bottom:3px solid #147C8C; padding-bottom:14px; }
+  .logo{ width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg,#147C8C,#D98A2B); color:#06121c; font-weight:800; font-size:22px; display:flex; align-items:center; justify-content:center; }
+  .head b{ font-size:20px; } .head .k{ color:#4a5a70; font-size:12px; letter-spacing:.14em; text-transform:uppercase; font-weight:700; }
+  h1{ font-size:22px; margin:20px 0 2px; }
+  .meta{ color:#4a5a70; font-size:14px; margin-bottom:2px; }
+  .meta b{ color:#0C5866; }
+  .count{ margin:14px 0 8px; font-weight:700; color:#0E1B2E; }
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; }
+  th,td{ border:1px solid #cdd6e2; padding:9px 10px; text-align:left; vertical-align:middle; }
+  th{ background:#f1f5fa; color:#0C5866; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+  td.n{ width:34px; text-align:center; color:#6B7A90; }
+  td.sig{ width:150px; }
+  th.sig{ width:150px; }
+  td.empty{ text-align:center; color:#6B7A90; padding:20px; }
+  tr:nth-child(even) td{ background:#fafcfe; }
+  .foot{ margin-top:22px; display:flex; justify-content:space-between; color:#6B7A90; font-size:12px; }
+  .sign{ margin-top:40px; text-align:right; color:#4a5a70; font-size:13px; }
+  .sign .line{ display:inline-block; border-top:1px solid #9aa7b8; width:220px; margin-top:34px; padding-top:6px; }
+  @media print{ body{ background:#fff; padding:0; } .sheet{ box-shadow:none; max-width:none; padding:0; } .print{ display:none; } }
+</style></head>
+<body>
+  <button class="print" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
+  <div class="sheet">
+    <div class="head"><span class="logo">B</span><div><div class="k">Centre de formation</div><b>Bâtisseur</b></div></div>
+    <h1>Liste des admis</h1>
+    <div class="meta">Intitulé : <b>${escapeHtml(title)}</b></div>
+    <div class="meta">Date de la session : <b>${escapeHtml(dateStr)}</b></div>
+    <div class="count">${list.length} apprenant${list.length > 1 ? "s" : ""} admis${cohort.capacity ? " / " + cohort.capacity + " places" : ""}</div>
+    <table>
+      <thead><tr><th class="n">N°</th><th>Nom et prénom</th><th>E-mail</th><th>WhatsApp</th><th class="sig">Émargement</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <div class="sign"><span class="line">Le formateur</span></div>
+    <div class="foot"><span>Bâtisseur — liste des admis</span><span>Éditée le ${genStr}</span></div>
+  </div>
+</body></html>`;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
+}
+
 // POST /api/formation/reservation/status { id, status }  (formateur)
 async function handleFormationReservationStatus(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
@@ -2723,6 +2789,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/reservations/declare") return handleReserveDeclare(req, res);
   if (req.method === "POST" && req.url === "/api/reservations/proof") return handleReserveProof(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/reservation/proof")) return handleReserveProofView(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/formation/roster")) return handleFormationRoster(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/formation/reservations")) return handleFormationReservations(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/status") return handleFormationReservationStatus(req, res);
   if (req.method === "POST" && req.url === "/api/formation/reservation/delete") return handleFormationReservationDelete(req, res);
