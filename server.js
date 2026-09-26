@@ -1736,7 +1736,7 @@ function formationConfig(s) {
     currency: (s && s.currency) || "FCFA",
     open: s ? (s.open !== false) : true,
     dailyGoalMin: (s && s.dailyGoalMin != null) ? s.dailyGoalMin : (parseInt(process.env.DAILY_GOAL_MIN, 10) || 60),
-    proofRequired: (s && typeof s.proofRequired === "boolean") ? s.proofRequired : false
+    proofRequired: (s && typeof s.proofRequired === "boolean") ? s.proofRequired : true
   };
 }
 function waveLinkWithAmount(link, amount) {

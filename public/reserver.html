@@ -53,12 +53,13 @@
 
   <div id="formBox" class="card hidden">
     <b>2. Vos informations</b>
-    <label for="rname">Nom et prénom</label>
-    <input id="rname" type="text" maxlength="80" autocomplete="name" placeholder="Ex. Awa Koné">
-    <label for="remail">Adresse e-mail</label>
-    <input id="remail" type="email" autocomplete="email" placeholder="vous@exemple.com">
-    <label for="rwa">Numéro WhatsApp (avec l'indicatif du pays)</label>
-    <input id="rwa" type="tel" autocomplete="tel" placeholder="Ex. +225 07 00 00 00 00">
+    <p class="muted" style="margin:4px 0 10px;">Tous les champs sont obligatoires.</p>
+    <label for="rname">Nom et prénom <span style="color:#c0392b;">*</span></label>
+    <input id="rname" type="text" maxlength="80" autocomplete="name" placeholder="Ex. Awa Koné" required>
+    <label for="remail">Adresse e-mail <span style="color:#c0392b;">*</span></label>
+    <input id="remail" type="email" autocomplete="email" placeholder="vous@exemple.com" required>
+    <label for="rwa">Numéro WhatsApp (avec l'indicatif du pays) <span style="color:#c0392b;">*</span></label>
+    <input id="rwa" type="tel" autocomplete="tel" placeholder="Ex. +225 07 00 00 00 00" required>
     <div class="err" id="formErr"></div>
     <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
       <button class="ghost" id="backBtn" type="button">← Changer de session</button>
