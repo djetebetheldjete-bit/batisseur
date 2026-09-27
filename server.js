@@ -1761,6 +1761,59 @@ const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "s
 function frDate(iso) { try { const d = new Date(iso + "T00:00:00Z"); return JOURS[d.getUTCDay()] + " " + d.getUTCDate() + " " + MOIS[d.getUTCMonth()] + " " + d.getUTCFullYear(); } catch (e) { return iso; } }
 
 // ============================================================
+//  JOURNAL DES VISITES (formateur) : qui est passé sur le site.
+//  On enregistre seulement les vraies pages (pas les fichiers ni les appels API),
+//  avec la date, l'adresse IP, le navigateur, la provenance et — si la personne
+//  est connectée — son adresse e-mail. Les visiteurs anonymes ne sont pas identifiables
+//  par leur nom (c'est normal : ils ne se sont pas connectés).
+// ============================================================
+const VISITS_FILE = path.join(DATA_DIR, "visits.json");
+const VISIT_PAGES = { "/": "Accueil (formation)", "/accueil": "Page de présentation", "/reserver": "Réservation", "/mon-programme": "Mon programme" };
+function loadVisitsLocal() { try { return JSON.parse(fs.readFileSync(VISITS_FILE, "utf8")); } catch (e) { return []; } }
+function saveVisitsLocal(a) { try { fs.writeFileSync(VISITS_FILE, JSON.stringify(a.slice(-1000))); } catch (e) {} }
+function clientIp(req) { const xf = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim(); return xf || (req.socket && req.socket.remoteAddress) || ""; }
+function shortUA(ua) {
+  ua = String(ua || "");
+  let b = "Autre"; if (/Edg\//.test(ua)) b = "Edge"; else if (/OPR\/|Opera/.test(ua)) b = "Opera"; else if (/SamsungBrowser/.test(ua)) b = "Samsung"; else if (/Chrome\//.test(ua)) b = "Chrome"; else if (/Firefox\//.test(ua)) b = "Firefox"; else if (/Safari\//.test(ua)) b = "Safari";
+  let os = ""; if (/Android/.test(ua)) os = "Android"; else if (/iPhone|iPad|iPod/.test(ua)) os = "iPhone/iPad"; else if (/Windows/.test(ua)) os = "Windows"; else if (/Mac OS/.test(ua)) os = "Mac"; else if (/Linux/.test(ua)) os = "Linux";
+  const mobile = /Mobi|Android|iPhone/.test(ua) ? "Mobile" : "Ordinateur";
+  return { browser: b, os: os || "?", device: mobile };
+}
+async function logVisit(req) {
+  try {
+    const p = String(req.url || "").split("?")[0];
+    if (!VISIT_PAGES[p]) return; // uniquement les vraies pages (ni /api, ni fichiers, ni /preview)
+    let who = null; try { const u = await currentUser(req); who = u ? u.email : null; } catch (e) {}
+    const ua = shortUA(req.headers["user-agent"]);
+    const rec = { at: new Date().toISOString(), path: p, page: VISIT_PAGES[p], ip: clientIp(req), browser: ua.browser, os: ua.os, device: ua.device, ref: String(req.headers["referer"] || "").slice(0, 140), who };
+    if (USE_DB) { sb(`/visits`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([rec]) }).catch(() => {}); }
+    else { const a = loadVisitsLocal(); a.push(rec); saveVisitsLocal(a); }
+  } catch (e) {}
+}
+// GET /api/admin/visits : les dernières visites + statistiques simples (formateur).
+async function handleAdminVisits(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  let list = [];
+  if (USE_DB) { try { list = (await sb(`/visits?select=*&order=at.desc&limit=400`)) || []; } catch (e) { list = []; } }
+  else { list = loadVisitsLocal().slice().reverse().slice(0, 400); }
+  const now = Date.now(); const dayMs = 86400000;
+  const startToday = new Date(); startToday.setHours(0, 0, 0, 0); const t0 = startToday.getTime();
+  const ips = new Set(), ipsToday = new Set(), ips7 = new Set(); const byPage = {}; let today = 0, last7 = 0, connu = 0;
+  const whoSet = new Set();
+  list.forEach((v) => {
+    const t = new Date(v.at).getTime(); if (v.ip) ips.add(v.ip);
+    byPage[v.page || v.path] = (byPage[v.page || v.path] || 0) + 1;
+    if (t >= t0) { today++; if (v.ip) ipsToday.add(v.ip); }
+    if (t >= now - 7 * dayMs) { last7++; if (v.ip) ips7.add(v.ip); }
+    if (v.who) { connu++; whoSet.add(v.who); }
+  });
+  sendJson(res, 200, {
+    visits: list.slice(0, 200),
+    stats: { total: list.length, uniques: ips.size, today, uniquesToday: ipsToday.size, last7, uniques7: ips7.size, connus: whoSet.size, byPage }
+  });
+}
+
+// ============================================================
 //  CHRONOGRAMME DE LA SESSION (visible par l'apprenant, après connexion)
 //  Rendu à partir de la date de début de SA session : 3 samedis (9 h–13 h),
 //  travail du projet en autonomie la semaine. Même design que le document PDF.
@@ -3075,6 +3128,7 @@ async function handleAppUsersList(req, res) {
 
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS" && req.url.startsWith("/api/app/")) { res.writeHead(204, corsHeaders()); return res.end(); }
+  if (req.method === "GET") { logVisit(req); }   // journal des visites (pages seulement, non bloquant)
   if (req.method === "POST" && req.url === "/api/start") return handleStart(req, res);
   if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
@@ -3092,6 +3146,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/admin/cohort/generate") return handleAdminCohortGenerate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/update") return handleAdminCohortUpdate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/launch") return handleAdminCohortLaunch(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/admin/visits")) return handleAdminVisits(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cohorts")) return handleCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/app/submit") return handleSubmit(req, res);
   if (req.method === "POST" && req.url === "/api/app/upload") return handleUpload(req, res);

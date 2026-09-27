@@ -402,7 +402,18 @@
       <h3>Espace formateur</h3>
       <p>Inscrivez vos apprenants et attribuez leur session. « Terminé » coupe l'accès à la construction (le projet reste consultable) ; « Actif » le (ré)autorise.</p>
       <div id="adminBody"><div class="aempty">Chargement…</div></div>
-      <div class="row"><button id="adminClose" type="button">Fermer</button><button id="openActivityBtn" type="button">Suivi &amp; assiduité</button><button id="openResvBtn" class="primary" type="button">Réservations &amp; paiement</button></div>
+      <div class="row"><button id="adminClose" type="button">Fermer</button><button id="openVisitsBtn" type="button">Visiteurs</button><button id="openActivityBtn" type="button">Suivi &amp; assiduité</button><button id="openResvBtn" class="primary" type="button">Réservations &amp; paiement</button></div>
+    </div>
+  </div>
+
+  <!-- Visiteurs : qui est passé sur le site -->
+  <div class="modal-bg" id="visitsModal">
+    <div class="modal wide">
+      <h3>Visiteurs du site</h3>
+      <p>Un aperçu de qui est passé récemment. Les personnes connectées apparaissent avec leur e-mail ; les autres sont des visiteurs anonymes (identifiés seulement par leur adresse IP et leur navigateur).</p>
+      <div id="visitsStats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>
+      <div id="visitsBody"><div class="aempty">Chargement…</div></div>
+      <div class="row" style="margin-top:12px;"><button id="visitsClose" type="button">Fermer</button><button id="visitsRefresh" type="button">Actualiser</button></div>
     </div>
   </div>
 
@@ -1661,6 +1672,36 @@
     function fmtDur(sec){ const m=Math.floor((sec||0)/60); if(m>=60){ const h=Math.floor(m/60), r=m%60; return h+" h"+(r>0?(" "+(r<10?"0":"")+r):""); } return m+" min"; }
     async function openActivity(){ activityModal.classList.add("show"); await loadActivity(); }
     function closeActivity(){ activityModal.classList.remove("show"); }
+
+    // ===== Visiteurs =====
+    const visitsModal = $("visitsModal");
+    async function openVisits(){ visitsModal.classList.add("show"); await loadVisits(); }
+    function closeVisits(){ visitsModal.classList.remove("show"); }
+    function visitWhen(iso){ try{ const d=new Date(iso); const now=new Date(); const sameDay=d.toDateString()===now.toDateString(); const hh=(d.getHours()<10?"0":"")+d.getHours(), mm=(d.getMinutes()<10?"0":"")+d.getMinutes(); if(sameDay) return "Aujourd'hui "+hh+":"+mm; const y=new Date(now-86400000); if(d.toDateString()===y.toDateString()) return "Hier "+hh+":"+mm; return d.getDate()+"/"+(d.getMonth()+1)+" "+hh+":"+mm; }catch(e){ return ""; } }
+    function statCard(n, label){ return '<div style="flex:1;min-width:110px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface-2);"><div style="font-size:1.4rem;font-weight:800;color:var(--accent-deep);">'+n+'</div><div style="font-size:11px;color:var(--ink-soft);">'+label+'</div></div>'; }
+    async function loadVisits(){
+      const body=$("visitsBody"), stat=$("visitsStats"); body.innerHTML='<div class="aempty">Chargement…</div>'; stat.innerHTML="";
+      try{
+        const r=await fetch("/api/admin/visits"); const d=await r.json();
+        if(!r.ok){ body.innerHTML='<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; }
+        const s=d.stats||{};
+        stat.innerHTML = statCard(s.today||0, "visites aujourd'hui")+statCard(s.uniquesToday||0, "visiteurs distincts (jour)")+statCard(s.last7||0, "visites (7 jours)")+statCard(s.uniques7||0, "visiteurs distincts (7 j)")+statCard(s.connus||0, "personnes connectées");
+        const v=d.visits||[];
+        if(!v.length){ body.innerHTML='<div class="aempty">Aucune visite enregistrée pour l\'instant.</div>'; return; }
+        const wrap=document.createElement("div"); wrap.className="llist";
+        v.forEach(function(x){
+          const row=document.createElement("div"); row.className="lrow";
+          const info=document.createElement("div"); info.className="linfo";
+          const who = x.who ? ('<b style="color:var(--accent-deep)">'+esc(x.who)+'</b>') : '<b>Visiteur anonyme</b>';
+          info.innerHTML = who + '<span>'+esc(x.page||x.path||"")+' · '+esc(x.device||"")+' '+esc(x.browser||"")+(x.os?(" ("+esc(x.os)+")"):"")+'</span>';
+          const when=document.createElement("span"); when.className="tag"; when.textContent=visitWhen(x.at); when.style.whiteSpace="nowrap";
+          row.appendChild(info); row.appendChild(when);
+          wrap.appendChild(row);
+        });
+        body.innerHTML=""; body.appendChild(wrap);
+      }catch(e){ body.innerHTML='<div class="aempty">Impossible de joindre le serveur.</div>'; }
+    }
+    function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
     async function loadActivity(){
       activityBody.innerHTML = '<div class="aempty">Chargement…</div>';
       try{
@@ -1717,6 +1758,9 @@
     }
     $("openActivityBtn").addEventListener("click", openActivity);
     $("activityClose").addEventListener("click", closeActivity);
+    { const b=$("openVisitsBtn"); if(b) b.addEventListener("click", openVisits); }
+    { const b=$("visitsClose"); if(b) b.addEventListener("click", closeVisits); }
+    { const b=$("visitsRefresh"); if(b) b.addEventListener("click", loadVisits); }
     $("activityRefresh").addEventListener("click", loadActivity);
     $("goalSave").addEventListener("click", saveGoal);
     { const b=$("aiLimSave"); if(b) b.addEventListener("click", saveAiLim); }
