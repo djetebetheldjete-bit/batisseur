@@ -270,6 +270,7 @@
       <span class="acctname" id="acctName" style="display:none;"><span class="av" id="acctAv">?</span><span id="acctLabel"></span></span>
       <span class="topbtn" id="workBadge" style="display:none;cursor:default;"></span>
       <button class="topbtn" id="adminBtn" type="button" style="display:none;">Espace formateur</button>
+      <button class="topbtn" id="progBtn" type="button" style="display:none;" title="Voir le programme de ma session et comment travailler">Mon programme</button>
       <button class="topbtn" id="espaceBtn" type="button" style="display:none;">Mon espace</button>
       <button class="topbtn" id="logoutBtn" type="button" style="display:none;">Se déconnecter</button>
       <button class="newbtn" id="newBtn" type="button">Recommencer</button>
@@ -1128,12 +1129,14 @@
         acctLabel.textContent = me.name + (me.isAdmin ? " (formateur)" : "");
         acctAv.textContent = (me.name || "?").trim().charAt(0).toUpperCase() || "?";
         adminBtn.style.display = me.isAdmin ? "inline-block" : "none";
+        { const pb=document.getElementById("progBtn"); if(pb) pb.style.display = (!me.isAdmin) ? "inline-block" : "none"; }
         espaceBtn.style.display = canViewUI() ? "inline-block" : "none";
         logoutBtn.style.display = "inline-block";
       } else {
         loginOpenBtn.style.display = "inline-block";
         acctName.style.display = "none";
         adminBtn.style.display = "none";
+        { const pb=document.getElementById("progBtn"); if(pb) pb.style.display = "none"; }
         espaceBtn.style.display = "none";
         logoutBtn.style.display = "none";
         var wb = document.getElementById("workBadge"); if(wb) wb.style.display = "none";
@@ -1500,6 +1503,7 @@
     logoutBtn.addEventListener("click", doLogout);
     espaceBtn.addEventListener("click", openEspace);
     adminBtn.addEventListener("click", openAdmin);
+    { const pb=document.getElementById("progBtn"); if(pb) pb.addEventListener("click", function(){ window.open("/mon-programme","_blank","noopener"); }); }
     $("adminClose").addEventListener("click", closeAdmin);
     adminModal.addEventListener("click",(e)=>{ if(e.target===adminModal) closeAdmin(); });
 

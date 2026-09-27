@@ -1715,6 +1715,199 @@ const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "s
 function frDate(iso) { try { const d = new Date(iso + "T00:00:00Z"); return JOURS[d.getUTCDay()] + " " + d.getUTCDate() + " " + MOIS[d.getUTCMonth()] + " " + d.getUTCFullYear(); } catch (e) { return iso; } }
 
 // ============================================================
+//  CHRONOGRAMME DE LA SESSION (visible par l'apprenant, après connexion)
+//  Rendu à partir de la date de début de SA session : 3 samedis (9 h–13 h),
+//  travail du projet en autonomie la semaine. Même design que le document PDF.
+// ============================================================
+const MOIS_ABBR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+const DOW_ABBR = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+function chronoAb(dt) { return dt.getUTCDate() + " " + MOIS_ABBR[dt.getUTCMonth()]; }
+const CHRONO_CSS = `
+  :root{ --ink:#0E1B2E; --teal:#147C8C; --deep:#0C5866; --warm:#D98A2B; --soft:#4a5a70; --line:#d8dfe9; --bg:#f4f7fb; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ background:#eef2f7; }
+  body{ font-family:"Segoe UI",Arial,sans-serif; color:var(--ink); padding:18px; }
+  .sheet{ max-width:1180px; margin:0 auto; background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 10px 40px rgba(14,27,46,.08); padding:26px 30px 24px; }
+  .intro{ background:linear-gradient(135deg,var(--deep),var(--teal)); color:#fff; border-radius:12px; padding:16px 18px; margin-bottom:20px; }
+  .intro h2{ font-size:17px; margin-bottom:8px; }
+  .intro ul{ margin:0; padding-left:18px; font-size:13px; line-height:1.7; }
+  .intro b{ color:#ffe9cf; }
+  .backbar{ max-width:1180px; margin:0 auto 12px; }
+  .backbar a{ display:inline-block; text-decoration:none; color:var(--deep); font-weight:700; font-size:13px; background:#fff; border:1px solid var(--line); border-radius:9px; padding:7px 13px; }
+  .head{ display:flex; align-items:flex-end; justify-content:space-between; border-bottom:3px solid var(--teal); padding-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .logo{ width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg,var(--teal),var(--warm)); color:#06121c; font-weight:800; font-size:22px; display:flex; align-items:center; justify-content:center; }
+  .brand .k{ font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--soft); font-weight:700; }
+  .brand b{ font-size:20px; }
+  h1{ font-size:22px; color:var(--deep); }
+  .sub{ font-size:13px; color:var(--soft); text-align:right; }
+  .sub b{ color:var(--ink); }
+  table.g{ width:100%; border-collapse:collapse; margin-top:18px; table-layout:fixed; }
+  .actcol{ width:230px; }
+  table.g th, table.g td{ border:1px solid var(--line); height:30px; font-size:11px; text-align:center; vertical-align:middle; }
+  thead .wk{ background:var(--deep); color:#fff; font-weight:700; font-size:12px; }
+  thead .sath{ background:var(--teal); color:#fff; font-weight:700; font-size:11.5px; }
+  thead .dh{ background:var(--bg); color:var(--soft); font-weight:700; font-size:10.5px; line-height:1.15; }
+  thead .dh .dn{ display:block; color:var(--ink); font-size:11.5px; }
+  thead .sat{ background:color-mix(in srgb,var(--teal) 16%,#fff); color:var(--deep); }
+  .rowh{ text-align:left; padding:0 12px; font-size:11.5px; font-weight:600; background:#fff; }
+  .rowh .ic{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:8px; vertical-align:middle; }
+  td.cell{ padding:0; }
+  .bar{ height:20px; margin:5px 3px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:9.5px; font-weight:700; white-space:nowrap; overflow:hidden; }
+  .b-pres{ background:var(--deep); } .b-work{ background:var(--teal); } .b-eng{ background:#3B7A57; }
+  .b-sig{ background:var(--warm); color:#231202; } .b-ctl{ background:#5a6b80; } .b-expo{ background:#B23A48; }
+  .legend{ display:flex; flex-wrap:wrap; gap:12px 16px; margin-top:13px; font-size:10.5px; color:var(--soft); align-items:center; }
+  .legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .legend i{ width:12px; height:12px; border-radius:4px; display:inline-block; }
+  .note{ margin-top:10px; font-size:11.5px; color:var(--ink); background:var(--bg); border:1px solid var(--line); border-left:4px solid var(--warm); border-radius:8px; padding:9px 12px; line-height:1.55; }
+  .note b{ color:var(--deep); }
+  h3.sec{ font-size:15px; color:var(--deep); margin:20px 0 9px; }
+  .sats{ display:flex; gap:14px; flex-wrap:wrap; }
+  .satcard{ flex:1; min-width:250px; border:1px solid var(--line); border-radius:11px; overflow:hidden; }
+  .satcard .cap{ background:var(--deep); color:#fff; padding:8px 11px; font-weight:700; font-size:11.5px; }
+  .satcard .cap .d{ display:block; font-weight:600; opacity:.9; font-size:10.5px; margin-top:2px; }
+  table.h{ width:100%; border-collapse:collapse; }
+  table.h td{ border-top:1px solid var(--line); padding:5px 9px; font-size:10.5px; vertical-align:top; line-height:1.3; }
+  table.h td.t{ width:82px; font-weight:700; color:var(--deep); white-space:nowrap; }
+  table.h tr:nth-child(even){ background:var(--bg); }
+  .pause td{ color:var(--soft); font-style:italic; }
+  .foot{ margin-top:14px; font-size:10.5px; color:#8394a8; border-top:1px solid var(--line); padding-top:7px; }
+  @media(max-width:720px){ table.g{ display:none; } }
+`;
+function chronoDayHead(dt) { return '<th class="dh"><span class="dn">' + DOW_ABBR[dt.getUTCDay()] + '</span>' + dt.getUTCDate() + '</th>'; }
+// Rend le chronogramme d'UNE session à partir de sa date de début (1er samedi).
+function chronoLearnerPage(startISO, label) {
+  const base = new Date(startISO + "T00:00:00Z");
+  const day = (k) => new Date(base.getTime() + k * 86400000);
+  const s1 = day(0), s2 = day(7), s3 = day(14);
+  const w1 = [2, 3, 4, 5, 6].map(day), w2 = [9, 10, 11, 12, 13].map(day);
+  const yr = s1.getUTCFullYear(), yr3 = s3.getUTCFullYear();
+  const spanYear = (yr === yr3) ? String(yr) : (yr + "–" + yr3);
+  const cards = [
+    { cap: "Samedi 1 — Lancement &amp; fondations", dt: s1, rows: [
+      ["9 h 00 – 9 h 30", "Accueil et cadrage : objectifs, le vibe coding, les piliers."],
+      ["9 h 30 – 10 h 30", "Projet : prise en main ; chacun démarre et définit son projet."],
+      ["10 h 30 – 11 h 15", "Initiation SIG : QGIS / ArcGIS + installation des logiciels."],
+      ["11 h 15 – 11 h 30", "Pause.", "pause"],
+      ["11 h 30 – 12 h 15", "Atelier projet accompagné : premières pages."],
+      ["12 h 15 – 13 h 00", "Anglais : conseils + lecture (natif ou formateur)."] ] },
+    { cap: "Samedi 2 — Suivi &amp; approfondissement", dt: s2, rows: [
+      ["9 h 00 – 9 h 45", "Contrôle des projets : avancement de la semaine ; déblocage."],
+      ["9 h 45 – 10 h 45", "Atelier projet : enrichir et avancer, accompagné."],
+      ["10 h 45 – 11 h 00", "Pause.", "pause"],
+      ["11 h 00 – 11 h 45", "SIG (pratique) : exercice de cartographie appliqué."],
+      ["11 h 45 – 12 h 30", "Anglais : conseils + lecture (natif ou formateur)."],
+      ["12 h 30 – 13 h 00", "Cap sur la semaine 2 : objectifs et présentation."] ] },
+    { cap: "Samedi 3 — Finalisation &amp; exposition", dt: s3, rows: [
+      ["9 h 00 – 9 h 45", "Contrôle final et derniers réglages des projets."],
+      ["9 h 45 – 10 h 45", "Finalisation et mise en ligne des projets."],
+      ["10 h 45 – 11 h 00", "Pause.", "pause"],
+      ["11 h 00 – 11 h 45", "Anglais : préparer la présentation en anglais."],
+      ["11 h 45 – 13 h 00", "Exposition des projets (français + anglais) + attestations.", "eve"] ] },
+  ];
+  const cardHtml = cards.map((c) => {
+    const rows = c.rows.map((r) => {
+      const cls = r[2] === "pause" ? ' class="pause"' : (r[2] === "eve" ? ' style="background:color-mix(in srgb,#B23A48 8%,#fff);"' : "");
+      const tcol = r[2] === "eve" ? ' style="color:#B23A48;"' : "";
+      return "<tr" + cls + '><td class="t"' + tcol + ">" + r[0] + "</td><td>" + r[1] + "</td></tr>";
+    }).join("");
+    return '<div class="satcard"><div class="cap">' + c.cap + '<span class="d">' + chronoAb(c.dt) + ". · 9 h–13 h</span></div><table class=\"h\">" + rows + "</table></div>";
+  }).join("");
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mon programme — Bâtisseur</title><style>${CHRONO_CSS}</style></head><body>
+  <div class="backbar"><a href="/">← Retour à ma formation</a></div>
+  <div class="sheet">
+    <div class="intro">
+      <h2>Comment travailler pendant votre formation</h2>
+      <ul>
+        <li><b>Chaque jour en semaine :</b> connectez-vous et faites avancer votre projet <b>30 à 60 min</b> dans Bâtisseur (l'assistant vous guide).</li>
+        <li><b>Chaque samedi (9 h – 13 h) :</b> séance en présentiel — contrôle du projet, initiation SIG et anglais.</li>
+        <li><b>Samedi 3 :</b> exposition de votre projet (français + anglais) et remise de l'attestation.</li>
+        <li><b>Programmation (Python, JavaScript, Java) :</b> à votre rythme, à poursuivre après la formation — Bâtisseur reste ouvert.</li>
+      </ul>
+    </div>
+    <div class="head">
+      <div>
+        <div class="brand"><span class="logo">B</span><div><div class="k">Centre de formation</div><b>Bâtisseur</b></div></div>
+        <h1 style="margin-top:12px;">Chronogramme de ma session · 2 semaines, 3 samedis</h1>
+      </div>
+      <div class="sub">${escapeHtml(label || "Ma session")} — ${spanYear}<br>Samedis : <b>${chronoAb(s1)}, ${chronoAb(s2)} &amp; ${chronoAb(s3)}</b>, de <b>9 h à 13 h</b><br>Exposition : <b>${frDate(s3.toISOString().slice(0, 10)).replace(/^[a-zéû]+ /, "samedi ")}</b></div>
+    </div>
+    <table class="g">
+      <colgroup><col class="actcol"><col span="13"></colgroup>
+      <thead>
+        <tr>
+          <th class="wk" style="background:#fff;border:none;"></th>
+          <th class="sath">Samedi 1</th>
+          <th class="wk" colspan="5">Semaine 1 (${chronoAb(s1)} → ${chronoAb(s2)})</th>
+          <th class="sath">Samedi 2</th>
+          <th class="wk" colspan="5">Semaine 2 (${chronoAb(s2)} → ${chronoAb(s3)})</th>
+          <th class="sath">Samedi 3</th>
+        </tr>
+        <tr>
+          <th class="dh" style="text-align:left;padding-left:12px;">Pilier</th>
+          <th class="dh sat"><span class="dn">Sam</span>${s1.getUTCDate()}</th>
+          ${w1.map(chronoDayHead).join("")}
+          <th class="dh sat"><span class="dn">Sam</span>${s2.getUTCDate()}</th>
+          ${w2.map(chronoDayHead).join("")}
+          <th class="dh sat"><span class="dn">Sam</span>${s3.getUTCDate()}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="rowh"><span class="ic" style="background:#0C5866"></span>Présentiel du samedi (9 h – 13 h)</td>
+          <td class="cell"><div class="bar b-pres">Samedi 1</div></td><td></td><td></td><td></td><td></td><td></td>
+          <td class="cell"><div class="bar b-pres">Samedi 2</div></td><td></td><td></td><td></td><td></td><td></td>
+          <td class="cell"><div class="bar b-pres">Samedi 3</div></td></tr>
+        <tr><td class="rowh"><span class="ic" style="background:#147C8C"></span>Projet — travail en autonomie (30–60 min/j)</td>
+          <td></td><td class="cell"><div class="bar b-work"></div></td><td class="cell"><div class="bar b-work"></div></td><td class="cell"><div class="bar b-work"></div></td><td class="cell"><div class="bar b-work"></div></td><td class="cell"><div class="bar b-work"></div></td>
+          <td></td><td class="cell"><div class="bar b-work"></div></td><td class="cell"><div class="bar b-work"></div></td><td class="cell"><div class="bar b-work"></div></td><td class="cell"><div class="bar b-work"></div></td><td class="cell"><div class="bar b-work"></div></td>
+          <td></td></tr>
+        <tr><td class="rowh"><span class="ic" style="background:#5a6b80"></span>Contrôle de l'évolution du projet</td>
+          <td></td><td></td><td></td><td></td><td></td><td></td>
+          <td class="cell"><div class="bar b-ctl">Contrôle</div></td><td></td><td></td><td></td><td></td><td></td>
+          <td class="cell"><div class="bar b-ctl">Contrôle</div></td></tr>
+        <tr><td class="rowh"><span class="ic" style="background:#D98A2B"></span>Initiation SIG (+ logiciels)</td>
+          <td class="cell"><div class="bar b-sig">SIG</div></td><td></td><td></td><td></td><td></td><td></td>
+          <td class="cell"><div class="bar b-sig">SIG</div></td><td></td><td></td><td></td><td></td><td></td>
+          <td></td></tr>
+        <tr><td class="rowh"><span class="ic" style="background:#3B7A57"></span>Anglais : conseils &amp; lecture (samedi)</td>
+          <td class="cell"><div class="bar b-eng">Anglais</div></td><td></td><td></td><td></td><td></td><td></td>
+          <td class="cell"><div class="bar b-eng">Anglais</div></td><td></td><td></td><td></td><td></td><td></td>
+          <td class="cell"><div class="bar b-eng">Anglais</div></td></tr>
+        <tr><td class="rowh"><span class="ic" style="background:#B23A48"></span>Exposition des projets (FR + EN)</td>
+          <td></td><td></td><td></td><td></td><td></td><td></td>
+          <td></td><td></td><td></td><td></td><td></td><td></td>
+          <td class="cell"><div class="bar b-expo">Expo</div></td></tr>
+      </tbody>
+    </table>
+    <div class="legend">
+      <span><i style="background:#0C5866"></i> Présentiel (samedi, 9 h–13 h)</span>
+      <span><i style="background:#147C8C"></i> Projet en autonomie (semaine)</span>
+      <span><i style="background:#5a6b80"></i> Contrôle du projet</span>
+      <span><i style="background:#D98A2B"></i> Initiation SIG</span>
+      <span><i style="background:#3B7A57"></i> Anglais : conseils &amp; lecture</span>
+      <span><i style="background:#B23A48"></i> Exposition (FR + EN)</span>
+    </div>
+    <div class="note"><b>En semaine :</b> chacun fait avancer <b>son propre projet</b> (une application, un site… Bâtisseur en est un exemple), même sans le formateur ; l'évolution est <b>contrôlée chaque samedi</b>. La <b>programmation</b> se poursuit après, à votre rythme.</div>
+    <h3 class="sec">Emploi du temps des trois samedis (9 h – 13 h)</h3>
+    <div class="sats">${cardHtml}</div>
+    <div class="foot">Bâtisseur — Chronogramme de votre session « Réaliser son projet numérique grâce au vibe coding ». Dates et horaires indicatifs, ajustables par le formateur.</div>
+  </div>
+</body></html>`;
+}
+// GET /mon-programme : le chronogramme de LA session de l'apprenant connecté.
+async function handleLearnerChrono(req, res) {
+  const u = await currentUser(req);
+  const wrap = (inner) => `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mon programme — Bâtisseur</title><style>${CHRONO_CSS}</style></head><body><div class="backbar"><a href="/">← Retour à ma formation</a></div><div class="sheet"><div class="intro"><h2>Mon programme</h2></div><p style="font-size:14px;color:var(--soft);line-height:1.6;">${inner}</p></div></body></html>`;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  if (!u) return res.end(wrap("Connectez-vous d'abord à votre espace, puis rouvrez « Mon programme »."));
+  const cid = u.cohort_id || null;
+  const cohort = cid ? await getCohort(cid) : null;
+  if (!cohort || !cohort.startDate) return res.end(wrap("Votre session n'est pas encore attribuée. Votre formateur vous rattachera à une session — le programme apparaîtra ici ensuite."));
+  return res.end(chronoLearnerPage(String(cohort.startDate).slice(0, 10), cohort.label));
+}
+
+// ============================================================
 // RÉSERVATIONS DE SESSION AVEC PAIEMENT (« garder sa place »)
 // ------------------------------------------------------------
 // Une personne réserve une place dans une session et paie sur Wave pour la garder ;
@@ -2893,6 +3086,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/cron/maintenance")) return handleCronMaintenance(req, res);
   if (req.method === "GET" && (req.url === "/reserver" || req.url.startsWith("/reserver?"))) return serveStatic(Object.assign(req, { url: "/reserver.html" }), res);
   if (req.method === "GET" && (req.url === "/accueil" || req.url.startsWith("/accueil?"))) return serveStatic(Object.assign(req, { url: "/accueil.html" }), res);
+  if (req.method === "GET" && (req.url === "/mon-programme" || req.url.startsWith("/mon-programme?"))) return handleLearnerChrono(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);
   if (req.method === "GET" && req.url.startsWith("/preview/")) return servePreview(req, res);
