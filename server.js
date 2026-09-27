@@ -2829,20 +2829,26 @@ async function handleCertificate(req, res) {
   .sheet{ width:1040px; max-width:100%; aspect-ratio:1.414/1; background:#fff; position:relative; box-shadow:0 12px 44px rgba(14,27,46,.16); }
   .frame{ position:absolute; inset:22px; border:2px solid #147C8C; }
   .frame:before{ content:""; position:absolute; inset:8px; border:1px solid #D98A2B; }
-  .inner{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:6% 9%; }
+  .inner{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:4.5% 9%; }
   .brand{ display:flex; align-items:center; gap:10px; }
   .logo{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#147C8C,#D98A2B); color:#06121c; font-weight:800; font-size:20px; display:flex; align-items:center; justify-content:center; }
   .brand b{ font-family:Georgia,serif; font-size:20px; color:#0E1B2E; }
-  .kicker{ letter-spacing:.34em; text-transform:uppercase; color:#147C8C; font-size:12px; font-weight:700; margin:22px 0 4px; }
-  h1{ font-family:Georgia,serif; font-size:42px; color:#0E1B2E; margin:0; }
-  .sub{ color:#4a5a70; font-size:15px; margin-top:14px; }
-  .name{ font-family:Georgia,serif; font-size:38px; color:#0C5866; margin:14px auto 4px; border-bottom:2px solid #D8DFE9; padding:0 30px 10px; }
-  .desc{ color:#1c2b3f; font-size:16px; max-width:66ch; margin:16px auto 0; line-height:1.55; }
-  .online{ margin-top:12px; font-size:13px; color:#4a5a70; }
+  .kicker{ letter-spacing:.34em; text-transform:uppercase; color:#147C8C; font-size:12px; font-weight:700; margin:16px 0 4px; }
+  h1{ font-family:Georgia,serif; font-size:40px; color:#0E1B2E; margin:0; }
+  .sub{ color:#4a5a70; font-size:15px; margin-top:12px; }
+  .name{ font-family:Georgia,serif; font-size:37px; color:#0C5866; margin:12px auto 4px; border-bottom:2px solid #D8DFE9; padding:0 30px 9px; }
+  .desc{ color:#1c2b3f; font-size:15.5px; max-width:66ch; margin:13px auto 0; line-height:1.5; }
+  .online{ margin-top:10px; font-size:13px; color:#4a5a70; }
   .online span{ color:#0C5866; }
-  .meta{ display:flex; gap:64px; margin-top:34px; color:#6B7A90; font-size:12.5px; }
+  .meta{ display:flex; align-items:center; justify-content:center; gap:56px; margin-top:16px; color:#6B7A90; font-size:12.5px; }
+  .meta .col{ text-align:center; }
   .meta b{ display:block; color:#0E1B2E; font-size:15px; font-family:Georgia,serif; margin-top:3px; }
-  .verify{ margin-top:20px; font-size:11px; color:#8394a8; }
+  .medal{ width:112px; height:auto; }
+  .sigcol{ text-align:center; margin-top:6px; }
+  .signline{ width:170px; border-top:1px solid #8394a8; margin:0 auto 5px; height:20px; }
+  .sigcol .lab{ font-size:12px; color:#6B7A90; }
+  .sigcol .opt{ font-size:9.5px; color:#a7b2c1; }
+  .verify{ margin-top:12px; font-size:11px; color:#8394a8; }
   .verify b{ color:#0C5866; font-weight:700; }
   @media print{ body{ background:#fff; padding:0; } .sheet{ box-shadow:none; width:100%; height:100vh; } .print{ display:none; } }
 </style></head>
@@ -2857,9 +2863,11 @@ async function handleCertificate(req, res) {
     <div class="desc">${certDesc}</div>
     ${quizMention ? `<div class="online">${escapeHtml(quizMention)}</div>` : online}
     <div class="meta">
-      <div>Délivré le<b>${dateStr}</b></div>
-      <div>Certificat n°<b>${num}</b></div>
+      <div class="col">Délivré le<b>${dateStr}</b></div>
+      <img class="medal" src="/batisseur-medaille.svg" alt="Médaille Bâtisseur">
+      <div class="col">Certificat n°<b>${num}</b></div>
     </div>
+    <div class="sigcol"><div class="signline"></div><div class="lab">Le formateur <span class="opt">(signature facultative)</span></div></div>
     <div class="verify">Authenticité vérifiable sur <b>${escapeHtml(verifyUrl)}</b> — indiquez le n° <b>${escapeHtml(num)}</b></div>
   </div></div>
 </body></html>`;
