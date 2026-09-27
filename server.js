@@ -1668,8 +1668,28 @@ async function handleCohorts(req, res) {
 // GET /api/admin/cohorts : toutes les sessions + inscrits (admin)
 async function handleAdminCohorts(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
-  const list = await listCohorts(); const counts = await cohortCounts();
-  sendJson(res, 200, { cohorts: list.map((c) => ({ id: c.id, label: c.label, startDate: c.startDate, capacity: c.capacity, closed: !!c.closed, enrolled: counts[c.id] || 0 })) });
+  const list = await listCohorts(); const counts = await cohortCounts(); const pend = await cohortPendingCounts();
+  sendJson(res, 200, { cohorts: list.map((c) => ({ id: c.id, label: c.label, startDate: c.startDate, capacity: c.capacity, closed: !!c.closed, enrolled: counts[c.id] || 0, launched: !!c.launched, pending: pend[c.id] || 0 })) });
+}
+// Nombre d'apprenants « en attente » (pending) par session — pour le bouton « Lancer ».
+async function cohortPendingCounts() {
+  const users = await adminListUsers(); const m = {};
+  users.forEach((u) => { const cid = u.cohort_id; if (cid && (u.status || "active") === "pending") m[cid] = (m[cid] || 0) + 1; });
+  return m;
+}
+// Lancer une session : active d'un coup tous ses apprenants « en attente ».
+async function launchCohort(cohortId) {
+  if (!cohortId) return 0;
+  if (USE_DB) {
+    try {
+      const r = await sb(`/users?cohort_id=eq.${encodeURIComponent(cohortId)}&status=eq.pending`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ status: "active" }) });
+      return Array.isArray(r) ? r.length : 0;
+    } catch (e) { console.error("launchCohort:", e.message); return 0; }
+  }
+  const a = loadAccounts(); let n = 0;
+  Object.keys(a.users || {}).forEach((id) => { const u = a.users[id]; if (u && u.cohort_id === cohortId && (u.status || "active") === "pending") { u.status = "active"; n++; } });
+  saveAccounts(a);
+  return n;
 }
 
 // POST /api/admin/cohort/generate  { startDate, intervalDays, count, capacity }
@@ -1706,6 +1726,16 @@ async function handleAdminCohortUpdate(req, res) {
   const c = await updateCohortRec(p.id, fields);
   if (!c) return sendJson(res, 404, { error: "Session introuvable." });
   sendJson(res, 200, { ok: true });
+}
+
+// POST /api/admin/cohort/launch  { id } : démarre la session (active tous ses apprenants en attente).
+async function handleAdminCohortLaunch(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const c = await getCohort(p.id); if (!c) return sendJson(res, 404, { error: "Session introuvable." });
+  const activated = await launchCohort(c.id);
+  await updateCohortRec(c.id, { launched: true, launchedAt: new Date().toISOString() });
+  sendJson(res, 200, { ok: true, activated });
 }
 
 // --- CERTIFICAT (simple) : une belle page imprimable en PDF ---
@@ -3045,6 +3075,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/admin/cohorts")) return handleAdminCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/generate") return handleAdminCohortGenerate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/update") return handleAdminCohortUpdate(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/cohort/launch") return handleAdminCohortLaunch(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cohorts")) return handleCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/app/submit") return handleSubmit(req, res);
   if (req.method === "POST" && req.url === "/api/app/upload") return handleUpload(req, res);

@@ -1312,7 +1312,9 @@
         const row = document.createElement("div"); row.className = "lrow";
         const info = document.createElement("div"); info.className = "linfo"; info.innerHTML = '<b></b><span></span>';
         info.querySelector("b").textContent = c.label;
-        info.querySelector("span").textContent = c.enrolled + " / " + c.capacity + " inscrits";
+        var sub = c.enrolled + " / " + c.capacity + " inscrits";
+        if(c.pending) sub += " · " + c.pending + " en attente";
+        info.querySelector("span").textContent = sub;
         const cap = document.createElement("input"); cap.type = "number"; cap.min = "1"; cap.value = c.capacity; cap.className = "lcohort"; cap.style.width = "64px"; cap.title = "Capacité";
         const sel = document.createElement("select"); sel.className = "lstatus";
         [["false","Ouverte"],["true","Fermée"]].forEach(function(o){ const op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; if(String(!!c.closed)===o[0]) op.selected = true; sel.appendChild(op); });
@@ -1322,7 +1324,19 @@
         cap.addEventListener("blur", function(){ if((parseInt(cap.value,10)||0) !== c.capacity) save(); });
         row.appendChild(info);
         if(c.enrolled >= c.capacity){ const badge = document.createElement("span"); badge.className = "tag"; badge.textContent = "Complète"; badge.style.color = "var(--bad)"; badge.style.borderColor = "color-mix(in srgb, var(--bad) 45%, var(--line))"; row.appendChild(badge); }
+        if(c.launched){ const lb = document.createElement("span"); lb.className = "tag"; lb.textContent = "Lancée ✓"; lb.style.color = "var(--good,#2E8B6F)"; lb.style.borderColor = "color-mix(in srgb, var(--good,#2E8B6F) 45%, var(--line))"; row.appendChild(lb); }
         row.appendChild(cap); row.appendChild(sel);
+        // Bouton « Lancer la session » : active tous les apprenants en attente (confirmation en 2 temps).
+        const lbtn = document.createElement("button"); lbtn.type = "button"; lbtn.className = "dlbtn";
+        lbtn.textContent = c.launched ? "Relancer" : "Lancer";
+        lbtn.title = c.launched ? "Activer les apprenants inscrits depuis le lancement" : "Démarrer la session : donner l'accès à tous ses apprenants en attente";
+        lbtn.style.borderColor = "var(--accent)"; lbtn.style.color = "var(--accent-deep)";
+        var armed = false, armT = null;
+        lbtn.addEventListener("click", function(){
+          if(!armed){ armed = true; lbtn.textContent = "Confirmer ?"; lbtn.style.background = "var(--accent)"; lbtn.style.color = "#fff"; armT = setTimeout(function(){ armed = false; lbtn.textContent = c.launched ? "Relancer" : "Lancer"; lbtn.style.background = ""; lbtn.style.color = "var(--accent-deep)"; }, 4000); return; }
+          clearTimeout(armT); armed = false; launchCohortNow(c.id, lbtn);
+        });
+        row.appendChild(lbtn);
         slist.appendChild(row);
       });
       adminBody.appendChild(slist);
@@ -1380,6 +1394,16 @@
     async function updateCohort(id, closed, capacity){
       try{ await fetch("/api/admin/cohort/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,closed:closed,capacity:capacity})}); }catch(e){}
       await loadAdmin();
+    }
+    async function launchCohortNow(id, btn){
+      if(btn){ btn.disabled = true; btn.textContent = "Lancement…"; }
+      try{
+        const r = await fetch("/api/admin/cohort/launch",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id})});
+        const d = await r.json();
+        if(!r.ok){ if(btn){ btn.disabled=false; btn.textContent="Lancer"; } alert(d.error||"Erreur au lancement."); return; }
+        alert("Session lancée. " + (d.activated>0 ? (d.activated + " apprenant"+(d.activated>1?"s":"")+" ont maintenant accès à la formation.") : "Aucun apprenant en attente à activer (ils étaient déjà actifs)."));
+        await loadAdmin();
+      }catch(e){ if(btn){ btn.disabled=false; btn.textContent="Lancer"; } alert("Impossible de joindre le serveur."); }
     }
     async function saveLearner(userId, status, cohortId){
       try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,status:status,cohortId:cohortId})}); if(!r.ok){ await loadAdmin(); } }catch(e){}
