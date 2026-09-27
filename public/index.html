@@ -423,6 +423,13 @@
           <button id="goalSave" class="primary" type="button">Enregistrer</button>
           <span id="goalMsg" style="font-size:12px;color:var(--good,#2E8B6F);"></span>
         </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
+          <label style="font-size:12px;color:var(--ink-soft)">Messages IA max. par apprenant / jour :</label>
+          <input id="aiLimInput" type="number" min="20" max="2000" step="10" style="width:100px;">
+          <button id="aiLimSave" class="primary" type="button">Enregistrer</button>
+          <span id="aiLimMsg" style="font-size:12px;color:var(--good,#2E8B6F);"></span>
+        </div>
+        <div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Protège le coût d'API. 150 convient largement : un apprenant normal ne l'atteint jamais. Vous n'êtes jamais limité(e).</div>
       </div>
       <div id="activityBody"><div class="aempty">Chargement…</div></div>
       <div class="row" style="margin-top:12px;"><button id="activityClose" type="button">Fermer</button><button id="activityRefresh" type="button">Actualiser</button></div>
@@ -1624,7 +1631,17 @@
         if(!r.ok){ activityBody.innerHTML = '<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; }
         const gs = $("goalSel"); if(gs) gs.value = String(d.goalMin||60);
         renderActivity(d);
+        try{ const rs=await fetch("/api/formation/settings"); const ds=await rs.json(); if(rs.ok&&ds.settings&&$("aiLimInput")) $("aiLimInput").value=String(ds.settings.aiDailyLimit||150); }catch(e){}
       }catch(e){ activityBody.innerHTML = '<div class="aempty">Impossible de joindre le serveur.</div>'; }
+    }
+    async function saveAiLim(){
+      const v=parseInt($("aiLimInput").value,10); const msg=$("aiLimMsg"); msg.textContent="";
+      if(!(v>=20&&v<=2000)){ msg.style.color="var(--bad,#c0392b)"; msg.textContent="Entre 20 et 2000."; return; }
+      try{
+        const r=await fetch("/api/formation/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({aiDailyLimit:v})});
+        const d=await r.json(); if(!r.ok){ msg.style.color="var(--bad,#c0392b)"; msg.textContent=d.error||"Erreur"; return; }
+        msg.style.color="var(--good,#2E8B6F)"; msg.textContent="Enregistré ✓";
+      }catch(e){ msg.style.color="var(--bad,#c0392b)"; msg.textContent="Serveur injoignable."; }
     }
     function renderActivity(d){
       const week = d.week||[]; const goalSec = (d.goalMin||60)*60; const DOW=["Lun","Mar","Mer","Jeu","Ven"];
@@ -1664,6 +1681,7 @@
     $("activityClose").addEventListener("click", closeActivity);
     $("activityRefresh").addEventListener("click", loadActivity);
     $("goalSave").addEventListener("click", saveGoal);
+    { const b=$("aiLimSave"); if(b) b.addEventListener("click", saveAiLim); }
 
     // ===== Examen de programmation (QCM) =====
     const quizModal = $("quizModal"), quizBody = $("quizBody");

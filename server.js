@@ -903,11 +903,15 @@ function parseCookies(req) {
   h.split(";").forEach((p) => { const i = p.indexOf("="); if (i > -1) out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); });
   return out;
 }
+// En production (Render), le cookie de session est marqué « Secure » : il ne
+// circule qu'en HTTPS. En local (http://localhost) on ne l'ajoute pas, sinon la
+// connexion de test ne fonctionnerait pas. Render définit la variable RENDER.
+const COOKIE_SECURE = (process.env.RENDER || process.env.NODE_ENV === "production" || process.env.COOKIE_SECURE === "1") ? "; Secure" : "";
 function setSessionCookie(res, token) {
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax${COOKIE_SECURE}; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
 }
 function clearSessionCookie(res) {
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax${COOKIE_SECURE}; Max-Age=0`);
 }
 async function currentUser(req) {
   const token = parseCookies(req)[SESSION_COOKIE];
@@ -1117,6 +1121,8 @@ async function handleStart(req, res) {
       await saveConv(conv);
       return sendJson(res, 200, { id, track: "code", language, lesson: 0, lessons: lessonTitles(conv), reply: card, siteUpdated: false });
     }
+    // Au-delà d'ici, on sollicite l'IA : on applique le plafond par apprenant.
+    if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
     // Espace « Premium learner » : atelier d'applications avancées (réservé, modèle Opus).
     if (p.track === "premium") {
       if (!canPremium(user)) return sendJson(res, 403, { error: "L'atelier Premium est réservé aux apprenants sélectionnés par le formateur." });
@@ -1145,6 +1151,7 @@ async function handleChat(req, res) {
     if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
     if (conv.track === "premium" && !canPremium(user)) return sendJson(res, 403, { error: "L'atelier Premium est réservé aux apprenants sélectionnés." });
     if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
+    if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
     conv.messages.push({ role: "user", content: p.message });
     const out = await produceCurrent(conv, reqBase(req));
     sendJson(res, 200, { step: conv.step, ...out });
@@ -1177,6 +1184,7 @@ async function handleNext(req, res) {
     }
     const current = conv.step || 0;
     if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
+    if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
     conv.step = current + 1;
     conv.messages.push({ role: "user", content: STEPS[conv.step].kickoff, hidden: true });
     const out = await produceCurrent(conv, reqBase(req));
@@ -1736,9 +1744,30 @@ function formationConfig(s) {
     currency: (s && s.currency) || "FCFA",
     open: s ? (s.open !== false) : true,
     dailyGoalMin: (s && s.dailyGoalMin != null) ? s.dailyGoalMin : (parseInt(process.env.DAILY_GOAL_MIN, 10) || 60),
-    proofRequired: (s && typeof s.proofRequired === "boolean") ? s.proofRequired : true
+    proofRequired: (s && typeof s.proofRequired === "boolean") ? s.proofRequired : true,
+    // Plafond de messages IA par apprenant et par 24 h (protège le coût d'API).
+    // Volontairement large : un apprenant normal ne l'atteint jamais. Le formateur
+    // n'est pas concerné. Réglable depuis l'Espace formateur.
+    aiDailyLimit: (s && s.aiDailyLimit != null) ? s.aiDailyLimit : (parseInt(process.env.AI_DAILY_LIMIT, 10) || 150)
   };
 }
+// Limite IA par apprenant : petit cache (60 s) pour éviter de relire les réglages à chaque message.
+let _aiLimCache = { v: null, at: 0 };
+async function aiDailyLimit() {
+  const now = Date.now();
+  if (_aiLimCache.v != null && now - _aiLimCache.at < 60000) return _aiLimCache.v;
+  const cfg = formationConfig(await getSettings());
+  _aiLimCache = { v: cfg.aiDailyLimit, at: now };
+  return cfg.aiDailyLimit;
+}
+// Vrai si l'apprenant peut encore solliciter l'IA. Le formateur (admin) n'est jamais limité.
+async function aiQuotaGuard(user) {
+  if (!user || isAdmin(user)) return true;
+  const lim = await aiDailyLimit();
+  if (!(lim > 0)) return true; // 0 ou vide = pas de plafond
+  return rateOk("ai:" + user.id, lim, 24 * 60 * 60 * 1000);
+}
+const AI_QUOTA_MSG = "Vous avez beaucoup travaillé aujourd'hui, bravo ! Reprenez dans un moment, ou demandez à votre formateur d'augmenter la limite.";
 function waveLinkWithAmount(link, amount) {
   if (!link) return "";
   if (amount == null || !(amount > 0)) return link;
@@ -2098,7 +2127,9 @@ async function handleFormationSettings(req, res) {
   if (typeof p.open === "boolean") fields.open = p.open;
   if (p.dailyGoalMin !== undefined) { const n = parseInt(p.dailyGoalMin, 10); if (!(n >= 5 && n <= 600)) return sendJson(res, 400, { error: "Objectif quotidien : entre 5 et 600 minutes." }); fields.dailyGoalMin = n; }
   if (typeof p.proofRequired === "boolean") fields.proofRequired = p.proofRequired;
+  if (p.aiDailyLimit !== undefined) { const n = parseInt(p.aiDailyLimit, 10); if (!(n >= 20 && n <= 2000)) return sendJson(res, 400, { error: "Plafond IA par apprenant : entre 20 et 2000 messages par jour." }); fields.aiDailyLimit = n; }
   const next = await setSettings(fields);
+  _aiLimCache.at = 0; // forcer la prise en compte immédiate du nouveau plafond
   sendJson(res, 200, { settings: formationConfig(next) });
 }
 
