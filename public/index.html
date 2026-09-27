@@ -230,6 +230,14 @@
   .actcell.none{ color:var(--ink-faint); }
   .actcell.wk{ background:transparent; border:none; }
   .actcell.wk b{ font-size:14px; color:var(--ink); } .actcell.wk span{ font-size:11px; color:var(--ink-faint); }
+  /* Espace formateur : un seul défilement, pas de scroll imbriqué */
+  #adminModal .modal{ max-height:88vh; display:flex; flex-direction:column; }
+  #adminModal #adminBody{ flex:1 1 auto; overflow-y:auto; min-height:0; margin-right:-6px; padding-right:6px; }
+  #adminModal #adminBody .llist{ max-height:none; overflow:visible; }
+  /* Réservations & paiement : idem, défilement unique */
+  #resvModal .modal{ max-height:88vh; display:flex; flex-direction:column; }
+  #resvModal #resvBody{ flex:1 1 auto; overflow-y:auto; min-height:0; }
+  #resvModal #resvBody .llist{ max-height:none; overflow:visible; }
   /* --- Examen (QCM) --- */
   #quizModal .modal{ max-width:640px; max-height:88vh; display:flex; flex-direction:column; }
   #quizBody{ overflow-y:auto; }
