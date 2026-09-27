@@ -1093,7 +1093,9 @@
     const adminModal = $("adminModal"), adminBody = $("adminBody");
     const authModal = $("authModal"), authTitle = $("authTitle"), authIntro = $("authIntro");
 
-    function canBuildUI(){ return !!me && (me.isAdmin || me.status === "active"); }
+    // Construire un projet exige : compte actif (place confirmée) ET session lancée par le formateur.
+    function sessionOpen(){ return !me || me.isAdmin || me.sessionLaunched !== false; }
+    function canBuildUI(){ return !!me && (me.isAdmin || (me.status === "active" && sessionOpen())); }
     function canViewUI(){ return !!me && (me.isAdmin || me.status === "active" || me.status === "finished"); }
     function refreshLock(){
       buildLocked = !canBuildUI();
@@ -1157,6 +1159,7 @@
       let msg;
       if(kind==="none") msg="Bienvenue sur Bâtisseur. Connectez-vous ou créez un compte pour commencer votre formation.";
       else if(kind==="pending") msg="Votre inscription est bien reçue. Elle est en attente de validation par le formateur — vous aurez accès au parcours dès qu'elle sera validée.";
+      else if(kind==="notlaunched") msg="Votre place est confirmée ✓. La création de votre projet s'ouvrira dès que le formateur aura lancé " + (me && me.sessionLabel ? "« "+me.sessionLabel+" »" : "votre session") + ". En attendant, cliquez sur « Mon programme » en haut pour voir comment vous préparer.";
       else if(kind==="finished") msg="Votre formation est terminée. Ouvrez « Mon espace » pour revoir et télécharger vos projets. Pour reprendre la construction, demandez à votre formateur de vous réautoriser.";
       else msg="Accès non disponible pour le moment.";
       bubble(msg,"ai");
@@ -1167,6 +1170,8 @@
         const saved = getSavedId();
         if(saved && await resume(saved)) return;
         clearSavedId(); openStart();
+      } else if(me && !me.isAdmin && me.status==="active" && me.sessionLaunched===false){
+        showBlocked("notlaunched");
       } else if(canViewUI()){
         const saved = getSavedId();
         if(saved && await resume(saved)) return;
@@ -1178,10 +1183,11 @@
     function notifyBlocked(){
       if(!me){ openAuth("login"); return; }
       if(me.status==="pending") bubble("Votre inscription est en attente de validation par le formateur.","ai");
+      else if(me.status==="active" && me.sessionLaunched===false) bubble("La création de projet n'est pas encore ouverte : le formateur doit d'abord lancer la session. Consultez « Mon programme » en attendant.","ai");
       else if(me.status==="finished") bubble("Formation terminée : demandez à votre formateur de vous réautoriser pour construire à nouveau.","ai");
     }
     function handleAccess(data){
-      if(data && data.accessStatus && me){ me.status = data.accessStatus; renderAccount(); refreshLock(); }
+      if(data && me){ if(data.accessStatus) me.status = data.accessStatus; if(data.locked==="notlaunched") me.sessionLaunched=false; renderAccount(); refreshLock(); }
     }
 
     function setAuthMode(mode){
@@ -1326,15 +1332,18 @@
         if(c.enrolled >= c.capacity){ const badge = document.createElement("span"); badge.className = "tag"; badge.textContent = "Complète"; badge.style.color = "var(--bad)"; badge.style.borderColor = "color-mix(in srgb, var(--bad) 45%, var(--line))"; row.appendChild(badge); }
         if(c.launched){ const lb = document.createElement("span"); lb.className = "tag"; lb.textContent = "Lancée ✓"; lb.style.color = "var(--good,#2E8B6F)"; lb.style.borderColor = "color-mix(in srgb, var(--good,#2E8B6F) 45%, var(--line))"; row.appendChild(lb); }
         row.appendChild(cap); row.appendChild(sel);
-        // Bouton « Lancer la session » : active tous les apprenants en attente (confirmation en 2 temps).
+        // Bouton « Lancer la session » : ouvre la création de projet pour les apprenants (place confirmée).
+        // Bascule : « Lancer » (ouvre) / « Verrouiller » (referme). Confirmation en 2 temps.
+        const target = !c.launched; // état visé au clic
+        const baseLabel = c.launched ? "Verrouiller" : "Lancer";
         const lbtn = document.createElement("button"); lbtn.type = "button"; lbtn.className = "dlbtn";
-        lbtn.textContent = c.launched ? "Relancer" : "Lancer";
-        lbtn.title = c.launched ? "Activer les apprenants inscrits depuis le lancement" : "Démarrer la session : donner l'accès à tous ses apprenants en attente";
+        lbtn.textContent = baseLabel;
+        lbtn.title = c.launched ? "Refermer la création de projet pour cette session" : "Ouvrir la création de projet : les apprenants dont la place est confirmée pourront démarrer leur projet";
         lbtn.style.borderColor = "var(--accent)"; lbtn.style.color = "var(--accent-deep)";
         var armed = false, armT = null;
         lbtn.addEventListener("click", function(){
-          if(!armed){ armed = true; lbtn.textContent = "Confirmer ?"; lbtn.style.background = "var(--accent)"; lbtn.style.color = "#fff"; armT = setTimeout(function(){ armed = false; lbtn.textContent = c.launched ? "Relancer" : "Lancer"; lbtn.style.background = ""; lbtn.style.color = "var(--accent-deep)"; }, 4000); return; }
-          clearTimeout(armT); armed = false; launchCohortNow(c.id, lbtn);
+          if(!armed){ armed = true; lbtn.textContent = "Confirmer ?"; lbtn.style.background = "var(--accent)"; lbtn.style.color = "#fff"; armT = setTimeout(function(){ armed = false; lbtn.textContent = baseLabel; lbtn.style.background = ""; lbtn.style.color = "var(--accent-deep)"; }, 4000); return; }
+          clearTimeout(armT); armed = false; launchCohortNow(c.id, target, lbtn);
         });
         row.appendChild(lbtn);
         slist.appendChild(row);
@@ -1395,15 +1404,16 @@
       try{ await fetch("/api/admin/cohort/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,closed:closed,capacity:capacity})}); }catch(e){}
       await loadAdmin();
     }
-    async function launchCohortNow(id, btn){
-      if(btn){ btn.disabled = true; btn.textContent = "Lancement…"; }
+    async function launchCohortNow(id, launched, btn){
+      if(btn){ btn.disabled = true; btn.textContent = launched ? "Lancement…" : "…"; }
       try{
-        const r = await fetch("/api/admin/cohort/launch",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id})});
+        const r = await fetch("/api/admin/cohort/launch",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id, launched:launched})});
         const d = await r.json();
-        if(!r.ok){ if(btn){ btn.disabled=false; btn.textContent="Lancer"; } alert(d.error||"Erreur au lancement."); return; }
-        alert("Session lancée. " + (d.activated>0 ? (d.activated + " apprenant"+(d.activated>1?"s":"")+" ont maintenant accès à la formation.") : "Aucun apprenant en attente à activer (ils étaient déjà actifs)."));
+        if(!r.ok){ if(btn){ btn.disabled=false; } alert(d.error||"Erreur."); await loadAdmin(); return; }
+        if(launched) alert("Session lancée ✓ — la création de projet est ouverte. " + (d.activeCount>0 ? (d.activeCount + " apprenant"+(d.activeCount>1?"s":"")+" (place confirmée) peuvent maintenant créer leur projet.") : "Aucun apprenant à place confirmée pour l'instant — ils pourront construire dès que vous validerez leur paiement."));
+        else alert("Session reverrouillée — les apprenants gardent l'accès au site, mais ne peuvent plus créer de projet.");
         await loadAdmin();
-      }catch(e){ if(btn){ btn.disabled=false; btn.textContent="Lancer"; } alert("Impossible de joindre le serveur."); }
+      }catch(e){ if(btn){ btn.disabled=false; } alert("Impossible de joindre le serveur."); }
     }
     async function saveLearner(userId, status, cohortId){
       try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,status:status,cohortId:cohortId})}); if(!r.ok){ await loadAdmin(); } }catch(e){}

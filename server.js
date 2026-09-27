@@ -868,6 +868,22 @@ function buildBlockMessage(user) {
   if (s === "finished") return { code: 403, error: "Votre formation est terminée : vous pouvez consulter vos projets, mais plus les modifier. Contactez votre formateur pour être réautorisé(e)." };
   return { code: 403, error: "Accès non autorisé." };
 }
+// La session doit être LANCÉE par le formateur avant que l'apprenant puisse créer/construire un projet.
+// Un compte « actif » = place confirmée (accès au site) ; la création de projet n'ouvre qu'au lancement.
+async function sessionLaunchedFor(u) {
+  if (isAdmin(u)) return true;
+  if (!u || !u.cohort_id) return true; // apprenant sans session attribuée : on ne bloque pas la construction
+  try { const c = await getCohort(u.cohort_id); return !!(c && c.launched); } catch (e) { return true; }
+}
+// Porte d'accès à la CONSTRUCTION : renvoie null si OK, sinon { code, error, accessStatus, locked }.
+async function buildGate(user) {
+  if (!canBuild(user)) { const m = buildBlockMessage(user); return { code: m.code, error: m.error, accessStatus: userStatus(user) }; }
+  if (!(await sessionLaunchedFor(user))) {
+    return { code: 403, accessStatus: userStatus(user), locked: "notlaunched",
+      error: "Votre place est confirmée. La création de votre projet s'ouvrira dès que le formateur aura lancé la session de formation." };
+  }
+  return null;
+}
 
 // -- Sessions (jeton aléatoire côté serveur) --
 async function createSession(userId) {
@@ -1106,7 +1122,7 @@ async function handleStart(req, res) {
   if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
   try {
     const user = await currentUser(req);
-    if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
+    { const g = await buildGate(user); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
     const id = crypto.randomUUID();
     // Filière « apprendre à programmer » (2e option de formation).
@@ -1148,7 +1164,7 @@ async function handleChat(req, res) {
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
-    if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
+    { const g = await buildGate(user); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     if (conv.track === "premium" && !canPremium(user)) return sendJson(res, 403, { error: "L'atelier Premium est réservé aux apprenants sélectionnés." });
     if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
     if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
@@ -1167,7 +1183,7 @@ async function handleNext(req, res) {
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
-    if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
+    { const g = await buildGate(user); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     if (conv.track === "premium") return sendJson(res, 200, { atEnd: true, reply: null, siteUpdated: false }); // pas d'étapes en Premium
     // Filière programmation : « Leçon suivante » avance dans le programme.
     if (conv.track === "code") {
@@ -1472,7 +1488,7 @@ async function handlePublish(req, res) {
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
-    if (!canBuild(user)) { const m = buildBlockMessage(user); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(user) }); }
+    { const g = await buildGate(user); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     if (typeof p.pwa === "boolean") { conv.pwa = p.pwa; await saveConv(conv); }
     const out = await publishSite(conv, reqBase(req));
     out.pwa = !!conv.pwa;
@@ -1533,7 +1549,12 @@ async function handleLogout(req, res) {
 // GET /api/auth/me
 async function handleMe(req, res) {
   const u = await currentUser(req);
-  sendJson(res, 200, { user: publicUser(u) });
+  const pub = publicUser(u);
+  if (pub && !pub.isAdmin) {
+    pub.sessionLaunched = await sessionLaunchedFor(u);
+    if (u && u.cohort_id) { try { const c = await getCohort(u.cohort_id); pub.sessionStart = c ? (c.startDate || null) : null; pub.sessionLabel = c ? (c.label || null) : null; } catch (e) {} }
+  }
+  sendJson(res, 200, { user: pub });
 }
 
 // GET /api/projects : les projets du compte connecté (pour « Mon espace »)
@@ -1677,19 +1698,11 @@ async function cohortPendingCounts() {
   users.forEach((u) => { const cid = u.cohort_id; if (cid && (u.status || "active") === "pending") m[cid] = (m[cid] || 0) + 1; });
   return m;
 }
-// Lancer une session : active d'un coup tous ses apprenants « en attente ».
-async function launchCohort(cohortId) {
-  if (!cohortId) return 0;
-  if (USE_DB) {
-    try {
-      const r = await sb(`/users?cohort_id=eq.${encodeURIComponent(cohortId)}&status=eq.pending`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ status: "active" }) });
-      return Array.isArray(r) ? r.length : 0;
-    } catch (e) { console.error("launchCohort:", e.message); return 0; }
-  }
-  const a = loadAccounts(); let n = 0;
-  Object.keys(a.users || {}).forEach((id) => { const u = a.users[id]; if (u && u.cohort_id === cohortId && (u.status || "active") === "pending") { u.status = "active"; n++; } });
-  saveAccounts(a);
-  return n;
+// Nombre d'apprenants « actifs » (place confirmée) par session — ceux qui pourront construire au lancement.
+async function cohortActiveCounts() {
+  const users = await adminListUsers(); const m = {};
+  users.forEach((u) => { const cid = u.cohort_id; if (cid && (u.status || "active") === "active") m[cid] = (m[cid] || 0) + 1; });
+  return m;
 }
 
 // POST /api/admin/cohort/generate  { startDate, intervalDays, count, capacity }
@@ -1728,14 +1741,17 @@ async function handleAdminCohortUpdate(req, res) {
   sendJson(res, 200, { ok: true });
 }
 
-// POST /api/admin/cohort/launch  { id } : démarre la session (active tous ses apprenants en attente).
+// POST /api/admin/cohort/launch  { id, launched? } : ouvre (ou referme) la CRÉATION DE PROJET pour la session.
+// Le lancement ne change pas les comptes : ceux qui ont payé (actifs) accèdent déjà au site ;
+// le lancement leur ouvre la construction de leur projet. { launched:false } reverrouille.
 async function handleAdminCohortLaunch(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
   let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
   const c = await getCohort(p.id); if (!c) return sendJson(res, 404, { error: "Session introuvable." });
-  const activated = await launchCohort(c.id);
-  await updateCohortRec(c.id, { launched: true, launchedAt: new Date().toISOString() });
-  sendJson(res, 200, { ok: true, activated });
+  const launched = (p.launched === false) ? false : true;
+  await updateCohortRec(c.id, { launched, launchedAt: launched ? new Date().toISOString() : null });
+  const active = await cohortActiveCounts();
+  sendJson(res, 200, { ok: true, launched, activeCount: active[c.id] || 0 });
 }
 
 // --- CERTIFICAT (simple) : une belle page imprimable en PDF ---
