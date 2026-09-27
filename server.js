@@ -1779,20 +1779,38 @@ function shortUA(ua) {
   const mobile = /Mobi|Android|iPhone/.test(ua) ? "Mobile" : "Ordinateur";
   return { browser: b, os: os || "?", device: mobile };
 }
+// Localisation approximative d'après l'IP (ville / pays). Résultat mis en cache par IP,
+// pour ne pas interroger le service à chaque visite. Sans clé, sans dépendance (ipwho.is).
+const GEO_CACHE = {};
+async function geoLookup(ip) {
+  if (!ip) return null;
+  if (/^(127\.|10\.|192\.168\.|::1|::ffff:127|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) return null; // réseaux privés / local
+  if (Object.prototype.hasOwnProperty.call(GEO_CACHE, ip)) return GEO_CACHE[ip];
+  GEO_CACHE[ip] = null; // évite deux requêtes simultanées pour la même IP
+  try {
+    const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 3500);
+    const r = await fetch("https://ipwho.is/" + encodeURIComponent(ip) + "?fields=success,city,country,country_code", { signal: ctrl.signal });
+    clearTimeout(to);
+    const d = await r.json();
+    if (d && d.success) { const g = { city: d.city || "", country: d.country || "", cc: d.country_code || "" }; GEO_CACHE[ip] = g; return g; }
+  } catch (e) {}
+  GEO_CACHE[ip] = null; return null;
+}
 async function logVisit(req) {
   try {
     const p = String(req.url || "").split("?")[0];
     if (!VISIT_PAGES[p]) return; // uniquement les vraies pages (ni /api, ni fichiers, ni /preview)
     let who = null; try { const u = await currentUser(req); who = u ? u.email : null; } catch (e) {}
     const ua = shortUA(req.headers["user-agent"]);
-    const rec = { at: new Date().toISOString(), path: p, page: VISIT_PAGES[p], ip: clientIp(req), browser: ua.browser, os: ua.os, device: ua.device, ref: String(req.headers["referer"] || "").slice(0, 140), who };
+    const ip = clientIp(req);
+    const rec = { at: new Date().toISOString(), path: p, page: VISIT_PAGES[p], ip: ip, browser: ua.browser, os: ua.os, device: ua.device, ref: String(req.headers["referer"] || "").slice(0, 140), who };
+    const g = await geoLookup(ip); if (g) { rec.city = g.city; rec.country = g.country; rec.cc = g.cc; }
     if (USE_DB) { sb(`/visits`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([rec]) }).catch(() => {}); }
     else { const a = loadVisitsLocal(); a.push(rec); saveVisitsLocal(a); }
   } catch (e) {}
 }
-// GET /api/admin/visits : les dernières visites + statistiques simples (formateur).
-async function handleAdminVisits(req, res) {
-  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+// Charge les dernières visites + calcule des statistiques simples (partagé liste + PDF).
+async function loadVisitsData() {
   let list = [];
   if (USE_DB) { try { list = (await sb(`/visits?select=*&order=at.desc&limit=400`)) || []; } catch (e) { list = []; } }
   else { list = loadVisitsLocal().slice().reverse().slice(0, 400); }
@@ -1807,10 +1825,103 @@ async function handleAdminVisits(req, res) {
     if (t >= now - 7 * dayMs) { last7++; if (v.ip) ips7.add(v.ip); }
     if (v.who) { connu++; whoSet.add(v.who); }
   });
-  sendJson(res, 200, {
-    visits: list.slice(0, 200),
-    stats: { total: list.length, uniques: ips.size, today, uniquesToday: ipsToday.size, last7, uniques7: ips7.size, connus: whoSet.size, byPage }
+  return { list, stats: { total: list.length, uniques: ips.size, today, uniquesToday: ipsToday.size, last7, uniques7: ips7.size, connus: whoSet.size, byPage } };
+}
+// GET /api/admin/visits : les dernières visites + statistiques simples (formateur).
+async function handleAdminVisits(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  const d = await loadVisitsData();
+  sendJson(res, 200, { visits: d.list.slice(0, 200), stats: d.stats });
+}
+
+// --- Générateur de PDF minimal (sans dépendance) pour le rapport des visiteurs ---
+function pdfEsc(s) { return String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)"); }
+function pdfSafe(s) { // garde le Latin-1 (accents FR) ; convertit la ponctuation typographique ; remplace le reste (emoji…)
+  return String(s == null ? "" : s)
+    .replace(/[–—]/g, "-")           // tirets longs → -
+    .replace(/[‘’‚′]/g, "'") // apostrophes courbes → '
+    .replace(/[“”„]/g, '"')      // guillemets courbes → "
+    .replace(/…/g, "...")                    // points de suspension
+    .replace(/[    ]/g, " ") // espaces insécables → espace
+    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, "?");   // le reste hors Latin-1
+}
+// lines: [{ t, size, gap }]. Pagine automatiquement sur A4 portrait.
+function buildPdf(lines) {
+  const W = 595.28, H = 841.89, M = 42;
+  const pages = []; let cur = []; let y = H - M;
+  for (const ln of lines) {
+    const size = ln.size || 10;
+    if (y < M + size) { pages.push(cur); cur = []; y = H - M; }
+    cur.push({ x: M, y, size, t: pdfEsc(pdfSafe(ln.t)) });
+    y -= (size + (ln.gap || 3));
+  }
+  if (cur.length) pages.push(cur);
+  if (!pages.length) pages.push([]);
+  const objs = []; // texte de chaque objet indirect (sans l'en-tête "N 0 obj")
+  // 1 catalog, 2 pages, 3 font, puis pour chaque page : contenu + page
+  const nPages = pages.length;
+  const fontObj = 3;
+  const kids = [];
+  const contentStart = 4;
+  for (let i = 0; i < nPages; i++) {
+    const contentNo = contentStart + i * 2;
+    const pageNo = contentStart + i * 2 + 1;
+    kids.push(pageNo + " 0 R");
+  }
+  objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objs[2] = "<< /Type /Pages /Kids [" + kids.join(" ") + "] /Count " + nPages + " >>";
+  objs[fontObj] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
+  for (let i = 0; i < nPages; i++) {
+    const contentNo = contentStart + i * 2;
+    const pageNo = contentStart + i * 2 + 1;
+    let stream = "BT\n";
+    for (const op of pages[i]) {
+      stream += "/F1 " + op.size + " Tf\n1 0 0 1 " + op.x.toFixed(2) + " " + op.y.toFixed(2) + " Tm\n(" + op.t + ") Tj\n";
+    }
+    stream += "ET";
+    objs[contentNo] = "<< /Length " + Buffer.byteLength(stream, "latin1") + " >>\nstream\n" + stream + "\nendstream";
+    objs[pageNo] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + W.toFixed(2) + " " + H.toFixed(2) + "] /Resources << /Font << /F1 " + fontObj + " 0 R >> >> /Contents " + contentNo + " 0 R >>";
+  }
+  // Sérialisation + table xref
+  let out = "%PDF-1.4\n"; const offsets = []; const total = objs.length - 1;
+  for (let n = 1; n <= total; n++) {
+    offsets[n] = Buffer.byteLength(out, "latin1");
+    out += n + " 0 obj\n" + objs[n] + "\nendobj\n";
+  }
+  const xrefPos = Buffer.byteLength(out, "latin1");
+  out += "xref\n0 " + (total + 1) + "\n0000000000 65535 f \n";
+  for (let n = 1; n <= total; n++) { out += String(offsets[n]).padStart(10, "0") + " 00000 n \n"; }
+  out += "trailer\n<< /Size " + (total + 1) + " /Root 1 0 R >>\nstartxref\n" + xrefPos + "\n%%EOF";
+  return Buffer.from(out, "latin1");
+}
+function visitWhenFr(iso) {
+  try { const d = new Date(iso); const D = (n) => (n < 10 ? "0" : "") + n; return D(d.getDate()) + "/" + D(d.getMonth() + 1) + "/" + d.getFullYear() + " " + D(d.getHours()) + ":" + D(d.getMinutes()); } catch (e) { return String(iso || ""); }
+}
+// GET /api/admin/visits.pdf : rapport PDF des visiteurs, régénéré à chaque ouverture.
+async function handleAdminVisitsPdf(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Réservé au formateur."); }
+  const { list, stats } = await loadVisitsData();
+  const lines = [];
+  lines.push({ t: "Bâtisseur — Journal des visiteurs", size: 18, gap: 6 });
+  lines.push({ t: "Rapport généré le " + visitWhenFr(new Date().toISOString()), size: 9, gap: 10 });
+  lines.push({ t: "Aujourd'hui : " + stats.today + " visite(s), " + stats.uniquesToday + " visiteur(s) distinct(s)", size: 11, gap: 2 });
+  lines.push({ t: "7 derniers jours : " + stats.last7 + " visite(s), " + stats.uniques7 + " visiteur(s) distinct(s)", size: 11, gap: 2 });
+  lines.push({ t: "Personnes connectées (identifiées) : " + stats.connus, size: 11, gap: 12 });
+  lines.push({ t: "Dernières visites (de la plus récente à la plus ancienne) :", size: 12, gap: 8 });
+  if (!list.length) lines.push({ t: "Aucune visite enregistrée pour l'instant.", size: 10 });
+  list.slice(0, 300).forEach((v) => {
+    const who = v.who ? v.who : "Visiteur anonyme";
+    const loc = [v.city, v.country].filter(Boolean).join(", ");
+    const dev = [v.device, v.browser].filter(Boolean).join(" ") + (v.os ? (" (" + v.os + ")") : "");
+    let l = visitWhenFr(v.at) + "  |  " + who + "  |  " + (v.page || v.path || "");
+    if (loc) l += "  |  " + loc;
+    l += "  |  " + dev;
+    if (v.ip) l += "  |  IP " + v.ip;
+    lines.push({ t: l, size: 8.5, gap: 3 });
   });
+  const pdf = buildPdf(lines);
+  res.writeHead(200, { "content-type": "application/pdf", "content-disposition": "inline; filename=\"batisseur-visiteurs.pdf\"", "cache-control": "no-store" });
+  res.end(pdf);
 }
 
 // ============================================================
@@ -3146,6 +3257,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/admin/cohort/generate") return handleAdminCohortGenerate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/update") return handleAdminCohortUpdate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/launch") return handleAdminCohortLaunch(req, res);
+  if (req.method === "GET" && (req.url === "/api/admin/visits.pdf" || req.url.startsWith("/api/admin/visits.pdf?"))) return handleAdminVisitsPdf(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/admin/visits")) return handleAdminVisits(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cohorts")) return handleCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/app/submit") return handleSubmit(req, res);

@@ -134,8 +134,14 @@ create table if not exists visits (
   os text,
   device text,
   ref text,
-  who text                    -- e-mail si la personne est connectée, sinon vide
+  who text,                   -- e-mail si la personne est connectée, sinon vide
+  city text,                  -- ville approximative (d'après l'IP)
+  country text,               -- pays approximatif
+  cc text                     -- code pays (ex. CI)
 );
+alter table visits add column if not exists city text;
+alter table visits add column if not exists country text;
+alter table visits add column if not exists cc text;
 create index if not exists visits_at_idx on visits (at desc);
 
 -- --- Comptes des visiteurs des applications (espace membre) ---

@@ -413,7 +413,7 @@
       <p>Un aperçu de qui est passé récemment. Les personnes connectées apparaissent avec leur e-mail ; les autres sont des visiteurs anonymes (identifiés seulement par leur adresse IP et leur navigateur).</p>
       <div id="visitsStats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>
       <div id="visitsBody"><div class="aempty">Chargement…</div></div>
-      <div class="row" style="margin-top:12px;"><button id="visitsClose" type="button">Fermer</button><button id="visitsRefresh" type="button">Actualiser</button></div>
+      <div class="row" style="margin-top:12px;"><button id="visitsClose" type="button">Fermer</button><button id="visitsPdf" type="button">Ouvrir en PDF</button><button id="visitsRefresh" type="button">Actualiser</button></div>
     </div>
   </div>
 
@@ -1693,7 +1693,8 @@
           const row=document.createElement("div"); row.className="lrow";
           const info=document.createElement("div"); info.className="linfo";
           const who = x.who ? ('<b style="color:var(--accent-deep)">'+esc(x.who)+'</b>') : '<b>Visiteur anonyme</b>';
-          info.innerHTML = who + '<span>'+esc(x.page||x.path||"")+' · '+esc(x.device||"")+' '+esc(x.browser||"")+(x.os?(" ("+esc(x.os)+")"):"")+'</span>';
+          const loc = [x.city, x.country].filter(Boolean).map(esc).join(", ");
+          info.innerHTML = who + '<span>'+esc(x.page||x.path||"")+(loc?(' · 📍 '+loc):'')+' · '+esc(x.device||"")+' '+esc(x.browser||"")+(x.os?(" ("+esc(x.os)+")"):"")+'</span>';
           const when=document.createElement("span"); when.className="tag"; when.textContent=visitWhen(x.at); when.style.whiteSpace="nowrap";
           row.appendChild(info); row.appendChild(when);
           wrap.appendChild(row);
@@ -1761,6 +1762,7 @@
     { const b=$("openVisitsBtn"); if(b) b.addEventListener("click", openVisits); }
     { const b=$("visitsClose"); if(b) b.addEventListener("click", closeVisits); }
     { const b=$("visitsRefresh"); if(b) b.addEventListener("click", loadVisits); }
+    { const b=$("visitsPdf"); if(b) b.addEventListener("click", function(){ window.open("/api/admin/visits.pdf?t="+Date.now(),"_blank","noopener"); }); }
     $("activityRefresh").addEventListener("click", loadActivity);
     $("goalSave").addEventListener("click", saveGoal);
     { const b=$("aiLimSave"); if(b) b.addEventListener("click", saveAiLim); }
