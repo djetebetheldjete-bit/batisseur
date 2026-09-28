@@ -1566,7 +1566,7 @@ async function handleProjects(req, res) {
 
 // --- ESPACE FORMATEUR (admin) : gestion des apprenants & des sessions ---
 async function adminListUsers() {
-  if (USE_DB) { try { return (await sb(`/users?select=id,email,name,status,cohort,cohort_id,premium,created_at&order=created_at.desc`)) || []; } catch (e) { console.error("adminListUsers:", e.message); return []; } }
+  if (USE_DB) { try { return (await sb(`/users?select=id,email,name,status,cohort,cohort_id,premium,paid,created_at&order=created_at.desc`)) || []; } catch (e) { console.error("adminListUsers:", e.message); return []; } }
   const a = loadAccounts(); return Object.values(a.users).sort((x, y) => String(y.created_at || "").localeCompare(String(x.created_at || "")));
 }
 async function allConvs() {
