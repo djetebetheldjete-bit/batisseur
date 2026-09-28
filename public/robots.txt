@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /$
+Allow: /accueil
+Allow: /reserver
+Disallow: /api/
+Disallow: /preview/
+Disallow: /mon-programme
+
+Sitemap: https://batisseur.onrender.com/sitemap.xml

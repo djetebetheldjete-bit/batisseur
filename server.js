@@ -703,7 +703,7 @@ const SITES_DIR = path.join(DATA_DIR, "sites");
 try { fs.mkdirSync(SITES_DIR, { recursive: true }); } catch (e) {}
 
 const PUBLIC_DIR = path.join(__dirname, "public");
-const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".ico": "image/x-icon", ".png": "image/png", ".svg": "image/svg+xml" };
+const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".ico": "image/x-icon", ".png": "image/png", ".svg": "image/svg+xml", ".txt": "text/plain; charset=utf-8", ".xml": "application/xml; charset=utf-8", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json" };
 
 function sendJson(res, code, obj) { res.writeHead(code, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(obj)); }
 function reqBase(req) { return (String(req.headers["x-forwarded-proto"] || "http").split(",")[0]) + "://" + (req.headers.host || "localhost"); }
@@ -1586,12 +1586,13 @@ async function handleAdminLearners(req, res) {
   convs.forEach((c) => { if (!c || !c.userId) return; const b = byUser[c.userId] || (byUser[c.userId] = { projects: 0, published: 0 }); b.projects++; if (c.publishedUrl) b.published++; });
   const learners = users
     .filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)))
-    .map((x) => ({ id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, cohortId: x.cohort_id || null, status: (x.status || "active"), premium: x.premium === true, createdAt: x.created_at || null, projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0 }));
+    .map((x) => ({ id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, cohortId: x.cohort_id || null, status: (x.status || "active"), premium: x.premium === true, paid: x.paid === true, createdAt: x.created_at || null, projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0 }));
   const stats = {
     total: learners.length,
     active: learners.filter((l) => l.status === "active").length,
     pending: learners.filter((l) => l.status === "pending").length,
-    finished: learners.filter((l) => l.status === "finished").length
+    finished: learners.filter((l) => l.status === "finished").length,
+    paid: learners.filter((l) => l.paid).length
   };
   const cohorts = {};
   learners.forEach((l) => { const k = l.cohort || "—"; cohorts[k] = (cohorts[k] || 0) + 1; });
@@ -1629,6 +1630,7 @@ async function handleAdminUpdate(req, res) {
     else { fields.cohort_id = null; fields.cohort = null; }
   } else if (p.cohort !== undefined) { fields.cohort = String(p.cohort || "").trim().slice(0, 120) || null; }
   if (typeof p.premium === "boolean") fields.premium = p.premium;   // promotion « Premium learner »
+  if (typeof p.paid === "boolean") fields.paid = p.paid;            // marqueur « a payé » (coché par le formateur)
   if (!Object.keys(fields).length) return sendJson(res, 400, { error: "Rien à modifier." });
   const updated = await updateUser(p.userId, fields);
   sendJson(res, 200, { user: publicUser(updated) });

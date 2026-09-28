@@ -3,7 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bâtisseur · Parcours</title>
+<title>Bâtisseur — Créez votre site ou apprenez à programmer avec l'IA</title>
+<meta name="description" content="Bâtisseur : centre de formation où vous créez votre propre site ou application web, et apprenez à programmer (Python, JavaScript, Java), accompagné par une intelligence artificielle. Réservez votre place.">
+<link rel="canonical" href="https://batisseur.onrender.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Bâtisseur">
+<meta property="og:title" content="Bâtisseur — Créez votre site ou apprenez à programmer avec l'IA">
+<meta property="og:description" content="Centre de formation accompagné par l'intelligence artificielle : créez votre site ou application web, et apprenez à programmer.">
+<meta property="og:url" content="https://batisseur.onrender.com/">
+<meta property="og:image" content="https://batisseur.onrender.com/batisseur-medaille.svg">
+<meta name="twitter:card" content="summary">
+<meta name="robots" content="index, follow">
 <style>
   :root{
     --ground:#EEF1F6; --surface:#fff; --surface-2:#EDF1F6; --surface-3:#E7ECF3;
@@ -1310,7 +1320,7 @@
       const s = d.stats || { total:0, active:0, pending:0, finished:0 };
       adminBody.innerHTML = "";
       const stats = document.createElement("div"); stats.className = "astats";
-      [["Apprenants",s.total],["Actifs",s.active],["En attente",s.pending],["Terminés",s.finished]].forEach(([lab,val])=>{
+      [["Apprenants",s.total],["Payés",s.paid||0],["Actifs",s.active],["En attente",s.pending],["Terminés",s.finished]].forEach(([lab,val])=>{
         const c = document.createElement("div"); c.className = "astat"; c.innerHTML = '<b></b><span></span>';
         c.querySelector("b").textContent = val; c.querySelector("span").textContent = lab; stats.appendChild(c);
       });
@@ -1382,6 +1392,13 @@
         const save = function(){ saveLearner(l.id, ssel.value, csel.value); };
         ssel.addEventListener("change", save);
         csel.addEventListener("change", save);
+        // Marqueur « Payé » : coché par le formateur (Wave OU espèces). Vert = payé, rouge = non payé.
+        const paidBtn = document.createElement("button"); paidBtn.type="button"; paidBtn.className="dlbtn";
+        paidBtn.textContent = l.paid ? "Payé ✓" : "Non payé";
+        paidBtn.title = l.paid ? "A payé (cliquer pour annuler)" : "Marquer comme ayant payé (Wave ou espèces)";
+        if(l.paid){ paidBtn.style.borderColor="var(--good,#2E8B6F)"; paidBtn.style.color="#fff"; paidBtn.style.background="var(--good,#2E8B6F)"; }
+        else { paidBtn.style.borderColor="#c0392b"; paidBtn.style.color="#c0392b"; }
+        paidBtn.addEventListener("click", function(){ setPaid(l.id, !l.paid); });
         const pbtn = document.createElement("button"); pbtn.type="button"; pbtn.className="dlbtn";
         pbtn.textContent = l.premium ? "Premium ✓" : "Premium";
         pbtn.title = "Autoriser cet apprenant à créer des applications avancées (atelier Premium)";
@@ -1396,7 +1413,7 @@
             dTimer = setTimeout(function(){ dArmed = false; dbtn.textContent = "Supprimer"; dbtn.style.background = ""; dbtn.style.color = "#c0392b"; }, 4000); return; }
           clearTimeout(dTimer); deleteLearner(l.id);
         });
-        row.appendChild(info); row.appendChild(csel); row.appendChild(ssel); row.appendChild(pbtn); row.appendChild(dbtn);
+        row.appendChild(info); row.appendChild(paidBtn); row.appendChild(csel); row.appendChild(ssel); row.appendChild(pbtn); row.appendChild(dbtn);
         list.appendChild(row);
       });
       adminBody.appendChild(list);
@@ -1439,6 +1456,10 @@
     }
     async function setPremium(userId, premium){
       try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,premium:premium})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Action impossible."); } }catch(e){}
+      await loadAdmin();
+    }
+    async function setPaid(userId, paid){
+      try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,paid:paid})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Action impossible."); } }catch(e){}
       await loadAdmin();
     }
     async function createLearner(){

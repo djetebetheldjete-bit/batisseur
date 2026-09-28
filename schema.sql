@@ -38,6 +38,7 @@ alter table users add column if not exists status text default 'active';
 alter table users add column if not exists cohort text;
 alter table users add column if not exists cohort_id text;
 alter table users add column if not exists premium boolean default false;
+alter table users add column if not exists paid boolean default false;
 
 create table if not exists sessions (
   token text primary key,
