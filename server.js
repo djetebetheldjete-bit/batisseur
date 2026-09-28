@@ -875,15 +875,23 @@ async function sessionLaunchedFor(u) {
   if (!u || !u.cohort_id) return true; // apprenant sans session attribuée : on ne bloque pas la construction
   try { const c = await getCohort(u.cohort_id); return !!(c && c.launched); } catch (e) { return true; }
 }
-// Porte d'accès à la CONSTRUCTION : renvoie null si OK, sinon { code, error, accessStatus, locked }.
-async function buildGate(user) {
-  if (!canBuild(user)) { const m = buildBlockMessage(user); return { code: m.code, error: m.error, accessStatus: userStatus(user) }; }
-  if (!(await sessionLaunchedFor(user))) {
-    return { code: 403, accessStatus: userStatus(user), locked: "notlaunched",
-      error: "Votre place est confirmée. La création de votre projet s'ouvrira dès que le formateur aura lancé la session de formation." };
+// La formation s'ouvre à partir du PAIEMENT (marqué « Payé » par le formateur) :
+//  - Programmation : accessible dès que la place est payée.
+//  - Création de projet (site / application) : payée ET session lancée par le formateur.
+function paidOk(u) { return isAdmin(u) || !!(u && u.paid === true); }
+// Porte d'accès. kind = "code" (programmation) ou "project" (création de site/app + premium).
+// Renvoie null si OK, sinon { code, error, accessStatus, locked }.
+async function accessGate(user, kind) {
+  if (!user) return { code: 401, error: "Connectez-vous pour accéder à votre formation." };
+  if (userStatus(user) === "finished" && !isAdmin(user)) return { code: 403, accessStatus: "finished", error: "Votre formation est terminée : vous pouvez consulter vos projets, mais plus les modifier. Contactez votre formateur." };
+  if (!paidOk(user)) return { code: 403, accessStatus: "unpaid", locked: "unpaid", error: "Votre place n'est pas encore validée. Réservez et réglez votre place ; dès que le formateur confirme votre paiement, l'accès s'ouvre." };
+  if (kind !== "code") {
+    if (!(await sessionLaunchedFor(user))) return { code: 403, accessStatus: userStatus(user), locked: "notlaunched", error: "La création de votre projet s'ouvrira dès que le formateur aura lancé la session. En attendant, la programmation est déjà disponible." };
   }
   return null;
 }
+// Compat : ancienne porte (projet) conservée pour les endpoints non filière-spécifiques.
+async function buildGate(user) { return accessGate(user, "project"); }
 
 // -- Sessions (jeton aléatoire côté serveur) --
 async function createSession(userId) {
@@ -1122,8 +1130,8 @@ async function handleStart(req, res) {
   if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
   try {
     const user = await currentUser(req);
-    { const g = await buildGate(user); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
+    { const g = await accessGate(user, p.track === "code" ? "code" : "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     const id = crypto.randomUUID();
     // Filière « apprendre à programmer » (2e option de formation).
     if (p.track === "code") {
@@ -1164,7 +1172,7 @@ async function handleChat(req, res) {
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
-    { const g = await buildGate(user); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
+    { const g = await accessGate(user, conv.track === "code" ? "code" : "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     if (conv.track === "premium" && !canPremium(user)) return sendJson(res, 403, { error: "L'atelier Premium est réservé aux apprenants sélectionnés." });
     if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
     if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
@@ -1183,7 +1191,7 @@ async function handleNext(req, res) {
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
-    { const g = await buildGate(user); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
+    { const g = await accessGate(user, conv.track === "code" ? "code" : "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     if (conv.track === "premium") return sendJson(res, 200, { atEnd: true, reply: null, siteUpdated: false }); // pas d'étapes en Premium
     // Filière programmation : « Leçon suivante » avance dans le programme.
     if (conv.track === "code") {
@@ -1488,7 +1496,7 @@ async function handlePublish(req, res) {
     if (!conv) return sendJson(res, 404, { error: "Conversation introuvable." });
     const user = await currentUser(req);
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
-    { const g = await buildGate(user); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
+    { const g = await accessGate(user, conv.track === "code" ? "code" : "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     if (typeof p.pwa === "boolean") { conv.pwa = p.pwa; await saveConv(conv); }
     const out = await publishSite(conv, reqBase(req));
     out.pwa = !!conv.pwa;
@@ -1551,10 +1559,63 @@ async function handleMe(req, res) {
   const u = await currentUser(req);
   const pub = publicUser(u);
   if (pub && !pub.isAdmin) {
+    pub.paid = !!(u && u.paid === true);
     pub.sessionLaunched = await sessionLaunchedFor(u);
     if (u && u.cohort_id) { try { const c = await getCohort(u.cohort_id); pub.sessionStart = c ? (c.startDate || null) : null; pub.sessionLabel = c ? (c.label || null) : null; } catch (e) {} }
   }
   sendJson(res, 200, { user: pub });
+}
+
+// ---- Réinitialisation du mot de passe (lien envoyé par e-mail) ----
+const RESET_TTL_MS = 60 * 60 * 1000; // 1 heure
+async function createReset(userId) {
+  const token = crypto.randomBytes(24).toString("hex"); const created_at = new Date().toISOString();
+  if (USE_DB) { try { await sb(`/password_resets`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify([{ token, user_id: userId, created_at }]) }); } catch (e) { console.error("createReset:", e.message); } }
+  else { const a = loadAccounts(); a.resets = a.resets || {}; a.resets[token] = { userId, at: Date.now() }; saveAccounts(a); }
+  return token;
+}
+async function consumeReset(token) {
+  if (!token) return null;
+  if (USE_DB) {
+    try {
+      const r = await sb(`/password_resets?token=eq.${encodeURIComponent(token)}&select=user_id,created_at`);
+      const x = r && r[0]; if (!x) return null;
+      const ok = Date.now() - new Date(x.created_at).getTime() < RESET_TTL_MS;
+      await sb(`/password_resets?token=eq.${encodeURIComponent(token)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }).catch(() => {});
+      return ok ? x.user_id : null;
+    } catch (e) { return null; }
+  }
+  const a = loadAccounts(); a.resets = a.resets || {}; const x = a.resets[token]; if (!x) return null; delete a.resets[token]; saveAccounts(a);
+  return (Date.now() - (x.at || 0) < RESET_TTL_MS) ? x.userId : null;
+}
+// POST /api/auth/forgot { email } : envoie un lien de réinitialisation (réponse générique, ne révèle rien).
+async function handleForgot(req, res) {
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const email = normEmail(p.email);
+  const generic = { ok: true, message: "Si un compte existe avec cet e-mail, un lien de réinitialisation vient d'être envoyé. Vérifiez votre boîte (et les spams)." };
+  if (!validEmail(email)) return sendJson(res, 200, generic);
+  if (!rateOk("forgot:" + email, 5, 60 * 60 * 1000)) return sendJson(res, 200, generic);
+  const user = await findUserByEmail(email);
+  if (user) {
+    try {
+      const token = await createReset(user.id);
+      const link = `${reqBase(req)}/reset?token=${token}`;
+      const subject = "Réinitialisation de votre mot de passe — Bâtisseur";
+      const text = "Bonjour,\n\nVous avez demandé à réinitialiser votre mot de passe Bâtisseur.\nCliquez sur ce lien (valable 1 heure) pour choisir un nouveau mot de passe :\n\n" + link + "\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez simplement cet e-mail.\n\nL'équipe Bâtisseur";
+      const sent = await sendReminderEmail(email, subject, text);
+      if (!sent) console.warn("forgot: e-mail non configuré (BREVO_API_KEY / MAIL_FROM) — lien:", link);
+    } catch (e) { console.error("forgot:", e.message); }
+  }
+  sendJson(res, 200, generic);
+}
+// POST /api/auth/reset { token, password } : applique le nouveau mot de passe.
+async function handleReset(req, res) {
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  if (typeof p.password !== "string" || p.password.length < 6) return sendJson(res, 400, { error: "Le mot de passe doit contenir au moins 6 caractères." });
+  const userId = await consumeReset(String(p.token || ""));
+  if (!userId) return sendJson(res, 400, { error: "Lien invalide ou expiré. Refaites une demande de réinitialisation." });
+  try { await updateUser(userId, { pass: hashPassword(p.password) }); } catch (e) { return sendJson(res, 500, { error: "Impossible de mettre à jour le mot de passe." }); }
+  sendJson(res, 200, { ok: true });
 }
 
 // GET /api/projects : les projets du compte connecté (pour « Mon espace »)
@@ -2310,17 +2371,29 @@ async function handleReserve(req, res) {
     const name = String(p.name || "").trim().slice(0, 80);
     const email = normEmail(p.email);
     const whatsapp = String(p.whatsapp || "").replace(/[^0-9+ ]/g, "").trim().slice(0, 25);
+    const password = typeof p.password === "string" ? p.password : "";
     if (name.length < 2) return sendJson(res, 400, { error: "Indiquez votre nom." });
     if (!validEmail(email)) return sendJson(res, 400, { error: "Adresse e-mail invalide." });
     if (whatsapp.replace(/[^0-9]/g, "").length < 6) return sendJson(res, 400, { error: "Numéro WhatsApp invalide." });
     const ip = (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim()) || "?";
     if (!rateOk("resv:" + ip, 12, 60 * 60 * 1000)) return sendJson(res, 429, { error: "Trop de demandes. Réessayez plus tard." });
+    // Le compte de l'apprenant est créé DEPUIS la réservation (mot de passe choisi ici).
+    const already = await findUserByEmail(email);
+    let accountCreated = false;
+    if (!already) {
+      if (password.length < 6) return sendJson(res, 400, { error: "Choisissez un mot de passe (au moins 6 caractères) pour créer votre compte." });
+      try { await createUser({ email, name, password, status: "pending", cohort: cohort.label, cohortId: cohort.id }); accountCreated = true; }
+      catch (e) { console.error("réservation → compte :", e.message); }
+    } else {
+      // Compte déjà existant : on le rattache à cette session si besoin (sans toucher au mot de passe).
+      if (already.cohort_id !== cohort.id) { try { await updateUser(already.id, { cohort: cohort.label, cohort_id: cohort.id }); } catch (e) {} }
+    }
     const existing = (await listReservations(cohort.id)).find((r) => r.email === email && r.status !== "annule");
     let id;
     if (existing) { id = existing.id; if (existing.status === "file_attente") await updateReservation(id, { status: "en_attente" }); }
     else { id = crypto.randomUUID(); await addReservation({ id, cohortId: cohort.id, name, email, whatsapp, status: "en_attente", source: "en_ligne", createdAt: new Date().toISOString() }); }
     const price = cohortPrice(cohort, cfg);
-    sendJson(res, 200, { id, session: { label: cohort.label, dateFr: frDate(cohort.startDate) }, price, currency: cfg.currency, payLink: waveLinkWithAmount(cfg.payLink, price) });
+    sendJson(res, 200, { id, accountCreated, alreadyHadAccount: !!already, session: { label: cohort.label, dateFr: frDate(cohort.startDate) }, price, currency: cfg.currency, payLink: waveLinkWithAmount(cfg.payLink, price) });
   } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
 }
 
@@ -3257,6 +3330,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/auth/register") return handleRegister(req, res);
   if (req.method === "POST" && req.url === "/api/auth/login") return handleLogin(req, res);
   if (req.method === "POST" && req.url === "/api/auth/logout") return handleLogout(req, res);
+  if (req.method === "POST" && req.url === "/api/auth/forgot") return handleForgot(req, res);
+  if (req.method === "POST" && req.url === "/api/auth/reset") return handleReset(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/auth/me")) return handleMe(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/projects")) return handleProjects(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/admin/learners")) return handleAdminLearners(req, res);
@@ -3310,6 +3385,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/cron/maintenance")) return handleCronMaintenance(req, res);
   if (req.method === "GET" && (req.url === "/reserver" || req.url.startsWith("/reserver?"))) return serveStatic(Object.assign(req, { url: "/reserver.html" }), res);
   if (req.method === "GET" && (req.url === "/accueil" || req.url.startsWith("/accueil?"))) return serveStatic(Object.assign(req, { url: "/accueil.html" }), res);
+  if (req.method === "GET" && (req.url === "/reset" || req.url.startsWith("/reset?"))) return serveStatic(Object.assign(req, { url: "/reset.html" }), res);
   if (req.method === "GET" && (req.url === "/mon-programme" || req.url.startsWith("/mon-programme?"))) return handleLearnerChrono(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);

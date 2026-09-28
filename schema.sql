@@ -46,6 +46,13 @@ create table if not exists sessions (
   created_at timestamptz default now()
 );
 
+-- Jetons de réinitialisation de mot de passe (liens envoyés par e-mail, valables 1 h)
+create table if not exists password_resets (
+  token text primary key,
+  user_id text,
+  created_at timestamptz default now()
+);
+
 -- --- Certificats vérifiables ---
 create table if not exists certificates (
   num text primary key,

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nouveau mot de passe — Bâtisseur</title>
+<meta name="robots" content="noindex">
+<style>
+  :root{ --ink:#0E1B2E; --soft:#4a5a70; --line:#d8dfe9; --surface:#fff; --surface2:#f4f7fb; --accent:#147C8C; --accent-deep:#0C5866; --warm:#D98A2B; --bad:#c0392b; --good:#2E8B6F; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; }
+  body{ font-family:"Segoe UI",system-ui,Arial,sans-serif; color:var(--ink); background:#eef1f6; display:grid; place-items:center; min-height:100vh; padding:18px; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:16px; box-shadow:0 16px 50px rgba(14,27,46,.12); width:100%; max-width:400px; padding:26px; }
+  .brand{ display:flex; align-items:center; gap:10px; font-family:Georgia,serif; font-weight:700; color:var(--accent-deep); font-size:20px; }
+  .logo{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--accent),var(--warm)); color:#06121c; font-weight:800; display:flex; align-items:center; justify-content:center; }
+  h1{ font-size:1.25rem; margin:18px 0 4px; color:var(--ink); }
+  p.lead{ color:var(--soft); font-size:.9rem; margin:0 0 16px; }
+  label{ display:block; font-size:.8rem; color:var(--soft); font-weight:600; margin:12px 0 5px; }
+  .pw{ position:relative; }
+  input{ width:100%; padding:11px 42px 11px 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface2); color:var(--ink); font-family:inherit; font-size:.98rem; }
+  .eye{ position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:6px; color:var(--soft); line-height:0; }
+  .eye svg{ width:20px; height:20px; }
+  button.go{ width:100%; margin-top:18px; border:none; background:var(--accent); color:#fff; font-family:inherit; font-weight:600; font-size:.98rem; border-radius:10px; padding:12px; cursor:pointer; }
+  button.go:disabled{ opacity:.6; cursor:default; }
+  .msg{ margin-top:12px; font-size:.86rem; min-height:1.1em; }
+  .msg.err{ color:var(--bad); } .msg.ok{ color:var(--good); }
+  .back{ display:block; text-align:center; margin-top:16px; color:var(--accent-deep); font-size:.85rem; }
+  .done{ text-align:center; }
+  .done .big{ font-size:44px; }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="brand"><span class="logo">B</span> Bâtisseur</div>
+    <div id="form">
+      <h1>Nouveau mot de passe</h1>
+      <p class="lead">Choisissez un nouveau mot de passe pour votre compte.</p>
+      <label>Nouveau mot de passe</label>
+      <div class="pw">
+        <input id="pw1" type="password" placeholder="au moins 6 caractères" autocomplete="new-password">
+        <button class="eye" type="button" data-for="pw1" aria-label="Afficher le mot de passe"></button>
+      </div>
+      <label>Confirmez le mot de passe</label>
+      <div class="pw">
+        <input id="pw2" type="password" placeholder="retapez le mot de passe" autocomplete="new-password">
+        <button class="eye" type="button" data-for="pw2" aria-label="Afficher le mot de passe"></button>
+      </div>
+      <div class="msg err" id="msg"></div>
+      <button class="go" id="go" type="button">Enregistrer le nouveau mot de passe</button>
+      <a class="back" href="/">← Retour à la connexion</a>
+    </div>
+    <div id="done" class="done" style="display:none;">
+      <div class="big">✅</div>
+      <h1>Mot de passe modifié</h1>
+      <p class="lead">Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.</p>
+      <a class="back" href="/">Aller à la connexion →</a>
+    </div>
+  </div>
+
+<script>
+  const $ = (id)=>document.getElementById(id);
+  const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.2A9.7 9.7 0 0 1 12 6c7 0 10.5 6 10.5 6a17 17 0 0 1-3.3 3.9M6.3 6.4A17 17 0 0 0 1.5 12S5 18 12 18a9.6 9.6 0 0 0 3.6-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  document.querySelectorAll(".eye").forEach(function(b){
+    b.innerHTML = EYE_OFF;
+    b.addEventListener("click", function(){
+      const inp = $(b.getAttribute("data-for"));
+      const show = inp.type === "password";
+      inp.type = show ? "text" : "password";
+      b.innerHTML = show ? EYE_OPEN : EYE_OFF;
+    });
+  });
+  const token = new URLSearchParams(location.search).get("token") || "";
+  if(!token){ $("msg").textContent = "Lien invalide : jeton manquant. Refaites une demande de réinitialisation."; $("go").disabled = true; }
+  async function submit(){
+    const p1 = $("pw1").value, p2 = $("pw2").value, msg = $("msg");
+    msg.className = "msg err";
+    if(p1.length < 6){ msg.textContent = "Le mot de passe doit contenir au moins 6 caractères."; return; }
+    if(p1 !== p2){ msg.textContent = "Les deux mots de passe ne correspondent pas."; return; }
+    $("go").disabled = true; msg.textContent = "";
+    try{
+      const r = await fetch("/api/auth/reset",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:token,password:p1})});
+      const d = await r.json();
+      if(!r.ok){ msg.textContent = d.error || "Erreur."; $("go").disabled = false; return; }
+      $("form").style.display = "none"; $("done").style.display = "block";
+    }catch(e){ msg.textContent = "Serveur injoignable."; $("go").disabled = false; }
+  }
+  $("go").addEventListener("click", submit);
+  $("pw2").addEventListener("keydown", function(e){ if(e.key==="Enter") submit(); });
+</script>
+</body>
+</html>

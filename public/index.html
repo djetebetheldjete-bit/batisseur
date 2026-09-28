@@ -241,7 +241,9 @@
   .actcell.wk{ background:transparent; border:none; }
   .actcell.wk b{ font-size:14px; color:var(--ink); } .actcell.wk span{ font-size:11px; color:var(--ink-faint); }
   /* Espace formateur : un seul défilement, pas de scroll imbriqué */
-  #adminModal .modal{ max-height:88vh; display:flex; flex-direction:column; }
+  #adminModal .modal{ max-width:760px; max-height:88vh; display:flex; flex-direction:column; }
+  #adminModal .lrow{ flex-wrap:wrap; }
+  #adminModal .lrow .linfo{ flex:1 1 200px; }
   #adminModal #adminBody{ flex:1 1 auto; overflow-y:auto; min-height:0; margin-right:-6px; padding-right:6px; }
   #adminModal #adminBody .llist{ max-height:none; overflow:visible; }
   /* Réservations & paiement : idem, défilement unique */
@@ -545,19 +547,26 @@
   <div class="modal-bg" id="authModal">
     <div class="modal">
       <h3 id="authTitle">Se connecter</h3>
-      <p id="authIntro">Retrouvez vos projets sur tous vos appareils, et obtenez un certificat à votre nom.</p>
+      <p id="authIntro">Connectez-vous à votre espace Bâtisseur.</p>
       <div class="stack">
         <input id="authName" type="text" placeholder="Votre nom et prénom" maxlength="80" autocomplete="name" style="display:none;">
         <input id="authEmail" type="email" placeholder="Adresse e-mail" autocomplete="email">
-        <input id="authPass" type="password" placeholder="Mot de passe (6 caractères minimum)" autocomplete="current-password">
+        <div style="position:relative;">
+          <input id="authPass" type="password" placeholder="Mot de passe" autocomplete="current-password" style="padding-right:44px;">
+          <button id="authPassEye" type="button" aria-label="Afficher le mot de passe" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:6px;color:var(--ink-faint);line-height:0;"></button>
+        </div>
         <select id="authCohort" style="display:none;"></select>
       </div>
+      <div style="text-align:right;margin-top:3px;"><button class="linkbtn" id="forgotLink" type="button" style="font-size:.82rem;">Mot de passe oublié ?</button></div>
       <div class="autherr" id="authErr"></div>
       <div class="row">
-        <button id="authCancel" type="button">Sans compte</button>
+        <button id="authCancel" type="button">Fermer</button>
         <button id="authGo" class="primary" type="button">Se connecter</button>
       </div>
-      <div class="linkline" id="authSwitchLine">Pas encore de compte ? <button class="linkbtn" id="authToggle" type="button">Créer un compte</button></div>
+      <div id="reserveCta" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);text-align:center;">
+        <div style="font-size:.86rem;color:var(--ink-faint);margin-bottom:8px;">Première fois ici ? Il faut d'abord <b>réserver votre place</b>.</div>
+        <a href="/accueil" style="display:inline-block;text-decoration:none;background:var(--warm,#D98A2B);color:#3a2a06;font-weight:700;border-radius:9px;padding:10px 18px;font-size:.9rem;">Réserver ma place →</a>
+      </div>
     </div>
   </div>
 
@@ -1109,15 +1118,17 @@
 
     // ===== Comptes & espace membre (Palier 4) =====
     let me = null, authMode = "login";
+    let adminLearnerFilter = "all";   // filtre de la liste des apprenants (espace formateur)
     const loginOpenBtn = $("loginOpenBtn"), acctName = $("acctName"), acctAv = $("acctAv"), acctLabel = $("acctLabel");
     const espaceBtn = $("espaceBtn"), logoutBtn = $("logoutBtn"), adminBtn = $("adminBtn");
     const adminModal = $("adminModal"), adminBody = $("adminBody");
     const authModal = $("authModal"), authTitle = $("authTitle"), authIntro = $("authIntro");
 
-    // Construire un projet exige : compte actif (place confirmée) ET session lancée par le formateur.
+    // Accès : Payé → programmation ; Payé + session lancée → création de projet (site/app).
     function sessionOpen(){ return !me || me.isAdmin || me.sessionLaunched !== false; }
-    function canBuildUI(){ return !!me && (me.isAdmin || (me.status === "active" && sessionOpen())); }
-    function canViewUI(){ return !!me && (me.isAdmin || me.status === "active" || me.status === "finished"); }
+    function canBuildUI(){ return !!me && (me.isAdmin || (me.paid === true && me.status !== "finished")); }      // peut au moins programmer
+    function canProjectUI(){ return !!me && (me.isAdmin || (me.paid === true && me.status !== "finished" && sessionOpen())); } // peut créer un site/app
+    function canViewUI(){ return !!me && (me.isAdmin || me.paid === true || me.status === "finished"); }
     function refreshLock(){
       buildLocked = !canBuildUI();
       if(buildLocked){ input.disabled = true; sendBtn.disabled = true; nextBtn.style.display = "none"; pubBtn.style.display = "none"; pwaWrap.style.display = "none"; }
@@ -1133,16 +1144,7 @@
       } else if(el){ el.style.display = "none"; }
     }
     const authName = $("authName"), authEmail = $("authEmail"), authPass = $("authPass"), authErr = $("authErr"), authCohort = $("authCohort");
-    async function loadAuthCohorts(){
-      try{
-        const r = await fetch("/api/cohorts"); const d = await r.json(); const list = d.cohorts || [];
-        authCohort.innerHTML = "";
-        if(!list.length){ const o=document.createElement("option"); o.value=""; o.textContent="Aucune session ouverte pour le moment"; authCohort.appendChild(o); return; }
-        const head=document.createElement("option"); head.value=""; head.textContent="Choisissez votre session…"; authCohort.appendChild(head);
-        list.forEach(function(c){ const o=document.createElement("option"); o.value=c.id; o.disabled=c.full; o.textContent=c.label+" — "+(c.full?"complet":(c.remaining+" place"+(c.remaining>1?"s":"")+" restante"+(c.remaining>1?"s":""))); authCohort.appendChild(o); });
-      }catch(e){ authCohort.innerHTML=""; }
-    }
-    const authGo = $("authGo"), authToggle = $("authToggle"), authSwitchLine = $("authSwitchLine");
+    const authGo = $("authGo");
     const espaceModal = $("espaceModal"), projList = $("projList");
 
     function renderAccount(){
@@ -1178,9 +1180,9 @@
       dlBtn.style.display="none"; dataBtn.style.display="none"; payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none";
       buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
       let msg;
-      if(kind==="none") msg="Bienvenue sur Bâtisseur. Connectez-vous ou créez un compte pour commencer votre formation.";
-      else if(kind==="pending") msg="Votre inscription est bien reçue. Elle est en attente de validation par le formateur — vous aurez accès au parcours dès qu'elle sera validée.";
-      else if(kind==="notlaunched") msg="Votre place est confirmée ✓. La création de votre projet s'ouvrira dès que le formateur aura lancé " + (me && me.sessionLabel ? "« "+me.sessionLabel+" »" : "votre session") + ". En attendant, cliquez sur « Mon programme » en haut pour voir comment vous préparer.";
+      if(kind==="none") msg="Bienvenue sur Bâtisseur. Pour commencer, réservez votre place depuis la page d'accueil, puis connectez-vous.";
+      else if(kind==="unpaid" || kind==="pending") msg="Votre place n'est pas encore validée. Dès que le formateur confirme votre paiement, vous aurez accès à la partie programmation. La création de projet (site, application) s'ouvrira au lancement de la session.";
+      else if(kind==="notlaunched") msg="La création de projet (site/application) s'ouvrira dès que le formateur aura lancé " + (me && me.sessionLabel ? "« "+me.sessionLabel+" »" : "votre session") + ". En attendant, la programmation est déjà disponible : cliquez sur « Recommencer » puis choisissez « Apprendre à programmer ».";
       else if(kind==="finished") msg="Votre formation est terminée. Ouvrez « Mon espace » pour revoir et télécharger vos projets. Pour reprendre la construction, demandez à votre formateur de vous réautoriser.";
       else msg="Accès non disponible pour le moment.";
       bubble(msg,"ai");
@@ -1191,69 +1193,60 @@
         const saved = getSavedId();
         if(saved && await resume(saved)) return;
         clearSavedId(); openStart();
-      } else if(me && !me.isAdmin && me.status==="active" && me.sessionLaunched===false){
-        showBlocked("notlaunched");
-      } else if(canViewUI()){
+      } else if(me && !me.isAdmin && me.status==="finished"){
         const saved = getSavedId();
         if(saved && await resume(saved)) return;
         showBlocked("finished");
+      } else if(me && !me.isAdmin){
+        showBlocked("unpaid");
       } else {
-        showBlocked(me ? me.status : "none");
+        showBlocked("none");
       }
     }
     function notifyBlocked(){
-      if(!me){ openAuth("login"); return; }
-      if(me.status==="pending") bubble("Votre inscription est en attente de validation par le formateur.","ai");
-      else if(me.status==="active" && me.sessionLaunched===false) bubble("La création de projet n'est pas encore ouverte : le formateur doit d'abord lancer la session. Consultez « Mon programme » en attendant.","ai");
+      if(!me){ openAuth(); return; }
+      if(!me.paid && !me.isAdmin) bubble("Votre place n'est pas encore validée. Dès que le formateur confirme votre paiement, la programmation s'ouvre ; la création de projet s'ouvre au lancement de la session.","ai");
       else if(me.status==="finished") bubble("Formation terminée : demandez à votre formateur de vous réautoriser pour construire à nouveau.","ai");
+      else if(me.sessionLaunched===false) bubble("La création de projet n'est pas encore ouverte : le formateur doit d'abord lancer la session. En attendant, la programmation est disponible.","ai");
     }
     function handleAccess(data){
-      if(data && me){ if(data.accessStatus) me.status = data.accessStatus; if(data.locked==="notlaunched") me.sessionLaunched=false; renderAccount(); refreshLock(); }
+      if(data && me){
+        if(data.locked==="unpaid") me.paid=false;
+        else if(data.locked==="notlaunched") me.sessionLaunched=false;
+        else if(data.accessStatus && data.accessStatus!=="unpaid") me.status=data.accessStatus;
+        renderAccount(); refreshLock();
+      }
     }
 
-    function setAuthMode(mode){
-      authMode = mode;
-      authErr.textContent = "";
-      if(mode === "register"){
-        authTitle.textContent = "Créer un compte";
-        authIntro.textContent = "Un compte enregistre vos projets et met votre nom sur le certificat.";
-        authName.style.display = "block";
-        authCohort.style.display = "block"; loadAuthCohorts();
-        authGo.textContent = "Créer mon compte";
-        authPass.setAttribute("autocomplete","new-password");
-        authSwitchLine.innerHTML = 'Déjà un compte ? ';
-      } else {
-        authTitle.textContent = "Se connecter";
-        authIntro.textContent = "Retrouvez vos projets sur tous vos appareils.";
-        authName.style.display = "none";
-        authCohort.style.display = "none";
-        authGo.textContent = "Se connecter";
-        authPass.setAttribute("autocomplete","current-password");
-        authSwitchLine.innerHTML = 'Pas encore de compte ? ';
-      }
-      const btn = document.createElement("button");
-      btn.className = "linkbtn"; btn.type = "button";
-      btn.textContent = mode === "register" ? "Se connecter" : "Créer un compte";
-      btn.addEventListener("click", ()=> setAuthMode(mode === "register" ? "login" : "register"));
-      authSwitchLine.appendChild(btn);
-    }
-    function openAuth(mode){ setAuthMode(mode || "login"); authModal.classList.add("show"); setTimeout(()=>authEmail.focus(),50); }
-    function closeAuth(){ authModal.classList.remove("show"); authErr.textContent=""; authName.value=authEmail.value=authPass.value=""; }
+    // Connexion uniquement : la création de compte se fait via la réservation (page d'accueil).
+    function openAuth(){ authErr.textContent=""; authModal.classList.add("show"); setTimeout(()=>authEmail.focus(),50); }
+    function closeAuth(){ authModal.classList.remove("show"); authErr.textContent=""; authEmail.value=authPass.value=""; }
 
     async function submitAuth(){
-      const email = authEmail.value.trim(), pass = authPass.value, name = authName.value.trim();
+      const email = authEmail.value.trim(), pass = authPass.value;
       authErr.textContent = "";
       if(!email || !pass){ authErr.textContent = "Renseignez l'e-mail et le mot de passe."; return; }
       authGo.disabled = true; const prev = authGo.textContent; authGo.textContent = "…";
       try{
-        const url = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
-        const body = authMode === "register" ? { email, password: pass, name, cohortId: authCohort.value || undefined } : { email, password: pass };
-        const r = await fetch(url, { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body) });
+        const r = await fetch("/api/auth/login", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ email, password: pass }) });
         const d = await r.json();
-        if(!r.ok){ authErr.textContent = d.error || "Impossible pour le moment."; return; }
+        if(!r.ok){ authErr.textContent = d.error || "E-mail ou mot de passe incorrect."; return; }
         me = d.user; renderAccount(); closeAuth(); lastPing = Date.now(); activityPing(0); startFlow();
       }catch(e){ authErr.textContent = "Impossible de joindre le serveur."; }
       finally{ authGo.disabled = false; authGo.textContent = prev; }
+    }
+    // Mot de passe oublié : envoie un lien de réinitialisation à l'e-mail saisi.
+    async function forgotPassword(){
+      const email = authEmail.value.trim();
+      authErr.textContent = "";
+      if(!email){ authErr.textContent = "Saisissez d'abord votre e-mail, puis cliquez « Mot de passe oublié »."; authEmail.focus(); return; }
+      try{
+        const r = await fetch("/api/auth/forgot", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ email }) });
+        const d = await r.json();
+        authErr.style.color = "var(--good,#2E8B6F)";
+        authErr.textContent = (d && d.message) || "Si un compte existe, un lien vient d'être envoyé.";
+        setTimeout(()=>{ authErr.style.color=""; }, 8000);
+      }catch(e){ authErr.textContent = "Impossible de joindre le serveur."; }
     }
 
     async function doLogout(){
@@ -1316,11 +1309,21 @@
         renderAdmin(ld);
       }catch(e){ adminBody.innerHTML = '<div class="aempty">Impossible de joindre le serveur.</div>'; }
     }
+    // État clair d'un apprenant : combine « payé » et « statut » en une pastille lisible.
+    function learnerState(l){
+      if(l.status==="finished") return { key:"finished", label:"Terminé", fg:"#5b6a80", bg:"rgba(107,122,144,.14)", bd:"rgba(107,122,144,.40)" };
+      if(l.status==="active")   return { key:"active",   label:"Actif",   fg:"var(--accent-deep,#0C5866)", bg:"color-mix(in srgb,var(--accent) 12%,var(--surface))", bd:"color-mix(in srgb,var(--accent) 35%,var(--line))" };
+      if(l.paid)                return { key:"paidPending",   label:"Payé · en attente",     fg:"#1f7a5a", bg:"rgba(46,139,111,.14)", bd:"rgba(46,139,111,.50)" };
+      return                           { key:"unpaidPending", label:"Non payé · en attente", fg:"#c0392b", bg:"rgba(192,57,43,.12)", bd:"rgba(192,57,43,.45)" };
+    }
     function renderAdmin(d){
       const s = d.stats || { total:0, active:0, pending:0, finished:0 };
+      const L = d.learners || [];
+      const cPaidWait   = L.filter(x=> x.status==="pending" && x.paid).length;
+      const cUnpaidWait = L.filter(x=> x.status==="pending" && !x.paid).length;
       adminBody.innerHTML = "";
       const stats = document.createElement("div"); stats.className = "astats";
-      [["Apprenants",s.total],["Payés",s.paid||0],["Actifs",s.active],["En attente",s.pending],["Terminés",s.finished]].forEach(([lab,val])=>{
+      [["Apprenants",s.total],["Payés",s.paid||0],["Actifs",s.active],["En attente · payés",cPaidWait],["En attente · non payés",cUnpaidWait],["Terminés",s.finished]].forEach(([lab,val])=>{
         const c = document.createElement("div"); c.className = "astat"; c.innerHTML = '<b></b><span></span>';
         c.querySelector("b").textContent = val; c.querySelector("span").textContent = lab; stats.appendChild(c);
       });
@@ -1379,13 +1382,52 @@
       f.querySelector("#acCohortSel").innerHTML = cohortOptions("");
       f.querySelector("#acGo").addEventListener("click", createLearner);
 
+      // --- Filtres : voir d'un coup d'œil qui a payé / qui attend ---
+      const filters = document.createElement("div"); filters.className = "lfilters";
+      filters.style.cssText = "display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 4px;";
+      const chipDefs = [
+        ["all", "Tous", (d.learners||[]).length],
+        ["unpaidPending", "Non payés en attente", cUnpaidWait],
+        ["paidPending", "Payés en attente", cPaidWait],
+        ["active", "Actifs", s.active||0],
+        ["finished", "Terminés", s.finished||0]
+      ];
+      const chipEls = {};
+      chipDefs.forEach(function(cd){
+        const b = document.createElement("button"); b.type="button"; b.dataset.k=cd[0];
+        b.textContent = cd[1] + " (" + cd[2] + ")";
+        b.style.cssText = "border:1px solid var(--line);background:var(--surface2,#f4f7fb);color:var(--ink);border-radius:100px;padding:6px 13px;font:inherit;font-size:.82rem;cursor:pointer;white-space:nowrap;";
+        b.addEventListener("click", function(){ adminLearnerFilter = cd[0]; syncChips(); paintList(); });
+        chipEls[cd[0]] = b; filters.appendChild(b);
+      });
+      function syncChips(){
+        Object.keys(chipEls).forEach(function(k){
+          const on = (k === adminLearnerFilter);
+          const b = chipEls[k];
+          b.style.background = on ? "var(--accent,#147C8C)" : "var(--surface2,#f4f7fb)";
+          b.style.color = on ? "#fff" : "var(--ink)";
+          b.style.borderColor = on ? "var(--accent,#147C8C)" : "var(--line)";
+          b.style.fontWeight = on ? "700" : "400";
+        });
+      }
+      adminBody.appendChild(filters);
+
       const list = document.createElement("div"); list.className = "llist";
-      if(!d.learners || !d.learners.length){ list.innerHTML = '<div class="aempty">Aucun apprenant inscrit pour le moment.</div>'; }
-      else d.learners.forEach(function(l){
+      function paintList(){
+        list.innerHTML = "";
+        const rows = (d.learners||[]).filter(function(l){ return adminLearnerFilter==="all" || learnerState(l).key===adminLearnerFilter; });
+        if(!d.learners || !d.learners.length){ list.innerHTML = '<div class="aempty">Aucun apprenant inscrit pour le moment.</div>'; return; }
+        if(!rows.length){ list.innerHTML = '<div class="aempty">Aucun apprenant dans cette catégorie.</div>'; return; }
+        rows.forEach(function(l){
+        const st = learnerState(l);
         const row = document.createElement("div"); row.className = "lrow";
-        const info = document.createElement("div"); info.className = "linfo"; info.innerHTML = '<b></b><span></span>';
+        const info = document.createElement("div"); info.className = "linfo"; info.innerHTML = '<b></b><span class="lmail"></span>';
         info.querySelector("b").textContent = l.name;
-        info.querySelector("span").textContent = l.email + " · " + l.projects + " projet" + (l.projects>1?"s":"");
+        info.querySelector(".lmail").textContent = l.email + " · " + l.projects + " projet" + (l.projects>1?"s":"");
+        const badge = document.createElement("span");
+        badge.textContent = st.label;
+        badge.style.cssText = "display:inline-block;white-space:nowrap;font-size:.72rem;font-weight:700;line-height:1;padding:4px 9px;border-radius:100px;margin-bottom:5px;color:"+st.fg+";background:"+st.bg+";border:1px solid "+st.bd+";";
+        info.insertBefore(badge, info.firstChild);
         const csel = document.createElement("select"); csel.className = "lcohort"; csel.style.width = "150px"; csel.innerHTML = cohortOptions(l.cohortId || "");
         const ssel = document.createElement("select"); ssel.className = "lstatus";
         [["active","Actif"],["pending","En attente"],["finished","Terminé"]].forEach(function(o){ const op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; if(l.status===o[0]) op.selected = true; ssel.appendChild(op); });
@@ -1415,7 +1457,9 @@
         });
         row.appendChild(info); row.appendChild(paidBtn); row.appendChild(csel); row.appendChild(ssel); row.appendChild(pbtn); row.appendChild(dbtn);
         list.appendChild(row);
-      });
+        });
+      }
+      syncChips(); paintList();
       adminBody.appendChild(list);
     }
     async function generateCohorts(){
@@ -1565,7 +1609,7 @@
       try{ await fetch("/api/submissions/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,projectId:convId,status:status})}); }catch(e){}
     }
 
-    loginOpenBtn.addEventListener("click", ()=> openAuth("login"));
+    loginOpenBtn.addEventListener("click", ()=> openAuth());
     logoutBtn.addEventListener("click", doLogout);
     espaceBtn.addEventListener("click", openEspace);
     adminBtn.addEventListener("click", openAdmin);
@@ -1683,7 +1727,15 @@
     authGo.addEventListener("click", submitAuth);
     $("authCancel").addEventListener("click", closeAuth);
     authModal.addEventListener("click",(e)=>{ if(e.target===authModal) closeAuth(); });
-    [authEmail,authPass,authName].forEach(el=> el.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); submitAuth(); } }));
+    [authEmail,authPass].forEach(el=> el.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); submitAuth(); } }));
+    { const fl=$("forgotLink"); if(fl) fl.addEventListener("click", forgotPassword); }
+    // Œil : afficher / masquer le mot de passe de connexion
+    (function(){
+      var OFF='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.2A9.7 9.7 0 0 1 12 6c7 0 10.5 6 10.5 6a17 17 0 0 1-3.3 3.9M6.3 6.4A17 17 0 0 0 1.5 12S5 18 12 18a9.6 9.6 0 0 0 3.6-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+      var ON='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+      var eye=$("authPassEye"); if(!eye) return; eye.innerHTML=OFF;
+      eye.addEventListener("click", function(){ var s=authPass.type==="password"; authPass.type=s?"text":"password"; eye.innerHTML=s?ON:OFF; });
+    })();
     $("espaceClose").addEventListener("click", closeEspace);
     $("espaceNew").addEventListener("click", ()=>{ closeEspace(); if(canBuildUI()) openStart(); else notifyBlocked(); });
     espaceModal.addEventListener("click",(e)=>{ if(e.target===espaceModal) closeEspace(); });
