@@ -806,13 +806,14 @@ async function getUserById(id) {
   if (USE_DB) { try { const r = await sb(`/users?id=eq.${encodeURIComponent(id)}&select=*`); return (r && r[0]) || null; } catch (err) { return null; } }
   const a = loadAccounts(); return a.users[id] || null;
 }
-async function createUser({ email, name, password, status, cohort, cohortId }) {
+async function createUser({ email, name, password, status, cohort, cohortId, paid }) {
   const e = normEmail(email);
   const user = {
     id: crypto.randomUUID(), email: e,
     name: String(name || "").trim().slice(0, 80) || e.split("@")[0],
     pass: hashPassword(password),
     status: status || "pending",
+    paid: paid === true,
     cohort: (cohort != null ? String(cohort).trim().slice(0, 120) : "") || null,
     cohort_id: cohortId || null,
     created_at: new Date().toISOString()
@@ -1671,7 +1672,8 @@ async function handleAdminCreate(req, res) {
   if (await findUserByEmail(email)) return sendJson(res, 409, { error: "Un compte existe déjà avec cette adresse." });
   let cohort = p.cohort || null, cohortId = null;
   if (p.cohortId) { const c = await getCohort(p.cohortId); if (c) { cohortId = c.id; cohort = c.label; } }
-  const user = await createUser({ email, name: p.name, password: p.password, status: "active", cohort, cohortId });
+  // Inscription manuelle : compte « en attente » et non payé par défaut ; le formateur coche « Payé » ensuite.
+  const user = await createUser({ email, name: p.name, password: p.password, status: "pending", cohort, cohortId });
   sendJson(res, 200, { user: publicUser(user) });
 }
 
@@ -2803,13 +2805,16 @@ async function grantAccessForReservation(resv) {
   const cohort = resv.cohortId ? await getCohort(resv.cohortId) : null;
   const existing = await findUserByEmail(resv.email);
   if (existing) {
-    const fields = { status: "active" };
+    // Réservation validée = paiement confirmé : on coche « Payé » (accès à la programmation).
+    // On ne touche pas au statut « en attente / actif / terminé » choisi par le formateur.
+    const fields = { paid: true };
     if (cohort) { fields.cohort_id = cohort.id; fields.cohort = cohort.label; }
     try { await updateUser(existing.id, fields); } catch (e) {}
     return { created: false, email: resv.email };
   }
   const tempPass = genTempPassword();
-  try { await createUser({ email: resv.email, name: resv.name, password: tempPass, status: "active", cohort: cohort ? cohort.label : null, cohortId: cohort ? cohort.id : null }); }
+  // Nouveau compte créé lors de la validation : payé, et « en attente » tant que la session n'est pas lancée.
+  try { await createUser({ email: resv.email, name: resv.name, password: tempPass, status: "pending", paid: true, cohort: cohort ? cohort.label : null, cohortId: cohort ? cohort.id : null }); }
   catch (e) { return { created: false, email: resv.email, error: true }; }
   return { created: true, email: resv.email, password: tempPass };
 }
