@@ -438,8 +438,13 @@ function injectAppKit(html, conv, baseUrl) {
   const payCfg = { mode: (pc.mode === "api") ? "api" : "none", currency: pc.currency || "XOF", apiReady: pc.mode === "api" && !!WAVE_API_KEY };
   const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',base:' + JSON.stringify((baseUrl || "") + "/api/app") + ',pay:' + JSON.stringify(payCfg) + '};</script>';
   const block = "\n<!-- BAT-KIT:START -->\n" + cfg + "\n" + APP_KIT + "\n<!-- BAT-KIT:END -->\n";
-  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, block + "</body>");
-  return html + block;
+  // IMPORTANT : on définit window.Batisseur AU PLUS TÔT (dans <head>, sinon juste
+  // après <body>) pour qu'il existe AVANT les scripts de l'app. Sans ça, une app
+  // qui appelle Batisseur.list(...) dès le chargement échoue (« Impossible de
+  // charger… ») parce que l'outil n'est pas encore défini.
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, function(m){ return m + block; });
+  if (/<body[^>]*>/i.test(html)) return html.replace(/<body[^>]*>/i, function(m){ return m + block; });
+  return block + html;
 }
 
 // --- VOLETS DU PROJET (Paliers 5 & 6) : un projet combine un ou plusieurs volets ---
