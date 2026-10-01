@@ -334,6 +334,8 @@
             <label class="pwachk" id="pwaWrap" style="display:none;" title="Le site pourra être installé comme une application sur le téléphone (icône sur l'écran d'accueil, ouverture en plein écran)."><input type="checkbox" id="pwaChk"> Installable sur téléphone</label>
             <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">Voir en ligne</a>
             <button class="dlbtn" id="dataBtn" type="button" style="display:none;" title="Voir les commandes / rendez-vous reçus">Données</button>
+            <button class="dlbtn" id="upgradeBtn" type="button" style="display:none;border-color:var(--warm,#D98A2B);color:var(--warm,#D98A2B);" title="Continuer ce projet dans l'atelier avancé (vrai code, données partagées)">★ Passer en avancé</button>
+            <button class="dlbtn" id="exportBtn" type="button" style="display:none;" title="Télécharger ce projet pour le rendre indépendant (son propre serveur)">Exporter</button>
             <button class="dlbtn" id="payBtn" type="button" style="display:none;" title="Configurer le paiement en ligne (Wave)">Paiement</button>
             <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">Télécharger le site</a>
             <div class="seg" id="devToggle">
@@ -387,6 +389,25 @@
       <p>Les commandes, rendez-vous et messages envoyés depuis votre site publié apparaissent ici.</p>
       <div id="dataBody"><div class="aempty">Chargement…</div></div>
       <div class="row"><button id="dataClose" type="button">Fermer</button></div>
+    </div>
+  </div>
+
+  <!-- Exporter le projet (le rendre indépendant) -->
+  <div class="modal-bg" id="exportModal">
+    <div class="modal wide">
+      <h3>Exporter ton projet</h3>
+      <p>Emporte ton projet pour le rendre <b>indépendant</b> (son propre serveur, sa propre adresse). Télécharge les fichiers ci-dessous, puis suis le guide.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0;">
+        <a class="dlbtn" id="expApp" href="#" style="text-align:left;">1 — Télécharger mon application (index.html)</a>
+        <a class="dlbtn" href="/export-kit/server.js" download style="text-align:left;">2 — Le serveur (server.js)</a>
+        <a class="dlbtn" href="/export-kit/schema.sql" download style="text-align:left;">3 — La base de données (schema.sql)</a>
+        <a class="dlbtn" href="/export-kit/package.json" download style="text-align:left;">4 — package.json</a>
+        <a class="dlbtn" href="/export-kit/README.md" download style="text-align:left;border-color:var(--accent,#147C8C);color:var(--accent-deep,#0C5866);">★ Le guide complet (README.md)</a>
+      </div>
+      <div class="submeta" style="font-size:.86rem;color:var(--ink-faint,#6b7a90);">
+        En bref : mets <code>index.html</code> dans un dossier <code>public/</code>, place <code>server.js</code> à côté, puis lance <code>node server.js</code> sur ton ordinateur, ou déploie sur Render (GitHub + Render). Pour des données permanentes, crée une base Supabase avec <code>schema.sql</code>. Tout est expliqué pas à pas dans le README.
+      </div>
+      <div class="row"><button id="exportClose" type="button">Fermer</button></div>
     </div>
   </div>
 
@@ -606,6 +627,8 @@
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
     const pubBtn = $("pubBtn"), pubLink = $("pubLink"), pwaChk = $("pwaChk"), pwaWrap = $("pwaWrap");
     const dataBtn = $("dataBtn"), dataModal = $("dataModal"), dataBody = $("dataBody");
+    const upgradeBtn = $("upgradeBtn");
+    const exportBtn = $("exportBtn"), exportModal = $("exportModal");
     const payBtn = $("payBtn"), payModal = $("payModal"), payLink = $("payLink"), payErr = $("payErr"), payApiOpt = $("payApiOpt"), payApiNote = $("payApiNote");
     let waveApi = false, paymentCfg = { mode:"none", link:"", currency:"XOF" };
     const typeBadge = $("typeBadge"), typeModal = $("typeModal"), typeChoices = $("typeChoices");
@@ -791,6 +814,10 @@
       // L'atelier Projet (Premium) a toujours un tableau de bord : données partagées + membres.
       dataBtn.style.display = (hasData || track === "premium") ? "inline-block" : "none";
       payBtn.style.display = (hasData && !buildLocked) ? "inline-block" : "none";
+      // Apprenant autorisé Premium : peut poursuivre un projet débutant dans l'atelier avancé.
+      upgradeBtn.style.display = (me && me.premium && track !== "premium" && track !== "code") ? "inline-block" : "none";
+      // Export : disponible pour les projets de l'atelier avancé (les rendre indépendants).
+      exportBtn.style.display = (track === "premium") ? "inline-block" : "none";
     }
 
     function showPublished(url){
@@ -827,7 +854,7 @@
       track = "web"; setMode("web");
       currentModules = normMods(mods);
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
-      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none"; payBtn.style.display="none";
+      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; payBtn.style.display="none";
       pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       renderRail(); renderTypeBadge();
       const typing = bubble("…","ai typing"); setBusy(true);
@@ -848,7 +875,7 @@
       currentModules = ["presentation"]; step = 0; siteBuilt = false;
       thread.innerHTML=""; resumedNote.style.display="none";
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
+      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       typeBadge.textContent="Premium"; typeBadge.style.display="none";
       renderRail();
       const typing = bubble("…","ai typing"); setBusy(true);
@@ -1058,6 +1085,21 @@
     nextBtn.addEventListener("click", goNext);
     pubBtn.addEventListener("click", doPublish);
     dataBtn.addEventListener("click", openData);
+    upgradeBtn.addEventListener("click", async ()=>{
+      if(!convId) return;
+      if(!window.confirm("Passer ce projet dans l'atelier avancé ?\n\nTu pourras y ajouter du vrai code et des données partagées. Ton site actuel est conservé comme point de départ. (Si tu préfères garder ce projet tel quel et en démarrer un autre, clique Annuler.)")) return;
+      upgradeBtn.disabled = true;
+      try{
+        const r = await fetch("/api/project/upgrade",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
+        const d = await r.json();
+        if(!r.ok){ alert(d.error||"Impossible pour le moment."); upgradeBtn.disabled=false; return; }
+        await resume(convId);   // se rouvre en atelier avancé
+      }catch(e){ alert("Serveur injoignable."); upgradeBtn.disabled=false; }
+      finally{ upgradeBtn.disabled=false; }
+    });
+    exportBtn.addEventListener("click", ()=>{ if(!convId) return; $("expApp").setAttribute("href","/api/project/export?id="+encodeURIComponent(convId)); $("expApp").setAttribute("download","index.html"); exportModal.classList.add("show"); });
+    $("exportClose").addEventListener("click", ()=> exportModal.classList.remove("show"));
+    exportModal.addEventListener("click",(e)=>{ if(e.target===exportModal) exportModal.classList.remove("show"); });
     $("dataClose").addEventListener("click", closeData);
     dataModal.addEventListener("click",(e)=>{ if(e.target===dataModal) closeData(); });
 
@@ -1180,7 +1222,7 @@
       thread.innerHTML=""; resumedNote.style.display="none"; showAccessBanner();
       step=0; siteBuilt=false; renderRail();
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none";
+      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none";
       buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
       let msg;
       if(kind==="none") msg="Bienvenue sur Bâtisseur. Pour commencer, réservez votre place depuis la page d'accueil, puis connectez-vous.";

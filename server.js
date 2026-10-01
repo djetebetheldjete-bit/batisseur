@@ -3469,6 +3469,22 @@ async function handleProjectName(req, res) {
   sendJson(res, 200, { ok: true, projectName: conv.projectName });
 }
 
+// POST /api/project/upgrade { id } — le propriétaire (autorisé Premium) fait passer un projet
+// de « site débutant » à l'atelier avancé, en conservant le site existant comme point de départ.
+async function handleProjectUpgrade(req, res) {
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const conv = await loadConv(p.id); if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
+  if (!canPremium(cu)) return sendJson(res, 403, { error: "L'atelier avancé n'est pas activé pour votre compte. Demandez à votre formateur." });
+  if (conv.track === "code") return sendJson(res, 400, { error: "Un parcours de programmation ne se convertit pas en projet." });
+  if (conv.track === "premium") return sendJson(res, 200, { ok: true, already: true });
+  conv.track = "premium";
+  conv.updatedAt = new Date().toISOString();
+  await saveConv(conv);
+  sendJson(res, 200, { ok: true });
+}
+
 // GET /api/project/dashboard?id=<projet> — tableau de bord du propriétaire :
 // le nom du projet, ses membres, et ses données regroupées par collection.
 async function handleProjectDashboard(req, res) {
@@ -3482,6 +3498,21 @@ async function handleProjectDashboard(req, res) {
   const collections = {};
   subs.forEach((s) => { const c = s.collection || "message"; (collections[c] = collections[c] || []).push({ id: s.id, data: s.data, status: s.status, createdAt: s.createdAt }); });
   sendJson(res, 200, { projectName: conv.projectName || null, title: convTitle(conv), memberCount: members.length, members, collections });
+}
+
+// GET /api/project/export?id=<projet> — télécharge l'application (index.html) prête à être
+// déployée seule : la boîte à outils Batisseur y pointe vers « /api/app » (le serveur autonome
+// fourni dans le kit d'export), au lieu du serveur de Bâtisseur.
+async function handleProjectExport(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const id = u.searchParams.get("id");
+  const conv = await loadConv(id); if (!conv) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Projet introuvable."); }
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Non autorisé."); }
+  let html = stripKit(await readSite(id)) || "<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\"><title>Mon projet</title></head><body><h1>Mon projet</h1></body></html>";
+  try { html = injectAppKit(html, conv, ""); } catch (e) {}   // base relative "/api/app"
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-disposition": 'attachment; filename="index.html"' });
+  res.end(html);
 }
 
 const server = http.createServer((req, res) => {
@@ -3522,7 +3553,9 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/app/auth/logout") return handleAppLogout(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/app-users")) return handleAppUsersList(req, res);
   if (req.method === "POST" && req.url === "/api/project/name") return handleProjectName(req, res);
+  if (req.method === "POST" && req.url === "/api/project/upgrade") return handleProjectUpgrade(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/project/dashboard")) return handleProjectDashboard(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/project/export")) return handleProjectExport(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/upload")) return handleUploadDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/submissions")) return handleSubmissions(req, res);
   if (req.method === "POST" && req.url === "/api/submissions/delete") return handleSubmissionDelete(req, res);

@@ -1,0 +1,12 @@
+{
+  "name": "mon-projet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Application exportée depuis Bâtisseur (serveur autonome, zéro dépendance).",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
