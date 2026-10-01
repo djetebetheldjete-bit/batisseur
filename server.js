@@ -49,7 +49,9 @@ const API_KEYS = (function () {
 const API_KEY = API_KEYS[0]; // compat / test de présence
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 // Modèle allégé pour les étapes de DISCUSSION (par défaut = le même modèle ; mettre p.ex. un Haiku pour réduire le coût).
-const MODEL_LIGHT = process.env.ANTHROPIC_MODEL_LIGHT || MODEL;
+// Modèle « léger » : rapide et économique, pour les réponses courtes (questions, cours de codage).
+// Réglable via ANTHROPIC_MODEL_LIGHT. Si indisponible sur le compte, callClaude bascule sur MODEL.
+const MODEL_LIGHT = process.env.ANTHROPIC_MODEL_LIGHT || "claude-haiku-4-5";
 // Modèle PUISSANT pour l'espace « Premium learner » (applications avancées). Opus par défaut.
 const MODEL_PREMIUM = process.env.ANTHROPIC_MODEL_PREMIUM || "claude-opus-5-5";
 const PORT = process.env.PORT || 3000;
@@ -637,7 +639,8 @@ RÈGLES
 // reste visible dans la discussion, et rien n'est écrit comme « site ».
 async function produceCode(conv) {
   const system = codeSystem(conv);
-  const reply = await callClaude(system, conv.messages, MODEL);
+  // Cours de codage : modèle rapide, réponses courtes → le tuteur répond vite et reste fluide.
+  const reply = await callClaude(system, conv.messages, MODEL_LIGHT, 2048);
   const message = (reply && reply.trim()) || "Reprenons : où en êtes-vous ?";
   conv.messages.push({ role: "assistant", content: message });
   conv.updatedAt = new Date().toISOString();
@@ -1041,9 +1044,26 @@ let KEY_CURSOR = 0;
 const RETRYABLE = [408, 409, 429, 500, 502, 503, 504, 529];
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-async function callClaude(system, messages, model) {
+// Point d'entrée : choisit le modèle, et si le modèle demandé est inconnu/refusé (ex. modèle
+// rapide indisponible sur le compte), réessaie UNE fois avec le modèle principal. La plateforme
+// ne bloque donc jamais à cause d'un nom de modèle.
+async function callClaude(system, messages, model, maxTokens) {
+  const useModel = model || MODEL;
+  const mt = maxTokens || 8192;
+  try {
+    return await callClaudeOnce(system, messages, useModel, mt);
+  } catch (e) {
+    if (e && (e.status === 400 || e.status === 404) && useModel !== MODEL) {
+      console.error("Modèle « " + useModel + " » indisponible → bascule sur « " + MODEL + " ».");
+      return await callClaudeOnce(system, messages, MODEL, mt);
+    }
+    throw e;
+  }
+}
+
+async function callClaudeOnce(system, messages, model, maxTokens) {
   const clean = messages.map((m) => ({ role: m.role, content: m.content }));
-  const body = JSON.stringify({ model: model || MODEL, max_tokens: 8192, system, messages: clean });
+  const body = JSON.stringify({ model: model || MODEL, max_tokens: maxTokens || 8192, system, messages: clean });
   const n = API_KEYS.length || 1;
   const start = KEY_CURSOR; KEY_CURSOR = (KEY_CURSOR + 1) % n; // avance pour la prochaine requête
   let lastErr = null;
@@ -1109,8 +1129,9 @@ ${current}
     }
   }
 
-  // Construction = modèle principal ; discussion = modèle allégé (économie).
-  const reply = await callClaude(system, conv.messages, isBuild ? MODEL : MODEL_LIGHT);
+  // Construction d'un projet = modèle principal, réponse longue (le site entier) : on prend le temps.
+  // Discussion / questions simples = modèle rapide, réponse courte : plus vif.
+  const reply = await callClaude(system, conv.messages, isBuild ? MODEL : MODEL_LIGHT, isBuild ? 8192 : 2048);
 
   // Extraction blindée : le HTML ne fuite jamais dans le message.
   const ex = extractSite(reply);
@@ -3405,7 +3426,7 @@ server.listen(PORT, () => {
   console.log(`\n  Bâtisseur — parcours complet (v1.5) en marche.`);
   console.log(`  Ouvrez  http://localhost:${PORT}`);
   console.log(`  Étapes : ${STEPS.map((s) => s.label).join("  →  ")}`);
-  console.log(`  Modèle : ${MODEL}${MODEL_LIGHT !== MODEL ? "  (discussion : " + MODEL_LIGHT + ")" : ""}`);
+  console.log(`  Modèles : construction ${MODEL} · questions & cours ${MODEL_LIGHT} · premium ${MODEL_PREMIUM}`);
   console.log(`  Clés API : ${API_KEYS.length} (bascule automatique)`);
   console.log(`  Mémoire : ${USE_DB ? "base de données (Supabase)" : "fichiers locaux"}`);
   console.log(`  Publication : ${NETLIFY_TOKEN ? "activée" : "désactivée"}`);
