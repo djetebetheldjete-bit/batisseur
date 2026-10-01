@@ -787,9 +787,10 @@
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
       if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "Republier" : "Publier en ligne"; pwaWrap.style.display = "inline-flex"; }
-      const showData = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0 || currentModules.indexOf("membre")>=0);
-      dataBtn.style.display = showData ? "inline-block" : "none";
-      payBtn.style.display = (showData && !buildLocked) ? "inline-block" : "none";
+      const hasData = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0 || currentModules.indexOf("membre")>=0);
+      // L'atelier Projet (Premium) a toujours un tableau de bord : données partagées + membres.
+      dataBtn.style.display = (hasData || track === "premium") ? "inline-block" : "none";
+      payBtn.style.display = (hasData && !buildLocked) ? "inline-block" : "none";
     }
 
     function showPublished(url){
