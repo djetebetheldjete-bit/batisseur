@@ -284,6 +284,7 @@
       <span class="topbtn" id="workBadge" style="display:none;cursor:default;"></span>
       <button class="topbtn" id="adminBtn" type="button" style="display:none;">Espace formateur</button>
       <button class="topbtn" id="progBtn" type="button" style="display:none;" title="Voir le programme de ma session et comment travailler">Mon programme</button>
+      <button class="topbtn" id="examplesBtn" type="button" style="display:none;" title="Voir des exemples d'interfaces de sites et d'applications">Exemples</button>
       <button class="topbtn" id="espaceBtn" type="button" style="display:none;">Mon espace</button>
       <button class="topbtn" id="logoutBtn" type="button" style="display:none;">Se déconnecter</button>
       <button class="newbtn" id="newBtn" type="button">Recommencer</button>
@@ -539,6 +540,31 @@
         <button class="bcard" id="choosePremium" type="button" style="display:none;"><span class="ic" style="background:color-mix(in srgb,var(--warm,#D98A2B) 18%,transparent);color:var(--warm,#D98A2B);">★</span><span><b>Application avancée (Premium)</b><span>Réservé aux apprenants sélectionnés : l'IA écrit du vrai code pour bâtir une application sur mesure.</span></span></button>
       </div>
       <div class="row"><button id="startCancel" type="button">Annuler</button></div>
+    </div>
+  </div>
+
+  <!-- Galerie d'exemples d'interfaces (onglet « Exemples ») -->
+  <div class="modal-bg" id="examplesModal">
+    <div class="modal wide">
+      <h3>Des idées pour votre projet</h3>
+      <p>Voici des exemples d'interfaces que vous pouvez créer avec Bâtisseur. Ouvrez-en un en grand, et s'il vous plaît, lancez un projet du même genre en un clic.</p>
+      <div id="examplesGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;margin:8px 0 4px;"></div>
+      <div class="row"><button id="examplesClose" type="button">Fermer</button></div>
+    </div>
+  </div>
+
+  <!-- Aperçu plein écran d'un exemple + bouton « Créer comme ça » -->
+  <div class="modal-bg" id="exampleViewModal">
+    <div class="modal wide" style="max-width:1000px;width:96vw;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px;">
+        <h3 id="exampleViewTitle" style="margin:0;flex:1;min-width:140px;">Exemple</h3>
+        <button id="exampleCreate" class="primary" type="button">Créer un projet comme ça</button>
+      </div>
+      <p id="exampleViewDesc" style="margin:2px 0 10px;color:var(--ink-faint);"></p>
+      <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;">
+        <iframe id="exampleViewFrame" title="Aperçu de l'exemple" style="width:100%;height:68vh;border:0;display:block;"></iframe>
+      </div>
+      <div class="row"><button id="exampleViewBack" type="button">← Retour aux exemples</button></div>
     </div>
   </div>
 
@@ -919,6 +945,132 @@
       finally{ setBusy(false); }
     }
 
+    // ===== Galerie d'exemples d'interfaces (onglet « Exemples ») =====
+    // Des maquettes d'interfaces, construites en HTML/CSS autonome (aucune image
+    // externe), pour inspirer l'apprenant. Chaque exemple peut lancer un projet
+    // du même type en un clic (« Créer comme ça »).
+    const EX_BASE = `*{box-sizing:border-box}html,body{margin:0}body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1d2735;background:#f7f9fc;line-height:1.55}
+    .nav{display:flex;align-items:center;gap:14px;padding:14px 22px;background:#fff;border-bottom:1px solid #e9edf3}
+    .nav .logo{font-weight:800;color:var(--a);letter-spacing:.3px}.nav .sp{flex:1}.nav a{color:#4b5668;text-decoration:none;font-size:.9rem}
+    .btn{display:inline-block;background:var(--a);color:#fff;border:0;border-radius:10px;padding:11px 18px;font-weight:700;font-size:.92rem;cursor:pointer;text-decoration:none}
+    .btn.ghost{background:transparent;color:var(--a);border:1.5px solid var(--a)}
+    .wrap{max-width:960px;margin:0 auto;padding:26px 22px}
+    .hero{background:linear-gradient(135deg,var(--a) 0%,color-mix(in srgb,var(--a) 65%,#111) 100%);color:#fff}
+    .hero .t{padding:40px 22px;max-width:960px;margin:0 auto}.hero h1{font-size:2rem;margin:0 0 10px}.hero p{opacity:.92;margin:0 0 18px;font-size:1.02rem}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:18px}
+    .card{background:#fff;border:1px solid #e9edf3;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(20,30,50,.05)}
+    .card .ph{height:104px;background:linear-gradient(135deg,color-mix(in srgb,var(--a) 20%,#fff),color-mix(in srgb,var(--a) 42%,#fff));display:flex;align-items:center;justify-content:center;color:var(--a);font-size:1.7rem;font-weight:800}
+    .card .bd{padding:14px}.card h3{margin:0 0 4px;font-size:1rem}.card p{margin:0;color:#6b7686;font-size:.86rem}.card .pr{color:var(--a);font-weight:800;margin-top:8px}
+    .sec{margin:32px 0}.sec h2{font-size:1.3rem;margin:0 0 4px}.sec .lead{color:#6b7686;margin:0 0 18px}
+    .field{display:block;margin-bottom:12px}.field label{display:block;font-size:.82rem;font-weight:600;margin-bottom:5px;color:#44506280}.field input{width:100%;padding:11px 13px;border:1px solid #dde3ec;border-radius:10px;font:inherit;background:#fff}
+    .slot{display:inline-block;margin:4px;padding:9px 14px;border:1.5px solid var(--a);color:var(--a);border-radius:999px;font-weight:600;font-size:.88rem;background:#fff}.slot.off{opacity:.4;border-color:#cfd6e0;color:#9aa4b2}
+    .rowx{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .foot{background:#111826;color:#aeb9c9;padding:22px;text-align:center;font-size:.82rem;margin-top:30px}
+    .badge{display:inline-block;background:color-mix(in srgb,var(--a) 14%,#fff);color:var(--a);padding:4px 10px;border-radius:999px;font-size:.76rem;font-weight:700;margin-bottom:10px}
+    .member{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #eef1f6}.member .av{width:42px;height:42px;border-radius:50%;background:color-mix(in srgb,var(--a) 20%,#fff);color:var(--a);display:flex;align-items:center;justify-content:center;font-weight:800}
+    @media(max-width:620px){.cols{grid-template-columns:1fr!important}}`;
+    function exDoc(accent, body){ return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{--a:'+accent+'}'+EX_BASE+'</style></head><body>'+body+'</body></html>'; }
+
+    const EX_VITRINE = `<div class="nav"><span class="logo">Atelier du Bois</span><span class="sp"></span><a href="#">Services</a><a href="#">Réalisations</a><a href="#">Contact</a><a class="btn" href="#" style="padding:8px 14px">Devis</a></div>
+    <div class="hero"><div class="t"><span class="badge" style="background:rgba(255,255,255,.18);color:#fff">Artisan menuisier · Yamoussoukro</span><h1>Du mobilier sur mesure, fait main</h1><p>Tables, portes, agencements : des pièces uniques en bois massif, pensées avec vous et livrées chez vous.</p><a class="btn" href="#" style="background:#fff;color:var(--a)">Demander un devis</a></div></div>
+    <div class="wrap"><div class="sec"><h2>Nos services</h2><p class="lead">Ce que l'atelier réalise pour vous.</p><div class="grid">
+    <div class="card"><div class="ph">▧</div><div class="bd"><h3>Mobilier sur mesure</h3><p>Tables, étagères, lits adaptés à votre espace.</p></div></div>
+    <div class="card"><div class="ph">⌂</div><div class="bd"><h3>Portes & fenêtres</h3><p>Fabrication et pose, bois traité longue durée.</p></div></div>
+    <div class="card"><div class="ph">✦</div><div class="bd"><h3>Agencement</h3><p>Cuisines, boutiques, bureaux clés en main.</p></div></div>
+    </div></div><div class="sec"><h2>Contact</h2><p class="lead">Parlez-nous de votre projet.</p><div class="rowx"><a class="btn" href="#">Appeler l'atelier</a><a class="btn ghost" href="#">Écrire un message</a></div></div></div>
+    <div class="foot">Atelier du Bois — Yamoussoukro · Ouvert du lundi au samedi</div>`;
+
+    const EX_BOUTIQUE = `<div class="nav"><span class="logo">Perles d'Ivoire</span><span class="sp"></span><a href="#">Boutique</a><a href="#">Nouveautés</a><a class="btn" href="#" style="padding:8px 14px">Panier (2)</a></div>
+    <div class="wrap"><span class="badge">Bijoux faits main</span><h2 style="font-size:1.5rem;margin:4px 0 2px">Notre collection</h2><p class="lead">Des pièces uniques, créées à la main.</p><div class="grid">
+    <div class="card"><div class="ph">◍</div><div class="bd"><h3>Collier perles</h3><p>Perles naturelles, fil doré.</p><div class="pr">12 000 FCFA</div><button class="btn" style="margin-top:10px;width:100%">Ajouter au panier</button></div></div>
+    <div class="card"><div class="ph">∞</div><div class="bd"><h3>Bracelet tressé</h3><p>Coton ciré, perles de verre.</p><div class="pr">6 500 FCFA</div><button class="btn" style="margin-top:10px;width:100%">Ajouter au panier</button></div></div>
+    <div class="card"><div class="ph">❈</div><div class="bd"><h3>Boucles d'oreilles</h3><p>Laiton doré, légères.</p><div class="pr">8 000 FCFA</div><button class="btn" style="margin-top:10px;width:100%">Ajouter au panier</button></div></div>
+    <div class="card"><div class="ph">◆</div><div class="bd"><h3>Bague perle</h3><p>Réglable, perle d'eau douce.</p><div class="pr">9 500 FCFA</div><button class="btn" style="margin-top:10px;width:100%">Ajouter au panier</button></div></div>
+    </div></div><div class="foot">Perles d'Ivoire — Livraison à Abidjan · Paiement Wave accepté</div>`;
+
+    const EX_RDV = `<div class="nav"><span class="logo">Salon Éclat</span><span class="sp"></span><a href="#">Prestations</a><a href="#">Avis</a><a class="btn" href="#" style="padding:8px 14px">Réserver</a></div>
+    <div class="hero"><div class="t"><span class="badge" style="background:rgba(255,255,255,.18);color:#fff">Salon de beauté · Cocody</span><h1>Prenez rendez-vous en ligne</h1><p>Choisissez votre prestation et un créneau — confirmation immédiate.</p></div></div>
+    <div class="wrap"><div class="sec"><h2>Nos prestations</h2><div class="grid">
+    <div class="card"><div class="bd"><h3>Coupe & brushing</h3><p>45 min</p><div class="pr">7 000 FCFA</div></div></div>
+    <div class="card"><div class="bd"><h3>Soin visage</h3><p>60 min</p><div class="pr">12 000 FCFA</div></div></div>
+    <div class="card"><div class="bd"><h3>Manucure</h3><p>40 min</p><div class="pr">5 000 FCFA</div></div></div>
+    </div></div><div class="sec"><h2>Choisir un créneau</h2><p class="lead">Jeudi 12 septembre</p><div><span class="slot">09:00</span><span class="slot off">10:30</span><span class="slot">11:30</span><span class="slot">14:00</span><span class="slot off">15:30</span><span class="slot">16:30</span></div>
+    <div style="max-width:420px;margin-top:16px"><div class="field"><label>Votre nom</label><input placeholder="Nom et prénom"></div><div class="field"><label>Téléphone</label><input placeholder="07 00 00 00 00"></div><button class="btn" style="width:100%">Confirmer le rendez-vous</button></div></div></div>
+    <div class="foot">Salon Éclat — Cocody · Du mardi au dimanche</div>`;
+
+    const EX_ANNUAIRE = `<div class="nav"><span class="logo">Réseau Producteurs</span><span class="sp"></span><a href="#">Membres</a><a href="#">Annonces</a><a class="btn" href="#" style="padding:8px 14px">Rejoindre</a></div>
+    <div class="wrap"><span class="badge">Communauté · 128 membres</span><h2 style="font-size:1.5rem;margin:4px 0 2px">Annuaire des producteurs</h2><p class="lead">Trouvez un producteur près de chez vous et échangez.</p>
+    <div style="display:grid;grid-template-columns:1.1fr .9fr;gap:22px" class="cols"><div>
+    <div class="member"><div class="av">A</div><div><b>Awa K.</b><div style="color:#6b7686;font-size:.85rem">Maraîchère · San-Pédro</div></div></div>
+    <div class="member"><div class="av">K</div><div><b>Koffi T.</b><div style="color:#6b7686;font-size:.85rem">Cacao · Daloa</div></div></div>
+    <div class="member"><div class="av">M</div><div><b>Mariam D.</b><div style="color:#6b7686;font-size:.85rem">Volaille · Bouaké</div></div></div>
+    <div class="member"><div class="av">S</div><div><b>Serge Y.</b><div style="color:#6b7686;font-size:.85rem">Fruits · Abidjan</div></div></div>
+    </div><div><h3 style="margin:0 0 10px">Dernières annonces</h3>
+    <div class="card" style="margin-bottom:12px"><div class="bd"><b>Récolte de mangues</b><p style="margin-top:4px">200 kg disponibles cette semaine, livraison possible.</p></div></div>
+    <div class="card" style="margin-bottom:12px"><div class="bd"><b>Recherche transport</b><p style="margin-top:4px">Besoin d'un camion San-Pédro → Abidjan vendredi.</p></div></div>
+    <button class="btn" style="width:100%">Publier une annonce</button></div></div></div>
+    <div class="foot">Réseau Producteurs — Entraide entre producteurs de Côte d'Ivoire</div>`;
+
+    const EXAMPLES = [
+      { key:"vitrine",  title:"Site vitrine",          tag:"Présenter une activité, un métier, une association.", mods:["presentation"],          accent:"#B8893B", body:EX_VITRINE },
+      { key:"boutique", title:"Boutique en ligne",     tag:"Un catalogue de produits avec prix et panier.",       mods:["presentation","boutique"], accent:"#C13B6A", body:EX_BOUTIQUE },
+      { key:"rdv",      title:"Réservation de rendez-vous", tag:"Des prestations, des créneaux, une demande en ligne.", mods:["presentation","rdv"],  accent:"#7A5BD6", body:EX_RDV },
+      { key:"annuaire", title:"Annuaire / communauté",  tag:"Un annuaire partagé et des annonces entre membres.",   mods:["presentation","membre"],   accent:"#2E9E6B", body:EX_ANNUAIRE }
+    ];
+    let currentExample = null;
+    const examplesModal = $("examplesModal"), exampleViewModal = $("exampleViewModal");
+
+    function renderExamplesGrid(){
+      const grid = $("examplesGrid"); if(!grid) return; grid.innerHTML = "";
+      EXAMPLES.forEach((ex)=>{
+        const doc = exDoc(ex.accent, ex.body);
+        const card = document.createElement("div");
+        card.style.cssText = "border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface);cursor:pointer;display:flex;flex-direction:column;";
+        const thumb = document.createElement("div");
+        thumb.style.cssText = "height:150px;overflow:hidden;border-bottom:1px solid var(--line);background:#fff;";
+        const fr = document.createElement("iframe");
+        fr.setAttribute("scrolling","no"); fr.setAttribute("tabindex","-1"); fr.setAttribute("aria-hidden","true");
+        fr.style.cssText = "width:333%;height:500px;border:0;transform:scale(.3);transform-origin:top left;pointer-events:none;";
+        fr.srcdoc = doc; thumb.appendChild(fr);
+        const bd = document.createElement("div"); bd.style.cssText = "padding:13px 14px;display:flex;flex-direction:column;gap:6px;flex:1;";
+        const h = document.createElement("div"); h.style.cssText = "font-weight:800;display:flex;align-items:center;gap:8px;";
+        const dot = document.createElement("span"); dot.style.cssText = "width:10px;height:10px;border-radius:50%;background:"+ex.accent+";display:inline-block;flex:none;";
+        h.appendChild(dot); h.appendChild(document.createTextNode(ex.title));
+        const p = document.createElement("div"); p.style.cssText = "color:var(--ink-faint);font-size:.85rem;flex:1;"; p.textContent = ex.tag;
+        const b = document.createElement("button"); b.type="button"; b.className="primary"; b.textContent="Voir en grand"; b.style.cssText="margin-top:2px;";
+        b.addEventListener("click",(e)=>{ e.stopPropagation(); openExampleView(ex.key); });
+        bd.appendChild(h); bd.appendChild(p); bd.appendChild(b);
+        card.appendChild(thumb); card.appendChild(bd);
+        card.addEventListener("click",()=>openExampleView(ex.key));
+        grid.appendChild(card);
+      });
+    }
+    function openExamples(){ renderExamplesGrid(); examplesModal.classList.add("show"); }
+    function closeExamples(){ examplesModal.classList.remove("show"); }
+    function openExampleView(key){
+      const ex = EXAMPLES.find(e=>e.key===key); if(!ex) return; currentExample = ex;
+      $("exampleViewTitle").textContent = ex.title;
+      $("exampleViewDesc").textContent = ex.tag;
+      $("exampleViewFrame").srcdoc = exDoc(ex.accent, ex.body);
+      const cr = $("exampleCreate"); cr.textContent = canProjectUI() ? "Créer un projet comme ça" : "Voir comment créer";
+      exampleViewModal.classList.add("show");
+    }
+    function closeExampleView(){ exampleViewModal.classList.remove("show"); }
+    function createLikeExample(){
+      const ex = currentExample; if(!ex) return;
+      closeExampleView(); closeExamples();
+      try{ localStorage.setItem("bat_seen_examples","1"); }catch(e){}
+      if(!canProjectUI()){ notifyBlocked(); return; }
+      clearSavedId(); convId = null;
+      startNew(ex.mods);
+    }
+    // À la toute première connexion d'un apprenant, on ouvre la galerie une fois.
+    function maybeShowExamplesFirstTime(){
+      if(!me || me.isAdmin || !canViewUI()) return;
+      try{ if(localStorage.getItem("bat_seen_examples")) return; localStorage.setItem("bat_seen_examples","1"); }catch(e){ return; }
+      setTimeout(openExamples, 500);
+    }
+
     // Démarre un parcours « apprendre la programmation ».
     async function startCode(language){
       codeLang = LANG_UI[language] ? language : "python"; lesson = 0; lessons = [];
@@ -1229,6 +1381,7 @@
         adminBtn.style.display = me.isAdmin ? "inline-block" : "none";
         { const pb=document.getElementById("progBtn"); if(pb) pb.style.display = (!me.isAdmin) ? "inline-block" : "none"; }
         espaceBtn.style.display = canViewUI() ? "inline-block" : "none";
+        { const eb=document.getElementById("examplesBtn"); if(eb) eb.style.display = canViewUI() ? "inline-block" : "none"; }
         logoutBtn.style.display = "inline-block";
       } else {
         loginOpenBtn.style.display = "inline-block";
@@ -1236,6 +1389,7 @@
         adminBtn.style.display = "none";
         { const pb=document.getElementById("progBtn"); if(pb) pb.style.display = "none"; }
         espaceBtn.style.display = "none";
+        { const eb=document.getElementById("examplesBtn"); if(eb) eb.style.display = "none"; }
         logoutBtn.style.display = "none";
         var wb = document.getElementById("workBadge"); if(wb) wb.style.display = "none";
       }
@@ -1262,6 +1416,7 @@
     }
     async function startFlow(){
       refreshLock();
+      maybeShowExamplesFirstTime();
       if(canBuildUI()){
         const saved = getSavedId();
         if(saved && await resume(saved)) return;
@@ -1685,6 +1840,12 @@
     loginOpenBtn.addEventListener("click", ()=> openAuth());
     logoutBtn.addEventListener("click", doLogout);
     espaceBtn.addEventListener("click", openEspace);
+    { const eb=$("examplesBtn"); if(eb) eb.addEventListener("click", openExamples); }
+    $("examplesClose").addEventListener("click", closeExamples);
+    examplesModal.addEventListener("click",(e)=>{ if(e.target===examplesModal) closeExamples(); });
+    $("exampleViewBack").addEventListener("click", closeExampleView);
+    $("exampleCreate").addEventListener("click", createLikeExample);
+    exampleViewModal.addEventListener("click",(e)=>{ if(e.target===exampleViewModal) closeExampleView(); });
     adminBtn.addEventListener("click", openAdmin);
     { const pb=document.getElementById("progBtn"); if(pb) pb.addEventListener("click", function(){ window.open("/mon-programme","_blank","noopener"); }); }
     $("adminClose").addEventListener("click", closeAdmin);
