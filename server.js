@@ -557,6 +557,19 @@ Bâtisseur ne fait pas que des sites vitrines : c'est aussi un créateur d'appli
 - LE PAIEMENT EN LIGNE (Wave) : la personne peut activer le paiement depuis le bouton « Paiement » (en haut de l'aperçu) en collant SON lien de paiement Wave — un bouton « Payer avec Wave » apparaît alors sur sa boutique, et le bouton « Commander » propose le règlement. Les commandes payées sont signalées « Payé » dans le tableau de bord. La configuration se fait par ce bouton (jamais dans la discussion, jamais de clé à coller ici). Tu peux aussi, sur demande, ajouter un bouton de paiement dans une page : <a data-bat-pay data-amount="5000">Payer</a> (data-amount facultatif).
 Explique ces possibilités comme des idées concrètes (« on pourrait ajouter… »), sans forcer. Si une fonction demande un volet qui n'est pas activé (Boutique, Rendez-vous, Espace membre), invite gentiment la personne à cliquer « Recommencer » et à cocher le ou les volets voulus (on peut en combiner plusieurs).`;
 
+// Consigne commune : proposer des CHOIX cliquables quand une décision guidée aide l'apprenant.
+const CHOIX_HELP = `
+
+PROPOSER DES CHOIX CLIQUABLES
+Quand tu poses à la personne un choix important (par ex. une couleur, un style, une mise en page, une option de fonctionnement, une orientation), propose-lui 2 à 4 OPTIONS cliquables plutôt qu'une question ouverte. Écris EXACTEMENT un bloc comme ceci (il s'affichera sous forme de boutons) :
+\`\`\`choix
+Ta question courte ?
+- Première option
+- Deuxième option
+- Troisième option
+\`\`\`
+Une seule question par bloc ; des options courtes et parlantes. La personne clique, et sa réponse t'est renvoyée comme si elle l'avait écrite. N'en abuse pas : uniquement quand un choix guidé aide vraiment ; sinon, continue normalement.`;
+
 // ============================================================
 // PARCOURS « APPRENDRE LA PROGRAMMATION » (2e filière de formation)
 // ------------------------------------------------------------
@@ -681,7 +694,7 @@ ADAPTER À LA FILIÈRE DE L'APPRENANT
 RÈGLES
 - Montre le code dans des blocs délimités par trois accents graves avec le langage (un bloc \`\`\`${LANGUAGES[lang].run}\`). Le code s'exécute en ${runLabel} dans la console.
 - Exemples courts et exécutables. Évite les longues théories. Vérifie régulièrement que la personne suit.
-- Ton professionnel et chaleureux. Pas d'émojis.`;
+- Ton professionnel et chaleureux. Pas d'émojis.` + CHOIX_HELP;
 }
 
 // Génère la réponse du tuteur (parcours programmation). Aucune extraction HTML : le code
@@ -756,7 +769,7 @@ EXIGENCE DE QUALITÉ
 
 // Génère / met à jour l'application avancée (espace Premium). Modèle Opus, sans kit.
 async function producePremium(conv) {
-  let system = PREMIUM_INSTRUCTION;
+  let system = PREMIUM_INSTRUCTION + CHOIX_HELP;
   // On retire la boîte à outils injectée avant de montrer le code à l'IA (elle est gérée par la plateforme).
   const current = stripKit(await readSite(conv.id));
   if (current) {
@@ -1180,7 +1193,7 @@ async function produceCurrent(conv, baseUrl) {
 === CONTEXTE DU PROJET ===
 ${modulesContext(mods)}`;
   // Étapes de discussion : l'assistant propose de lui-même les fonctions « appli ».
-  if (!isBuild) system += PLATFORM_CAPABILITIES;
+  if (!isBuild) system += PLATFORM_CAPABILITIES + CHOIX_HELP;
   // Ton professionnel imposé sur toutes les étapes.
   system += "\n\n=== TON ===\nAdopte un ton professionnel, clair et sobre. N'emploie pas d'émojis dans tes messages.";
   if (isBuild) {

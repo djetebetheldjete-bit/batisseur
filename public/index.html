@@ -737,6 +737,8 @@
       const parts = String(text||"").split(/```/);
       for(let i=0;i<parts.length;i++){
         if(i%2===1){
+          const lang=((parts[i].match(/^([a-zA-Z0-9_+-]*)/)||[])[1]||"").toLowerCase();
+          if(lang==="choix"){ renderChoices(el, parts[i].replace(/^[a-zA-Z0-9_+-]*\r?\n/, "")); continue; }
           const pre=document.createElement("pre"); pre.className="cblk";
           let body=parts[i].replace(/^[a-zA-Z0-9_+-]*\r?\n/, ""); // enlève l'étiquette de langage
           const code=document.createElement("code"); code.textContent=body.replace(/\s+$/,"");
@@ -752,7 +754,31 @@
       }
     }
     function bubbleRich(text, cls){ const d=document.createElement("div"); d.className="msg "+cls+" rich"; renderRichInto(d, text); thread.appendChild(d); thread.scrollTop=thread.scrollHeight; return d; }
-    function aiBubble(text){ return track==="code" ? bubbleRich(text,"ai") : bubble(text,"ai"); }
+    // Options cliquables proposées par l'assistant (bloc ```choix … ```).
+    function renderChoices(el, body){
+      const lines=String(body||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      const opts=[]; let q="";
+      lines.forEach(l=>{ if(/^[-*•]\s+/.test(l)) opts.push(l.replace(/^[-*•]\s+/,"").trim()); else if(!q) q=l; else q+=" "+l; });
+      if(q){ const p=document.createElement("p"); p.textContent=q; p.style.fontWeight="600"; p.style.margin="2px 0 6px"; el.appendChild(p); }
+      if(!opts.length) return;
+      const wrap=document.createElement("div"); wrap.style.cssText="display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px;";
+      opts.forEach(o=>{
+        const b=document.createElement("button"); b.type="button"; b.textContent=o;
+        b.style.cssText="padding:8px 14px;border:1px solid var(--accent,#147C8C);background:var(--surface,#fff);color:var(--accent-deep,#0C5866);border-radius:999px;cursor:pointer;font:inherit;font-size:.9rem;line-height:1.2;";
+        b.addEventListener("click", ()=>{
+          if(wrap.dataset.done) return; wrap.dataset.done="1";
+          Array.prototype.forEach.call(wrap.children,c=>{ c.disabled=true; c.style.opacity="0.55"; c.style.cursor="default"; });
+          b.style.background="var(--accent,#147C8C)"; b.style.color="#fff"; b.style.opacity="1";
+          if(convId) send(o);
+        });
+        wrap.appendChild(b);
+      });
+      el.appendChild(wrap);
+    }
+    function aiBubble(text){
+      if(/```\s*choix/i.test(text||"")) return bubbleRich(text,"ai");   // affiche les options en boutons
+      return track==="code" ? bubbleRich(text,"ai") : bubble(text,"ai");
+    }
     function setBusy(b){ input.disabled = b || buildLocked; sendBtn.disabled = b || buildLocked; if(!b && !buildLocked) input.focus(); }
 
     function renderRail(){
@@ -844,9 +870,11 @@
     }
 
     // enlève les blocs de code (pour l'affichage des messages à la reprise)
+    function stripChoix(text){ return String(text||"").replace(/```\s*choix[\s\S]*?```/gi, "").trim(); }
     function stripBlocks(text){
       let t = text.replace(/```html:[A-Za-z0-9_.-]+[ \t]*\r?\n[\s\S]*?```/g, "")
-                  .replace(/```html\s*\r?\n?[\s\S]*?```/gi, "").trim();
+                  .replace(/```html\s*\r?\n?[\s\S]*?```/gi, "")
+                  .replace(/```\s*choix[\s\S]*?```/gi, "").trim();
       return t || "✓ (mise à jour du site)";
     }
 
@@ -885,7 +913,7 @@
         if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Accès refusé."),"err"); return; }
         convId=data.id; setSavedId(convId);
         typeBadge.textContent=data.projectName||projName||"Premium"; typeBadge.style.display="inline-flex"; renderRail();
-        bubble(data.reply||"","ai");
+        aiBubble(data.reply||"");
         if(data.siteUpdated) reloadPreview();
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); }
       finally{ setBusy(false); }
@@ -919,7 +947,7 @@
         if(data.track === "code"){
           track="code"; codeLang=data.language||"python"; lesson=data.lesson||0; lessons=data.lessons||[];
           setMode("code"); setRunLang();
-          (data.messages||[]).forEach(m => { if(m.role==="user") bubble(m.content,"user"); else bubbleRich(m.content,"ai"); });
+          (data.messages||[]).forEach(m => { if(m.role==="user") bubble(m.content,"user"); else bubbleRich(stripChoix(m.content),"ai"); });
           renderRail(); loadEditor(); resumedNote.style.display="block"; setBusy(false);
           if(lesson >= lessons.length-1) refreshQuizStatus();
           return true;
@@ -1063,7 +1091,7 @@
         const data = await r.json(); typing.remove();
         if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
         step = data.step; renderRail();
-        if(data.reply) bubble(data.reply,"ai");
+        if(data.reply) aiBubble(data.reply);
         if(data.siteUpdated) reloadPreview();
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); nextBtn.disabled=(step>=LAST); }
       finally{ setBusy(false); }
