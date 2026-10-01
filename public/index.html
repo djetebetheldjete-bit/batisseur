@@ -899,7 +899,7 @@
 
     // Démarre un projet « Premium » (application avancée, vrai code, modèle Opus).
     async function startPremium(idea, projName){
-      track = "premium"; setMode("web");
+      setMode("web"); track = "premium";   // setMode remet track à « web » : on le repositionne après
       currentModules = ["presentation"]; step = 0; siteBuilt = false;
       thread.innerHTML=""; resumedNote.style.display="none";
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
@@ -953,7 +953,7 @@
           return true;
         }
         if(data.track === "premium"){
-          track="premium"; setMode("web"); currentModules=["presentation"];
+          setMode("web"); track="premium"; currentModules=["presentation"];   // track après setMode
           (data.messages||[]).forEach(m => { if(m.role==="user") bubble(m.content,"user"); else bubble(stripBlocks(m.content),"ai"); });
           typeBadge.textContent=data.projectName||"Premium"; typeBadge.style.display="inline-flex";
           pwaChk.checked = !!data.pwa;
