@@ -54,6 +54,13 @@ const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const MODEL_LIGHT = process.env.ANTHROPIC_MODEL_LIGHT || "claude-haiku-4-5";
 // Modèle PUISSANT pour l'espace « Premium learner » (applications avancées). Opus par défaut.
 const MODEL_PREMIUM = process.env.ANTHROPIC_MODEL_PREMIUM || "claude-opus-5-5";
+// Plafonds de longueur (max_tokens) pour la génération de code. Une application
+// riche (catalogue + panier + comptes + paiement + tableau de bord) dépasse
+// facilement 8192 jetons : si on reste à 8192, le fichier est COUPÉ en plein
+// milieu et l'apprenant tombe sur une page blanche. On relève donc le plafond
+// pour les constructions, surtout l'atelier avancé (modèle le plus puissant).
+const PREMIUM_BUILD_TOKENS = parseInt(process.env.PREMIUM_BUILD_TOKENS, 10) || 16000;
+const BUILD_TOKENS = parseInt(process.env.BUILD_TOKENS, 10) || 12000;
 const PORT = process.env.PORT || 3000;
 // Jeton d'hébergement (Palier 2) : la plateforme publie les sites des apprenants à leur place.
 const NETLIFY_TOKEN = process.env.NETLIFY_TOKEN;
@@ -780,10 +787,17 @@ async function producePremium(conv) {
   if (current) {
     system += "\n\n=== ÉTAT ACTUEL DE L'APPLICATION (index.html) ===\nVoici le code EXACT actuel. Pars de ce code, applique la demande, renvoie le fichier ENTIER à jour, sans rien perdre.\n```html\n" + current + "\n```";
   }
-  const reply = await callClaude(system, conv.messages, MODEL_PREMIUM);
+  const reply = await callClaude(system, conv.messages, MODEL_PREMIUM, PREMIUM_BUILD_TOKENS);
   const ex = extractSite(reply);
   let message = ex.message; let siteUpdated = false;
-  if (ex.html && await writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
+  // Sécurité anti-page-blanche : on n'enregistre le site QUE s'il est complet
+  // (il se termine bien par </html>). Un fichier coupé net (plafond atteint) est
+  // refusé : on garde la version précédente et on explique comment continuer.
+  if (ex.html && htmlLooksComplete(ex.html)) {
+    if (await writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
+  } else if (ex.html) {
+    message = "Ton application est devenue trop grande pour être écrite d'un seul coup, donc je n'ai pas écrasé la version précédente. Dis-moi « continue » pour que je termine, ou construisons-la par petites étapes : d'abord le catalogue et le panier, puis l'espace membre, puis le paiement.";
+  }
   if (!message || !message.trim()) message = siteUpdated ? "✓ Application mise à jour — regardez l'aperçu." : reply;
   conv.messages.push({ role: "assistant", content: message });
   conv.updatedAt = new Date().toISOString();
@@ -1126,6 +1140,14 @@ function extractSite(text) {
 
   return { html, message };
 }
+
+// Un fichier HTML complet se termine par </html>. Si cette balise manque, c'est
+// que la réponse du modèle a été coupée (plafond de longueur atteint) : on refuse
+// alors d'enregistrer ce site pour ne pas remplacer une bonne version par une
+// page blanche.
+function htmlLooksComplete(html) {
+  return typeof html === "string" && /<\/html\s*>/i.test(html);
+}
 // -------------------------------------------------------------------------
 
 // Round-robin de départ entre les clés (réparti dans le temps).
@@ -1220,15 +1242,21 @@ ${current}
 
   // Construction d'un projet = modèle principal, réponse longue (le site entier) : on prend le temps.
   // Discussion / questions simples = modèle rapide, réponse courte : plus vif.
-  const reply = await callClaude(system, conv.messages, isBuild ? MODEL : MODEL_LIGHT, isBuild ? 8192 : 2048);
+  const reply = await callClaude(system, conv.messages, isBuild ? MODEL : MODEL_LIGHT, isBuild ? BUILD_TOKENS : 2048);
 
   // Extraction blindée : le HTML ne fuite jamais dans le message.
   const ex = extractSite(reply);
   let siteUpdated = false;
   let message = ex.message;
 
-  if (isBuild && ex.html) ex.html = injectKit(ex.html, mods, conv, baseUrl);
-  if (isBuild && ex.html && await writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
+  // Anti-page-blanche : on n'enregistre un site que s'il est complet (</html>).
+  // Un fichier coupé (plafond atteint) est refusé — on garde la version actuelle.
+  if (isBuild && ex.html && htmlLooksComplete(ex.html)) {
+    const withKit = injectKit(ex.html, mods, conv, baseUrl);
+    if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; }
+  } else if (isBuild && ex.html) {
+    message = "Votre site est devenu un peu trop grand pour être écrit d'un seul coup, donc je n'ai pas remplacé la version précédente. Dites « continue » pour que je termine, ou avançons par petites étapes.";
+  }
   if (!message || !message.trim()) message = siteUpdated ? "✓ J'ai mis à jour votre site — regardez l'aperçu." : (ex.html ? "✓ C'est fait." : reply);
 
   // Historique LÉGER : on ne stocke que le TEXTE (jamais le code). La base/fichier = source de vérité.
