@@ -3154,6 +3154,42 @@ async function handleSubmit(req, res) {
   } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
 }
 
+// POST /api/app/list  { app, collection, token?, limit? }  — public : LECTURE de données partagées.
+// Règle de sécurité :
+//   • collection dont le nom commence par "public_"  → lisible par tout le monde (annuaire, annonces…)
+//     (les champs privés préfixés par "_", comme l'e-mail du membre, sont retirés de la réponse) ;
+//   • toute autre collection                          → privée : il faut un jeton membre valide, et on
+//     ne renvoie QUE les enregistrements de ce membre (ex. « mes commandes »).
+async function handleAppList(req, res) {
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJsonCors(res, 400, { error: "Requête invalide." }); }
+    const app = p.app;
+    if (!validId(app)) return sendJsonCors(res, 400, { error: "Application inconnue." });
+    const collection = String(p.collection || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+    if (!collection) return sendJsonCors(res, 400, { error: "Collection manquante." });
+    const ip = (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim()) || (req.socket && req.socket.remoteAddress) || "?";
+    if (!rateOk("list:" + app + ":" + ip, 120, 10 * 60 * 1000)) return sendJsonCors(res, 429, { error: "Trop de requêtes. Réessayez dans quelques minutes." });
+    const conv = await loadConv(app);
+    if (!conv) return sendJsonCors(res, 404, { error: "Application introuvable." });
+    const isPublic = /^public_/.test(collection);
+    let email = null;
+    if (!isPublic) {
+      const m = p.token ? await appSessionUser(p.token, app) : null;
+      if (!m) return sendJsonCors(res, 403, { error: "Connexion requise pour accéder à ces données." });
+      email = m.email;
+    }
+    const limit = Math.min(Math.max(parseInt(p.limit, 10) || 50, 1), 200);
+    let rows = (await listSubmissions(app)).filter((s) => s.collection === collection);
+    if (!isPublic) rows = rows.filter((s) => s.data && s.data._membre === email);
+    const items = rows.slice(0, limit).map((s) => {
+      let d = s.data || {};
+      if (isPublic) { d = Object.assign({}, d); Object.keys(d).forEach((k) => { if (k.charAt(0) === "_") delete d[k]; }); }
+      return { id: s.id, data: d, createdAt: s.createdAt };
+    });
+    sendJsonCors(res, 200, { items });
+  } catch (e) { sendJsonCors(res, 500, { error: "Erreur serveur." }); }
+}
+
 // POST /api/app/upload  { app, name, type, size, data(base64) }  — public (sites publiés)
 async function handleUpload(req, res) {
   try {
@@ -3374,6 +3410,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/admin/visits")) return handleAdminVisits(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/cohorts")) return handleCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/app/submit") return handleSubmit(req, res);
+  if (req.method === "POST" && req.url === "/api/app/list") return handleAppList(req, res);
   if (req.method === "POST" && req.url === "/api/app/upload") return handleUpload(req, res);
   if (req.method === "POST" && req.url === "/api/app/pay") return handlePay(req, res);
   if (req.method === "POST" && req.url === "/api/wave/webhook") return handleWaveWebhook(req, res);
