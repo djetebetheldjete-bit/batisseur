@@ -842,7 +842,7 @@
     }
 
     // Démarre un projet « Premium » (application avancée, vrai code, modèle Opus).
-    async function startPremium(idea){
+    async function startPremium(idea, projName){
       track = "premium"; setMode("web");
       currentModules = ["presentation"]; step = 0; siteBuilt = false;
       thread.innerHTML=""; resumedNote.style.display="none";
@@ -852,10 +852,11 @@
       renderRail();
       const typing = bubble("…","ai typing"); setBusy(true);
       try{
-        const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:"premium", idea:idea})});
+        const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:"premium", idea:idea, name:projName||""})});
         const data = await r.json(); typing.remove();
         if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Accès refusé."),"err"); return; }
-        convId=data.id; setSavedId(convId); typeBadge.textContent="Premium"; typeBadge.style.display="inline-flex"; renderRail();
+        convId=data.id; setSavedId(convId);
+        typeBadge.textContent=data.projectName||projName||"Premium"; typeBadge.style.display="inline-flex"; renderRail();
         bubble(data.reply||"","ai");
         if(data.siteUpdated) reloadPreview();
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); }
@@ -898,7 +899,7 @@
         if(data.track === "premium"){
           track="premium"; setMode("web"); currentModules=["presentation"];
           (data.messages||[]).forEach(m => { if(m.role==="user") bubble(m.content,"user"); else bubble(stripBlocks(m.content),"ai"); });
-          typeBadge.textContent="Premium"; typeBadge.style.display="inline-flex";
+          typeBadge.textContent=data.projectName||"Premium"; typeBadge.style.display="inline-flex";
           pwaChk.checked = !!data.pwa;
           if(data.hasSite) reloadPreview();
           if(data.publishedUrl) showPublished(data.publishedUrl);
@@ -1045,7 +1046,7 @@
     newBtn.addEventListener("click", ()=>{ if(canBuildUI()) openStart(); else notifyBlocked(); });
     $("chooseWeb").addEventListener("click", ()=>{ closeStart(); openTypeChooser(); });
     $("chooseCode").addEventListener("click", ()=>{ closeStart(); openLang(); });
-    $("choosePremium").addEventListener("click", ()=>{ closeStart(); const idea = window.prompt("En une phrase, quelle application aimeriez-vous créer ?", ""); clearSavedId(); convId=null; startPremium(idea||""); });
+    $("choosePremium").addEventListener("click", ()=>{ closeStart(); const name = window.prompt("Quel est le nom de ton projet ?", ""); const idea = window.prompt("En une phrase, que doit faire ton application ?", ""); clearSavedId(); convId=null; startPremium(idea||"", name||""); });
     $("startCancel").addEventListener("click", closeStart);
     startModal.addEventListener("click",(e)=>{ if(e.target===startModal) closeStart(); });
     $("langBack").addEventListener("click", ()=>{ closeLang(); openStart(); });

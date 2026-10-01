@@ -1024,6 +1024,7 @@ function publicUser(u) { return u ? { id: u.id, email: u.email, name: u.name, st
 
 // -- Liste des projets d'un compte (résumés légers pour « Mon espace ») --
 function convTitle(conv) {
+  if (conv.projectName) return String(conv.projectName).slice(0, 60);
   if (conv.title) return String(conv.title).slice(0, 60);
   if (conv && conv.track === "code") return "Programmation — " + languageLabel(conv.language);
   if (conv && conv.track === "premium") return "Application avancée (Premium)";
@@ -1032,7 +1033,7 @@ function convTitle(conv) {
   return "Projet sans titre";
 }
 function convSummary(conv) {
-  const base = { id: conv.id, title: convTitle(conv), modules: convModules(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, updatedAt: conv.updatedAt || conv.createdAt || null };
+  const base = { id: conv.id, title: convTitle(conv), projectName: conv.projectName || null, modules: convModules(conv), step: conv.step || 0, hasSite: !!conv.hasSite, publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, updatedAt: conv.updatedAt || conv.createdAt || null };
   if (conv.track === "code") { base.track = "code"; base.language = normalizeLanguage(conv.language); base.lesson = conv.lesson || 0; base.lessonCount = lessonsOf(conv).length; }
   if (conv.track === "premium") base.track = "premium";
   return base;
@@ -1244,10 +1245,11 @@ async function handleStart(req, res) {
     // Espace « Premium learner » : atelier d'applications avancées (réservé, modèle Opus).
     if (p.track === "premium") {
       if (!canPremium(user)) return sendJson(res, 403, { error: "L'atelier Premium est réservé aux apprenants sélectionnés par le formateur." });
-      const kickoff = "Bonjour ! Je veux créer une application avancée. Voici mon idée : " + String(p.idea || "").slice(0, 500);
-      const conv = { id, track: "premium", userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
+      const projName = String(p.name || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
+      const kickoff = "Bonjour ! Je veux créer une application avancée" + (projName ? (" nommée « " + projName + " »") : "") + ". Voici mon idée : " + String(p.idea || "").slice(0, 500);
+      const conv = { id, track: "premium", projectName: projName || null, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
       const out = await produceCurrent(conv, reqBase(req));
-      return sendJson(res, 200, { id, track: "premium", ...out });
+      return sendJson(res, 200, { id, track: "premium", projectName: conv.projectName, ...out });
     }
     const mods = normalizeModules(p.modules, p.projectType);
     const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
@@ -1339,7 +1341,7 @@ async function handleGetConversation(req, res) {
   if (conv.userId && !canView(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
   const payload = { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) };
   if (conv.track === "code") { payload.track = "code"; payload.language = normalizeLanguage(conv.language); payload.lesson = conv.lesson || 0; payload.lessons = lessonTitles(conv); }
-  if (conv.track === "premium") payload.track = "premium";
+  if (conv.track === "premium") { payload.track = "premium"; payload.projectName = conv.projectName || null; }
   sendJson(res, 200, payload);
 }
 
@@ -3454,6 +3456,34 @@ async function handleAppUsersList(req, res) {
   sendJson(res, 200, { members });
 }
 
+// POST /api/project/name  { id, name } — le propriétaire nomme (ou renomme) son projet.
+async function handleProjectName(req, res) {
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const conv = await loadConv(p.id); if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
+  const name = String(p.name || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
+  conv.projectName = name || null;
+  conv.updatedAt = new Date().toISOString();
+  await saveConv(conv);
+  sendJson(res, 200, { ok: true, projectName: conv.projectName });
+}
+
+// GET /api/project/dashboard?id=<projet> — tableau de bord du propriétaire :
+// le nom du projet, ses membres, et ses données regroupées par collection.
+async function handleProjectDashboard(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const id = u.searchParams.get("id");
+  const conv = await loadConv(id); if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv) || (conv.userId && !canView(cu))) return sendJson(res, 403, { error: "Non autorisé." });
+  const members = (await listAppUsers(id)).map((m) => ({ name: m.name, email: m.email, createdAt: m.created_at || m.createdAt || null }));
+  const subs = await listSubmissions(id);
+  const collections = {};
+  subs.forEach((s) => { const c = s.collection || "message"; (collections[c] = collections[c] || []).push({ id: s.id, data: s.data, status: s.status, createdAt: s.createdAt }); });
+  sendJson(res, 200, { projectName: conv.projectName || null, title: convTitle(conv), memberCount: members.length, members, collections });
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS" && req.url.startsWith("/api/app/")) { res.writeHead(204, corsHeaders()); return res.end(); }
   if (req.method === "GET") { logVisit(req); }   // journal des visites (pages seulement, non bloquant)
@@ -3491,6 +3521,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/app/auth/me") return handleAppMe(req, res);
   if (req.method === "POST" && req.url === "/api/app/auth/logout") return handleAppLogout(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/app-users")) return handleAppUsersList(req, res);
+  if (req.method === "POST" && req.url === "/api/project/name") return handleProjectName(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/project/dashboard")) return handleProjectDashboard(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/upload")) return handleUploadDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/submissions")) return handleSubmissions(req, res);
   if (req.method === "POST" && req.url === "/api/submissions/delete") return handleSubmissionDelete(req, res);
