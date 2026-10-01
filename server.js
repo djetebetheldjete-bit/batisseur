@@ -393,6 +393,55 @@ function injectKit(html, mods, conv, baseUrl) {
   return html + block;
 }
 
+// --- BOÎTE À OUTILS « Batisseur » (Atelier Projet) ---------------------------
+// Petit assistant injecté dans les applications de l'atelier. Il donne à l'app
+// un accès simple au « cerveau » central de Bâtisseur : données partagées,
+// comptes membres, fichiers, paiement. Le jeton membre est gardé dans le
+// navigateur (localStorage) pour que la personne reste connectée sur son appareil.
+const APP_KIT = `<script>
+(function(){
+  var B=(window.__BAT||{}), BASE=B.base||"", APP=B.app||"", TKEY="bat_token_"+APP;
+  function token(){ try{ return localStorage.getItem(TKEY)||""; }catch(e){ return ""; } }
+  function setToken(t){ try{ if(t){localStorage.setItem(TKEY,t);} else {localStorage.removeItem(TKEY);} }catch(e){} }
+  function post(path, body){
+    body=body||{}; body.app=APP;
+    return fetch(BASE+path, {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(body)})
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ if(!r.ok){ var e=new Error(j.error||("Erreur "+r.status)); e.status=r.status; throw e; } return j; }); });
+  }
+  var Batisseur={
+    // --- Données partagées ---
+    // save(collection, data) : enregistre un objet. Une collection dont le nom commence
+    //   par "public_" est visible par tout le monde ; sinon elle est privée au membre connecté.
+    save:function(collection, data){ return post("/submit",{collection:collection, data:data, token:token()}); },
+    // list(collection, {limit}) : renvoie un tableau d'éléments {id, data, createdAt}.
+    list:function(collection, opts){ opts=opts||{}; return post("/list",{collection:collection, token:token(), limit:opts.limit}).then(function(j){ return j.items||[]; }); },
+    // --- Comptes membres de l'app ---
+    signup:function(email, name, password){ return post("/auth/register",{email:email, name:name, password:password}).then(function(j){ setToken(j.token); return j.user; }); },
+    login:function(email, password){ return post("/auth/login",{email:email, password:password}).then(function(j){ setToken(j.token); return j.user; }); },
+    me:function(){ if(!token()) return Promise.resolve(null); return post("/auth/me",{token:token()}).then(function(j){ return j.user||null; }).catch(function(){ return null; }); },
+    logout:function(){ var t=token(); setToken(""); return post("/auth/logout",{token:t}).then(function(){return true;}).catch(function(){return true;}); },
+    isLoggedIn:function(){ return !!token(); },
+    // --- Fichiers ---
+    upload:function(file){ return new Promise(function(resolve,reject){ var fr=new FileReader(); fr.onload=function(){ var d=String(fr.result||""); var b64=d.indexOf(",")>=0?d.split(",")[1]:d; post("/upload",{name:file.name, type:file.type, size:file.size, data:b64}).then(resolve, reject); }; fr.onerror=function(){ reject(new Error("Lecture du fichier impossible.")); }; fr.readAsDataURL(file); }); },
+    // --- Paiement Wave (redirige vers la page de paiement) ---
+    pay:function(amount, opts){ opts=opts||{}; return post("/pay",{amount:amount, currency:opts.currency, reference:opts.reference}).then(function(j){ if(opts.redirect!==false && j.url){ window.location.href=j.url; } return j; }); }
+  };
+  window.Batisseur=Batisseur;
+})();
+</script>`;
+
+// Injecte la boîte à outils « Batisseur » dans une application de l'atelier.
+function injectAppKit(html, conv, baseUrl) {
+  if (!html) return html;
+  html = stripKit(html);
+  const pc = (conv && conv.payment) || {};
+  const payCfg = { mode: (pc.mode === "api") ? "api" : "none", currency: pc.currency || "XOF", apiReady: pc.mode === "api" && !!WAVE_API_KEY };
+  const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',base:' + JSON.stringify((baseUrl || "") + "/api/app") + ',pay:' + JSON.stringify(payCfg) + '};</script>';
+  const block = "\n<!-- BAT-KIT:START -->\n" + cfg + "\n" + APP_KIT + "\n<!-- BAT-KIT:END -->\n";
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, block + "</body>");
+  return html + block;
+}
+
 // --- VOLETS DU PROJET (Paliers 5 & 6) : un projet combine un ou plusieurs volets ---
 // Version « vitrine intelligente » : catalogue / prestations joliment présentés,
 // commande ou rendez-vous via contact ou formulaire simple. 100% HTML/CSS, sans
@@ -675,12 +724,32 @@ FORMAT DE SORTIE
 CE QUE TU PEUX FAIRE (large)
 - Écrire du HTML, du CSS ET du JavaScript réels dans le même index.html (tout en ligne).
 - Créer plusieurs écrans via une navigation en JavaScript (onglets, routeur simple) : l'app peut sembler multi-pages.
-- Gérer un état applicatif, des formulaires, des calculs, des filtres, des recherches, des graphiques, des rôles côté client.
-- Conserver les données dans le navigateur avec localStorage (persistance locale, par appareil).
+- Gérer un état applicatif, des formulaires, des calculs, des filtres, des recherches, des graphiques, des rôles.
 - Utiliser au besoin UNE bibliothèque depuis un CDN fiable (cdnjs) — seulement si c'est vraiment utile.
 
+DONNÉES PARTAGÉES, COMPTES, PAIEMENT — la boîte à outils « Batisseur »
+La plateforme fournit DÉJÀ, dans la page, un objet global « Batisseur ». Tu n'as RIEN à injecter, configurer, ni redéfinir : il est présent, utilise-le directement (n'écris jamais toi-même un objet Batisseur ni window.__BAT). Il relie l'app au cerveau central : les données sont PARTAGÉES entre tous les utilisateurs et conservées sur le serveur. N'utilise PAS localStorage pour les données métier ; passe par Batisseur. Toutes ses fonctions renvoient une promesse (utilise async/await ou .then, avec try/catch).
+
+- Batisseur.save(collection, data) : enregistre un objet.
+- Batisseur.list(collection, { limit }) : renvoie un tableau d'éléments { id, data, createdAt }.
+  RÈGLE IMPORTANTE de nommage des collections :
+    • nom commençant par "public_"  → visible par TOUT LE MONDE (annuaire, annonces, catalogue, avis…) ;
+    • tout autre nom                 → PRIVÉ : il faut être connecté, et chacun ne lit QUE ses propres enregistrements (ex. "commandes", "messages"). Choisis le nom en conséquence.
+- Batisseur.signup(email, nom, motdepasse) / Batisseur.login(email, motdepasse) : compte MEMBRE de l'app ; la session est retenue toute seule.
+- Batisseur.me() : le membre connecté ou null. Batisseur.logout(). Batisseur.isLoggedIn().
+- Batisseur.upload(fichier) : envoie un objet File issu d'un <input type="file">.
+- Batisseur.pay(montant, { reference }) : lance un paiement Wave (redirige vers la page de paiement). À n'utiliser que si le projet a activé le paiement.
+
+Exemple (dans le JS de l'app) :
+  try {
+    await Batisseur.signup(email, nom, mdp);
+    await Batisseur.save('public_annonces', { titre: t, prix: p });
+    const annonces = await Batisseur.list('public_annonces');
+    // afficher annonces…
+  } catch (e) { /* montrer un message clair à l'utilisateur */ }
+
 À DIRE HONNÊTEMENT À LA PERSONNE
-- L'application s'exécute dans le navigateur : les données en localStorage restent sur l'appareil, non partagées entre utilisateurs. Le temps réel multi-utilisateur et une base de données centrale exigent un serveur dédié — c'est une étape ultérieure, hors de cet atelier.
+- Les données sont partagées et gardées sur le serveur de Bâtisseur : c'est déjà une vraie petite plateforme. Pour en faire un service totalement INDÉPENDANT (son propre domaine, son propre serveur), c'est l'étape « export » — une prochaine marche, pas un blocage.
 
 EXIGENCE DE QUALITÉ
 - Code clair, commenté, qui FONCTIONNE. Vérifie mentalement chaque fonction. Interface soignée et professionnelle, sans émojis (sauf demande). Explique en une phrase ce que tu viens de construire ou de corriger.`;
@@ -688,7 +757,8 @@ EXIGENCE DE QUALITÉ
 // Génère / met à jour l'application avancée (espace Premium). Modèle Opus, sans kit.
 async function producePremium(conv) {
   let system = PREMIUM_INSTRUCTION;
-  const current = await readSite(conv.id);
+  // On retire la boîte à outils injectée avant de montrer le code à l'IA (elle est gérée par la plateforme).
+  const current = stripKit(await readSite(conv.id));
   if (current) {
     system += "\n\n=== ÉTAT ACTUEL DE L'APPLICATION (index.html) ===\nVoici le code EXACT actuel. Pars de ce code, applique la demande, renvoie le fichier ENTIER à jour, sans rien perdre.\n```html\n" + current + "\n```";
   }
@@ -1289,7 +1359,7 @@ async function servePreview(req, res) {
   // Rafraîchit le kit avec l'état ACTUEL du projet (paiement, volets) : ainsi une
   // configuration modifiée après la construction (ex. activation du paiement) est
   // reflétée immédiatement, sans reconstruire le site.
-  if (html && conv && conv.track !== "premium") { try { html = injectKit(html, convModules(conv), conv, reqBase(req)); } catch (e) {} }
+  if (html && conv) { try { html = (conv.track === "premium") ? injectAppKit(html, conv, reqBase(req)) : injectKit(html, convModules(conv), conv, reqBase(req)); } catch (e) {} }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   if (html) return res.end(html);
   // Filet : le site n'existe pas encore.
@@ -1459,7 +1529,7 @@ async function publishSite(conv, baseUrl) {
   if (!html) { const e = new Error("Aucun site à publier : construisez d'abord votre site."); e.status = 400; throw e; }
   // Rafraîchit le kit avec l'état ACTUEL (paiement, volets) au moment de la publication,
   // avec l'origine de la PLATEFORME (là où vivent /api/app) — pas l'adresse du site publié.
-  if (baseUrl && conv.track !== "premium") { try { html = injectKit(html, convModules(conv), conv, baseUrl); } catch (e) {} }
+  if (baseUrl && conv) { try { html = (conv.track === "premium") ? injectAppKit(html, conv, baseUrl) : injectKit(html, convModules(conv), conv, baseUrl); } catch (e) {} }
 
   // Jeu de fichiers à déployer. Site simple = index.html seul. Application
   // installable (PWA) = index.html enrichi + manifeste + service worker + icônes.
