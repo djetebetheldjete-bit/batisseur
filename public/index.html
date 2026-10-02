@@ -66,7 +66,15 @@
   .soon{margin-top:14px;padding:10px;border:1px dashed var(--line);border-radius:9px;color:var(--ink-faint);font-size:.78rem;}
   .soon .h{font-family:var(--f-mono),monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
 
-  .chatpane{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);background:var(--surface);}
+  .chatpane{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);background:var(--surface);position:relative;}
+  /* Formes flottantes derrière la discussion (arrière-plan animé, léger — aucune image) */
+  .chatpane > :not(.chat-floaties){position:relative;z-index:1;}
+  .chat-floaties{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0;}
+  .chat-floaties .fl{position:absolute;will-change:transform;animation:floatDrift var(--d,30s) ease-in-out infinite;animation-delay:var(--dl,0s);}
+  .chat-floaties .fl.ring{background:transparent!important;border:10px solid currentColor;border-radius:50%;}
+  @keyframes floatDrift{ 0%{transform:translate(0,0) rotate(var(--r,0deg));} 50%{transform:translate(var(--mx,18px),var(--my,-22px)) rotate(calc(var(--r,0deg) + var(--rr,14deg)));} 100%{transform:translate(0,0) rotate(var(--r,0deg));} }
+  @media(prefers-reduced-motion:reduce){ .chat-floaties .fl{animation:none;} }
+  @media(max-width:860px){ .chat-floaties .fl.hide-sm{display:none;} }
   .ch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);flex:0 0 auto;}
   .ch-head .st{font-family:var(--f-display),sans-serif;font-weight:620;font-size:.92rem;}
   .ch-head .st small{display:block;font-family:var(--f-mono),monospace;font-weight:400;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin-top:2px;}
@@ -309,6 +317,14 @@
 
       <!-- CHAT -->
       <div class="chatpane pane show" data-pane="chat">
+        <div class="chat-floaties" aria-hidden="true">
+          <span class="fl" style="left:8%;top:14%;width:72px;height:72px;border-radius:16px;background:linear-gradient(135deg,#147C8C,#0C5866);opacity:.10;--d:32s;--mx:22px;--my:-26px;--r:-12deg;--rr:16deg"></span>
+          <span class="fl" style="right:10%;top:10%;width:58px;height:76px;border-radius:12px;background:linear-gradient(135deg,#2E8B6F,#1f6b54);opacity:.10;--d:36s;--dl:-6s;--mx:-18px;--my:26px;--r:8deg;--rr:-14deg"></span>
+          <span class="fl ring hide-sm" style="right:14%;bottom:16%;width:72px;height:72px;color:#D98A2B;opacity:.14;--d:28s;--dl:-3s;--mx:16px;--my:-20px"></span>
+          <span class="fl" style="left:12%;bottom:12%;width:50px;height:50px;border-radius:12px;background:#D98A2B;opacity:.09;--d:30s;--dl:-10s;--mx:22px;--my:20px;--r:16deg;--rr:20deg"></span>
+          <span class="fl ring" style="left:6%;top:50%;width:46px;height:46px;color:#147C8C;opacity:.12;--d:26s;--dl:-8s;--mx:18px;--my:22px"></span>
+          <span class="fl hide-sm" style="right:26%;bottom:8%;width:40px;height:40px;border-radius:11px;background:#2E8B6F;opacity:.10;--d:24s;--dl:-12s;--mx:14px;--my:-18px;--r:14deg;--rr:22deg"></span>
+        </div>
         <div class="ch-head">
           <div class="st" id="stepLabel">Comprendre le projet<small id="stepSub">Orientation</small></div>
           <div class="ch-actions">

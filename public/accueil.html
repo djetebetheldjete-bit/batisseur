@@ -53,9 +53,28 @@
   .steps li{ position:relative; padding:10px 12px 10px 40px; background:var(--surface); border:1px solid var(--line); border-radius:11px; color:var(--ink-soft); }
   .steps li:before{ counter-increment:s; content:counter(s); position:absolute; left:12px; top:11px; width:20px; height:20px; border-radius:50%; background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent-deep); font-size:.75rem; font-weight:700; display:grid; place-items:center; }
   footer{ padding:26px 0 46px; color:var(--ink-soft); font-size:.85rem; border-top:1px solid var(--line); margin-top:12px; }
+  /* ===== Formes flottantes (arrière-plan animé, léger — aucune image) ===== */
+  .wrap{ position:relative; z-index:1; }
+  .bg-floaties{ position:fixed; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
+  .bg-floaties .fl{ position:absolute; will-change:transform; animation:floatDrift var(--d,30s) ease-in-out infinite; animation-delay:var(--dl,0s); }
+  .bg-floaties .fl.sq,.bg-floaties .fl.card{ box-shadow:0 10px 30px rgba(20,40,60,.06); }
+  .bg-floaties .fl.ring{ background:transparent!important; border:12px solid currentColor; border-radius:50%; }
+  @keyframes floatDrift{ 0%{ transform:translate(0,0) rotate(var(--r,0deg)); } 50%{ transform:translate(var(--mx,20px),var(--my,-26px)) rotate(calc(var(--r,0deg) + var(--rr,16deg))); } 100%{ transform:translate(0,0) rotate(var(--r,0deg)); } }
+  @media(prefers-reduced-motion:reduce){ .bg-floaties .fl{ animation:none; } }
+  @media(max-width:680px){ .bg-floaties .fl.hide-sm{ display:none; } }
 </style>
 </head>
 <body>
+  <div class="bg-floaties" aria-hidden="true">
+    <span class="fl sq"   style="left:6%;top:16%;width:88px;height:88px;border-radius:16px;background:linear-gradient(135deg,#147C8C,#0C5866);opacity:.16;--d:30s;--mx:26px;--my:-30px;--r:-12deg;--rr:16deg"></span>
+    <span class="fl card" style="right:8%;top:12%;width:72px;height:94px;border-radius:12px;background:linear-gradient(135deg,#2E8B6F,#1f6b54);opacity:.15;--d:34s;--dl:-6s;--mx:-22px;--my:30px;--r:8deg;--rr:-14deg"></span>
+    <span class="fl ring hide-sm" style="right:13%;bottom:18%;width:92px;height:92px;color:#D98A2B;opacity:.22;--d:26s;--dl:-3s;--mx:18px;--my:-24px"></span>
+    <span class="fl sq hide-sm" style="left:11%;bottom:14%;width:66px;height:66px;border-radius:14px;background:#D98A2B;opacity:.14;--d:32s;--dl:-10s;--mx:28px;--my:24px;--r:18deg;--rr:20deg"></span>
+    <span class="fl" style="left:43%;top:7%;width:124px;height:42px;border-radius:999px;background:linear-gradient(135deg,#147C8C,#2E8B6F);opacity:.12;--d:38s;--dl:-14s;--mx:-30px;--my:20px;--r:-6deg;--rr:10deg"></span>
+    <span class="fl ring" style="left:4%;top:54%;width:58px;height:58px;color:#147C8C;opacity:.18;--d:28s;--dl:-8s;--mx:22px;--my:26px"></span>
+    <span class="fl card hide-sm" style="right:6%;top:48%;width:60px;height:80px;border-radius:12px;background:linear-gradient(135deg,#D98A2B,#b86f1e);opacity:.14;--d:36s;--dl:-5s;--mx:-20px;--my:-26px;--r:-10deg;--rr:-16deg"></span>
+    <span class="fl sq" style="right:28%;bottom:7%;width:48px;height:48px;border-radius:12px;background:#2E8B6F;opacity:.14;--d:24s;--dl:-12s;--mx:16px;--my:-22px;--r:14deg;--rr:22deg"></span>
+  </div>
   <div class="wrap">
     <header class="nav">
       <div class="logo">B</div><strong>Bâtisseur</strong>
