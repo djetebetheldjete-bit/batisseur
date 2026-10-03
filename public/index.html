@@ -358,6 +358,7 @@
             <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">Voir en ligne</a>
             <button class="dlbtn" id="dataBtn" type="button" style="display:none;" title="Voir les commandes / rendez-vous reçus">Données</button>
             <button class="dlbtn" id="upgradeBtn" type="button" style="display:none;border-color:var(--warm,#D98A2B);color:var(--warm,#D98A2B);" title="Continuer ce projet dans l'atelier avancé (vrai code, données partagées)">★ Passer en avancé</button>
+            <button class="dlbtn" id="codeBtn" type="button" style="display:none;border-color:var(--accent);color:var(--accent-deep);" title="Comprendre les coulisses : voir le code et ce qui crée chaque partie de votre application">Les coulisses</button>
             <button class="dlbtn" id="exportBtn" type="button" style="display:none;" title="Télécharger ce projet pour le rendre indépendant (son propre serveur)">Exporter</button>
             <button class="dlbtn" id="payBtn" type="button" style="display:none;" title="Configurer le paiement en ligne (Wave)">Paiement</button>
             <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">Télécharger le site</a>
@@ -559,6 +560,7 @@
       <div class="bigchoice">
         <button class="bcard" id="chooseWeb" type="button"><span class="ic">W</span><span><b>Créer un site ou une application web</b><span>Un site vitrine, une boutique, des rendez-vous, un espace membre… construit en discutant, sans coder.</span></span></button>
         <button class="bcard" id="chooseCode" type="button"><span class="ic">&lt;/&gt;</span><span><b>Apprendre la programmation</b><span>Les bases pas à pas (algorithmique, Python), avec des exercices que vous écrivez et exécutez.</span></span></button>
+        <button class="bcard" id="chooseSelf" type="button"><span class="ic">{ }</span><span><b>Coder mon projet moi-même</b><span>Vous décrivez votre idée : vous recevez un plan pour la réaliser vous-même, et un éditeur pour écrire et exécuter votre code, accompagné d'un mentor.</span></span></button>
         <button class="bcard" id="choosePremium" type="button" style="display:none;"><span class="ic" style="background:color-mix(in srgb,var(--warm,#D98A2B) 18%,transparent);color:var(--warm,#D98A2B);">★</span><span><b>Application avancée (Premium)</b><span>Réservé aux apprenants sélectionnés : l'IA écrit du vrai code pour bâtir une application sur mesure.</span></span></button>
       </div>
       <div class="row"><button id="startCancel" type="button">Annuler</button></div>
@@ -587,6 +589,47 @@
         <iframe id="exampleViewFrame" title="Aperçu de l'exemple" style="width:100%;height:68vh;border:0;display:block;"></iframe>
       </div>
       <div class="row"><button id="exampleViewBack" type="button">← Retour aux exemples</button></div>
+    </div>
+  </div>
+
+  <!-- « Les coulisses » : comprendre le code de son application -->
+  <div class="modal-bg" id="codeModal">
+    <div class="modal wide" style="max-width:880px;width:96vw;">
+      <h3>Les coulisses de mon application</h3>
+      <p>Comprends ce qu'il y a derrière ton projet : ce qui crée la mise en page, les couleurs, les boutons… et vois le vrai code.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;" id="codeTabs">
+        <button class="dlbtn ctab active" data-ctab="explain" type="button">Mon projet expliqué</button>
+        <button class="dlbtn ctab" data-ctab="blocks" type="button">Les grands blocs</button>
+        <button class="dlbtn ctab" data-ctab="code" type="button">Le code</button>
+        <button class="dlbtn ctab" data-ctab="ask" type="button">Mes questions</button>
+      </div>
+
+      <div class="cpane" id="cpaneExplain">
+        <div id="explainIntro" style="color:var(--ink-faint);font-size:.9rem;margin-bottom:10px;">Une explication claire et personnalisée de TON projet. Elle est générée une seule fois puis enregistrée — tu peux la rouvrir autant que tu veux, gratuitement.</div>
+        <div id="explainBody" style="white-space:normal;"></div>
+        <div id="explainActions" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <button id="explainGen" class="primary" type="button">Générer l'explication</button>
+          <span id="explainStale" style="display:none;color:var(--warm,#D98A2B);font-size:.85rem;">Le projet a changé depuis — tu peux mettre l'explication à jour.</span>
+        </div>
+      </div>
+
+      <div class="cpane" id="cpaneBlocks" style="display:none;"></div>
+
+      <div class="cpane" id="cpaneCode" style="display:none;">
+        <div style="color:var(--ink-faint);font-size:.85rem;margin-bottom:8px;">Voici le code réel de ton application (lecture seule). C'est ce que l'ordinateur lit pour afficher chaque partie.</div>
+        <pre id="codeView" style="margin:0;max-height:52vh;overflow:auto;background:#0e1b2e;color:#e6edf6;border-radius:10px;padding:14px;font-size:.8rem;line-height:1.5;white-space:pre;"></pre>
+      </div>
+
+      <div class="cpane" id="cpaneAsk" style="display:none;">
+        <div style="color:var(--ink-faint);font-size:.88rem;margin-bottom:10px;">Une question sur ton code ? Pose-la : la réponse est <b>enregistrée</b> et reste visible ici. <span id="askLeft"></span></div>
+        <div id="faqList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;"></div>
+        <div id="askRow" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input id="askInput" type="text" maxlength="300" placeholder="Ex. : qu'est-ce qui crée la couleur verte ?" style="flex:1;min-width:200px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:var(--surface);">
+          <button id="askBtn" class="primary" type="button">Demander</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:14px;"><button id="codeClose" type="button">Fermer</button></div>
     </div>
   </div>
 
@@ -693,9 +736,13 @@
     const startModal = $("startModal"), langModal = $("langModal"), langChoices = $("langChoices");
     function openStart(){ $("choosePremium").style.display = (me && me.premium) ? "flex" : "none"; startModal.classList.add("show"); }
     function closeStart(){ startModal.classList.remove("show"); }
-    function openLang(){
+    let langPickMode = "lesson";   // "lesson" = apprendre ; "project" = coder son projet
+    function openLang(mode){
+      langPickMode = (mode === "project") ? "project" : "lesson";
+      // Pour coder son propre projet, on ne propose que les langages exécutables ici.
+      const keys = (langPickMode === "project") ? Object.keys(LANG_UI).filter(k => LANG_UI[k].run === "python" || LANG_UI[k].run === "js") : Object.keys(LANG_UI);
       langChoices.innerHTML = "";
-      Object.keys(LANG_UI).forEach((key)=>{
+      keys.forEach((key)=>{
         const t = LANG_UI[key];
         const b = document.createElement("button");
         b.className = "bcard"; b.type = "button"; b.dataset.key = key;
@@ -703,10 +750,36 @@
         b.querySelector(".ic").textContent = t.ic;
         b.querySelector("b").textContent = t.label;
         b.querySelector("span > span").textContent = t.blurb;
-        b.addEventListener("click", ()=>{ closeLang(); clearSavedId(); convId=null; startCode(key); });
+        b.addEventListener("click", ()=>{
+          closeLang(); clearSavedId(); convId=null;
+          if(langPickMode === "project"){
+            const name = window.prompt("Quel est le nom de ton projet ?", "");
+            const idea = window.prompt("En une ou deux phrases, que doit faire ton application ?", "");
+            startCodeProject(name||"", idea||"", key);
+          } else { startCode(key); }
+        });
         langChoices.appendChild(b);
       });
       langModal.classList.add("show");
+    }
+
+    // Espace « Coder soi-même » : guide de réalisation + éditeur de code.
+    async function startCodeProject(name, idea, language){
+      codeLang = LANG_UI[language] ? language : "javascript"; lesson = 0; lessons = [];
+      codeProject = true; codeProjName = String(name||"").slice(0,60);
+      track = "code"; setMode("code");
+      thread.innerHTML=""; resumedNote.style.display="none"; typeBadge.style.display="none";
+      renderRail();
+      const typing = bubble("…","ai typing"); setBusy(true);
+      try{
+        const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:"codeproj", language:codeLang, name:name, idea:idea})});
+        const data = await r.json(); typing.remove();
+        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); return; }
+        convId=data.id; codeProject=true; codeProjName=data.projectName||codeProjName; lessons=[]; setSavedId(convId);
+        setRunLang(); renderRail(); loadEditor();
+        aiBubble(data.reply||"");
+      }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur. Est-il bien lancé ?","err"); }
+      finally{ setBusy(false); }
     }
     function closeLang(){ langModal.classList.remove("show"); }
 
@@ -753,6 +826,7 @@
 
     const STORAGE_KEY = "batisseur_parcours_id";
     let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null, currentModules = ["presentation"];
+    let codeProject = false, codeProjName = "";   // espace « coder soi-même » (guide + éditeur)
     // Filière de formation : "web" (sites/applis) ou "code" (apprendre à programmer).
     let track = "web", codeLang = "python", lesson = 0, lessons = [];
     const LANG_UI = {
@@ -840,6 +914,15 @@
         return;
       }
       nextBtn.style.display="";
+      if(track === "code" && codeProject){
+        const row=document.createElement("div"); row.className="mrow cur";
+        row.innerHTML='<span class="mk">{ }</span><span class="ml"><b></b><i>Je code moi-même</i></span>';
+        row.querySelector("b").textContent = codeProjName || "Mon projet";
+        railInner.appendChild(row);
+        stepLabel.childNodes[0].nodeValue = codeProjName || "Mon projet"; stepSub.textContent="Je code moi-même";
+        nextBtn.disabled=true; nextBtn.style.display="none"; examBtn.style.display="none"; certBtn.style.display="none";
+        return;
+      }
       if(track === "code"){
         const total = lessons.length || 1;
         lessons.forEach((title,i) => {
@@ -892,6 +975,8 @@
       upgradeBtn.style.display = (me && me.premium && track !== "premium" && track !== "code") ? "inline-block" : "none";
       // Export : disponible pour les projets de l'atelier avancé (les rendre indépendants).
       exportBtn.style.display = (track === "premium") ? "inline-block" : "none";
+      // « Les coulisses » : comprendre le code — pour tout projet web/atelier construit.
+      { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display = (track !== "code") ? "inline-block" : "none"; }
     }
 
     function showPublished(url){
@@ -927,10 +1012,11 @@
     }
 
     async function startNew(mods){
+      codeProject = false; codeProjName = "";
       track = "web"; setMode("web");
       currentModules = normMods(mods);
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
-      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; payBtn.style.display="none";
+      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none";
       pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       renderRail(); renderTypeBadge();
       const typing = bubble("…","ai typing"); setBusy(true);
@@ -947,11 +1033,12 @@
 
     // Démarre un projet « Premium » (application avancée, vrai code, modèle Opus).
     async function startPremium(idea, projName){
+      codeProject = false; codeProjName = "";
       setMode("web"); track = "premium";   // setMode remet track à « web » : on le repositionne après
       currentModules = ["presentation"]; step = 0; siteBuilt = false;
       thread.innerHTML=""; resumedNote.style.display="none";
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
+      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       typeBadge.textContent="Premium"; typeBadge.style.display="none";
       renderRail();
       const typing = bubble("…","ai typing"); setBusy(true);
@@ -1093,9 +1180,88 @@
       setTimeout(openExamples, 500);
     }
 
+    // ===== « Les coulisses » : comprendre le code de son application =====
+    const codeModal = $("codeModal");
+    const EXPLAIN_BLOCKS = [
+      { t:"Qu'est-ce qui place les éléments ? (la structure)", b:"La <b>structure</b> est écrite en HTML : chaque titre, bouton, image ou formulaire est une « balise ». Le CSS range ensuite ces éléments avec <code>flex</code> et <code>grid</code> (en colonnes, en grille…). C'est ce qui décide où chaque chose apparaît à l'écran." },
+      { t:"Qu'est-ce qui crée les couleurs et le style ?", b:"Les <b>couleurs</b>, les coins arrondis, les ombres et les tailles de texte viennent du CSS. Souvent les couleurs sont rangées dans des « variables » (ex. <code>--accent</code>) définies une seule fois, puis réutilisées partout : changer la variable change toute l'application d'un coup." },
+      { t:"Qu'est-ce qui rend les boutons et formulaires vivants ?", b:"Le <b>JavaScript</b> réagit aux clics et aux saisies : il lit ce que la personne tape, affiche un message, ajoute au panier, etc. Un bouton tout seul ne « fait » rien tant qu'un petit bout de JavaScript ne lui dit pas quoi faire." },
+      { t:"Qu'est-ce qui enregistre et affiche les données ?", b:"Quand ton app garde des informations (fiches, commandes, membres), elle utilise la <b>boîte à outils Batisseur</b> : <code>Batisseur.save(...)</code> pour enregistrer, <code>Batisseur.list(...)</code> pour afficher. Ces données sont partagées via le « cerveau » central de Bâtisseur (la base de données)." },
+      { t:"Qu'est-ce qui gère les comptes et le paiement ?", b:"Les comptes membres (<code>Batisseur.signup</code> / <code>Batisseur.login</code>) permettent à tes visiteurs de se connecter. Le paiement passe par <code>Batisseur.pay(...)</code> (Wave). Tout cela est fourni par la plateforme : ton app n'a qu'à l'appeler." },
+      { t:"Qu'est-ce qui crée les animations ?", b:"Les mouvements viennent du CSS avec <code>@keyframes</code> et <code>animation</code> : on décrit un départ, des étapes et une fin, et le navigateur anime tout seul. Les <code>transform</code> (déplacer, tourner, agrandir) restent fluides et légères." }
+    ];
+    function renderBlocks(){
+      const el=$("cpaneBlocks"); if(!el) return; el.innerHTML="";
+      const intro=document.createElement("div"); intro.style.cssText="color:var(--ink-faint);font-size:.88rem;margin-bottom:10px;"; intro.textContent="Les grandes idées derrière toute application web. Clique pour déplier — c'est gratuit et toujours disponible.";
+      el.appendChild(intro);
+      EXPLAIN_BLOCKS.forEach(x=>{
+        const d=document.createElement("details"); d.style.cssText="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--surface);";
+        const s=document.createElement("summary"); s.style.cssText="cursor:pointer;font-weight:700;"; s.textContent=x.t;
+        const p=document.createElement("div"); p.style.cssText="margin-top:8px;font-size:.92rem;"; p.innerHTML=x.b;
+        d.appendChild(s); d.appendChild(p); el.appendChild(d);
+      });
+    }
+    function setCTab(name){
+      document.querySelectorAll("#codeTabs .ctab").forEach(b=>b.classList.toggle("active", b.getAttribute("data-ctab")===name));
+      [["explain","cpaneExplain"],["blocks","cpaneBlocks"],["code","cpaneCode"],["ask","cpaneAsk"]].forEach(([n,id])=>{ const p=$(id); if(p) p.style.display=(n===name)?"block":"none"; });
+    }
+    async function openCode(){
+      if(!convId) return;
+      renderBlocks(); setCTab("explain");
+      $("explainBody").textContent="Chargement…"; $("explainGen").style.display="none"; $("explainStale").style.display="none";
+      codeModal.classList.add("show");
+      try{
+        const r=await fetch("/api/project/explain?id="+encodeURIComponent(convId)); const d=await r.json();
+        if(!r.ok){ $("explainBody").textContent=d.error||"Impossible de charger."; }
+        else {
+          if(d.explanation){ $("explainBody").innerHTML=""; renderRichInto($("explainBody"), d.explanation); if(d.stale){ $("explainStale").style.display="inline"; $("explainGen").textContent="Mettre à jour l'explication"; $("explainGen").style.display="inline-block"; } }
+          else { $("explainBody").textContent=""; $("explainGen").textContent="Générer l'explication"; $("explainGen").style.display="inline-block"; }
+          renderFaq(d.faq||[], d.questionsLeft);
+        }
+      }catch(e){ $("explainBody").textContent="Impossible de joindre le serveur."; }
+      try{ const r2=await fetch("/api/project/code?id="+encodeURIComponent(convId)); const d2=await r2.json(); $("codeView").textContent=(d2&&d2.code)?d2.code:"(Aucun code pour l'instant — construis d'abord ton projet.)"; }catch(e){ $("codeView").textContent="(Code indisponible)"; }
+    }
+    function closeCode(){ codeModal.classList.remove("show"); }
+    async function generateExplain(){
+      if(!convId) return;
+      const btn=$("explainGen"); const prev=btn.textContent; btn.disabled=true; btn.textContent="Génération…"; $("explainBody").textContent="L'explication se prépare… (quelques secondes)";
+      try{
+        const r=await fetch("/api/project/explain/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
+        const d=await r.json();
+        if(!r.ok){ $("explainBody").textContent=d.error||"Impossible de générer."; }
+        else { $("explainBody").innerHTML=""; renderRichInto($("explainBody"), d.explanation||""); $("explainStale").style.display="none"; btn.style.display="none"; }
+      }catch(e){ $("explainBody").textContent="Impossible de joindre le serveur."; }
+      finally{ btn.disabled=false; btn.textContent=prev; }
+    }
+    function renderFaq(faq, left){
+      const list=$("faqList"); if(!list) return; list.innerHTML="";
+      (faq||[]).forEach(item=>{
+        const w=document.createElement("div"); w.style.cssText="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface);";
+        const q=document.createElement("div"); q.style.cssText="font-weight:700;margin-bottom:5px;"; q.textContent="Q : "+item.q;
+        const a=document.createElement("div"); a.style.cssText="font-size:.92rem;"; renderRichInto(a, item.a||"");
+        w.appendChild(q); w.appendChild(a); list.appendChild(w);
+      });
+      const lft=(typeof left==="number")?left:null; const span=$("askLeft");
+      if(span && lft!==null){ span.textContent = lft>0 ? ("Questions restantes : "+lft) : "Nombre de questions atteint pour ce projet."; }
+      const row=$("askRow"); if(row) row.style.display=(lft!==null && lft<=0)?"none":"flex";
+    }
+    async function askQuestion(){
+      if(!convId) return;
+      const inp=$("askInput"); const q=(inp.value||"").trim(); if(!q) return;
+      const btn=$("askBtn"); btn.disabled=true; const prev=btn.textContent; btn.textContent="…";
+      try{
+        const r=await fetch("/api/project/explain/ask",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId, question:q})});
+        const d=await r.json();
+        if(!r.ok){ const s=$("askLeft"); if(s) s.textContent=d.error||"Impossible pour le moment."; }
+        else { inp.value=""; renderFaq(d.faq||[], d.questionsLeft); }
+      }catch(e){ const s=$("askLeft"); if(s) s.textContent="Impossible de joindre le serveur."; }
+      finally{ btn.disabled=false; btn.textContent=prev; }
+    }
+
     // Démarre un parcours « apprendre la programmation ».
     async function startCode(language){
       codeLang = LANG_UI[language] ? language : "python"; lesson = 0; lessons = [];
+      codeProject = false; codeProjName = "";
       track = "code"; setMode("code");
       thread.innerHTML=""; resumedNote.style.display="none"; typeBadge.style.display="none";
       renderRail();
@@ -1120,10 +1286,11 @@
         thread.innerHTML="";
         if(data.track === "code"){
           track="code"; codeLang=data.language||"python"; lesson=data.lesson||0; lessons=data.lessons||[];
+          codeProject = !!data.codeProject; codeProjName = data.projectName || "";
           setMode("code"); setRunLang();
           (data.messages||[]).forEach(m => { if(m.role==="user") bubble(m.content,"user"); else bubbleRich(stripChoix(m.content),"ai"); });
           renderRail(); loadEditor(); resumedNote.style.display="block"; setBusy(false);
-          if(lesson >= lessons.length-1) refreshQuizStatus();
+          if(!codeProject && lesson >= lessons.length-1) refreshQuizStatus();
           return true;
         }
         if(data.track === "premium"){
@@ -1275,7 +1442,8 @@
     input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); form.requestSubmit(); } });
     newBtn.addEventListener("click", ()=>{ if(canBuildUI()) openStart(); else notifyBlocked(); });
     $("chooseWeb").addEventListener("click", ()=>{ closeStart(); openTypeChooser(); });
-    $("chooseCode").addEventListener("click", ()=>{ closeStart(); openLang(); });
+    $("chooseCode").addEventListener("click", ()=>{ closeStart(); openLang("lesson"); });
+    $("chooseSelf").addEventListener("click", ()=>{ closeStart(); openLang("project"); });
     $("choosePremium").addEventListener("click", ()=>{ closeStart(); const name = window.prompt("Quel est le nom de ton projet ?", ""); const idea = window.prompt("En une phrase, que doit faire ton application ?", ""); clearSavedId(); convId=null; startPremium(idea||"", name||""); });
     $("startCancel").addEventListener("click", closeStart);
     startModal.addEventListener("click",(e)=>{ if(e.target===startModal) closeStart(); });
@@ -1426,7 +1594,7 @@
       thread.innerHTML=""; resumedNote.style.display="none"; showAccessBanner();
       step=0; siteBuilt=false; renderRail();
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none";
+      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none";
       buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
       let msg;
       if(kind==="none") msg="Bienvenue sur Bâtisseur. Pour commencer, réservez votre place depuis la page d'accueil, puis connectez-vous.";
@@ -1868,6 +2036,14 @@
     $("exampleViewBack").addEventListener("click", closeExampleView);
     $("exampleCreate").addEventListener("click", createLikeExample);
     exampleViewModal.addEventListener("click",(e)=>{ if(e.target===exampleViewModal) closeExampleView(); });
+    // « Les coulisses » (comprendre le code)
+    { const cb=$("codeBtn"); if(cb) cb.addEventListener("click", openCode); }
+    $("codeClose").addEventListener("click", closeCode);
+    codeModal.addEventListener("click",(e)=>{ if(e.target===codeModal) closeCode(); });
+    $("codeTabs").addEventListener("click",(e)=>{ const b=e.target.closest(".ctab"); if(b) setCTab(b.getAttribute("data-ctab")); });
+    $("explainGen").addEventListener("click", generateExplain);
+    $("askBtn").addEventListener("click", askQuestion);
+    $("askInput").addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); askQuestion(); } });
     adminBtn.addEventListener("click", openAdmin);
     { const pb=document.getElementById("progBtn"); if(pb) pb.addEventListener("click", function(){ window.open("/mon-programme","_blank","noopener"); }); }
     $("adminClose").addEventListener("click", closeAdmin);

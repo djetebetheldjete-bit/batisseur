@@ -709,10 +709,36 @@ RÈGLES
 - Ton professionnel et chaleureux. Pas d'émojis.` + CHOIX_HELP;
 }
 
+// Prompt du MENTOR de projet : l'apprenant veut CODER LUI-MÊME son application.
+// On ne construit pas à sa place : on donne un plan de réalisation, puis on
+// l'accompagne morceau par morceau pendant qu'il écrit son code.
+function codeProjectSystem(conv) {
+  const lang = normalizeLanguage(conv.language);
+  const langLabel = languageLabel(lang);
+  const run = LANGUAGES[lang] ? LANGUAGES[lang].run : "javascript";
+  const name = conv.projectName ? ("« " + conv.projectName + " »") : "son projet";
+  return `RÔLE
+Tu es un MENTOR de projet de Bâtisseur. La personne veut CODER ELLE-MÊME ${name} (en ${langLabel}). Tu ne construis PAS l'application à sa place : tu la GUIDES pour qu'elle y arrive par elle-même, en français simple et encourageant, sans jargon inutile (et si tu emploies un mot technique, tu l'expliques).
+
+À TON TOUT PREMIER MESSAGE, donne-lui un PLAN DE RÉALISATION clair et motivant, structuré ainsi :
+1) En une phrase : ce que l'application doit faire, et pour qui.
+2) Les TECHNOLOGIES utiles. Pour une application web : HTML (la structure), CSS (le style, les couleurs), JavaScript (les interactions) ; et une base de données seulement si le projet doit garder des informations.
+3) Les ÉTAPES dans l'ordre, du plus simple au plus complet — chacune en une ligne.
+4) Les FICHIERS à créer et à quoi sert chacun.
+5) La PREMIÈRE petite étape à coder MAINTENANT, avec un court exemple de code exécutable.
+
+ENSUITE (messages suivants) : réponds à ses questions, relis son code, repère ses erreurs avec bienveillance (un indice d'abord, la correction commentée si elle bloque), et propose la prochaine petite étape. Toujours PAR PETITS PAS.
+
+RÈGLES
+- Montre le code dans des blocs délimités par trois accents graves avec le langage (un bloc \`\`\`${run}\`). Le code s'exécute dans la console à droite (bouton « Exécuter »). Invite-la à écrire puis exécuter son code avant de te montrer le résultat.
+- Exemples COURTS et exécutables. Ne donne JAMAIS l'application entière d'un seul coup : apprends-lui à la construire morceau par morceau.
+- Ton professionnel et chaleureux. Pas d'émojis.` + CHOIX_HELP;
+}
+
 // Génère la réponse du tuteur (parcours programmation). Aucune extraction HTML : le code
 // reste visible dans la discussion, et rien n'est écrit comme « site ».
 async function produceCode(conv) {
-  const system = codeSystem(conv);
+  const system = conv.codeProject ? codeProjectSystem(conv) : codeSystem(conv);
   // Cours de codage : modèle rapide, réponses courtes → le tuteur répond vite et reste fluide.
   const reply = await callClaude(system, conv.messages, MODEL_LIGHT, 2048);
   const message = (reply && reply.trim()) || "Reprenons : où en êtes-vous ?";
@@ -1272,7 +1298,7 @@ async function handleStart(req, res) {
   try {
     const user = await currentUser(req);
     const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
-    { const g = await accessGate(user, p.track === "code" ? "code" : "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
+    { const g = await accessGate(user, (p.track === "code" || p.track === "codeproj") ? "code" : "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     const id = crypto.randomUUID();
     // Filière « apprendre à programmer » (2e option de formation).
     if (p.track === "code") {
@@ -1296,6 +1322,16 @@ async function handleStart(req, res) {
       const conv = { id, track: "premium", projectName: projName || null, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
       const out = await produceCurrent(conv, reqBase(req));
       return sendJson(res, 200, { id, track: "premium", projectName: conv.projectName, ...out });
+    }
+    // Espace « Coder soi-même » : l'apprenant code LUI-MÊME son projet (guide + éditeur).
+    if (p.track === "codeproj") {
+      const language = normalizeLanguage(p.language);
+      const projName = String(p.name || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
+      const idea = String(p.idea || "").slice(0, 500);
+      const kickoff = "Je veux coder MOI-MÊME mon projet" + (projName ? (" « " + projName + " »") : "") + " en " + languageLabel(language) + ". Voici mon idée : " + idea + "\nDonne-moi d'abord un plan clair pour le réaliser moi-même, puis guide-moi pendant que j'écris le code.";
+      const conv = { id, track: "code", codeProject: true, language, projectName: projName || null, lesson: 0, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
+      const out = await produceCode(conv);
+      return sendJson(res, 200, { id, track: "code", codeProject: true, language, projectName: conv.projectName, lessons: [], ...out });
     }
     const mods = normalizeModules(p.modules, p.projectType);
     const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
@@ -1335,6 +1371,7 @@ async function handleNext(req, res) {
     if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
     { const g = await accessGate(user, conv.track === "code" ? "code" : "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     if (conv.track === "premium") return sendJson(res, 200, { atEnd: true, reply: null, siteUpdated: false }); // pas d'étapes en Premium
+    if (conv.codeProject) return sendJson(res, 200, { atEnd: true, reply: null, siteUpdated: false }); // « coder soi-même » : pas de leçons
     // Filière programmation : « Leçon suivante » avance dans le programme.
     if (conv.track === "code") {
       const lessons = lessonsOf(conv); const cur = Math.min(Math.max(0, conv.lesson || 0), lessons.length - 1);
@@ -1386,7 +1423,7 @@ async function handleGetConversation(req, res) {
   if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
   if (conv.userId && !canView(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
   const payload = { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) };
-  if (conv.track === "code") { payload.track = "code"; payload.language = normalizeLanguage(conv.language); payload.lesson = conv.lesson || 0; payload.lessons = lessonTitles(conv); }
+  if (conv.track === "code") { payload.track = "code"; payload.language = normalizeLanguage(conv.language); payload.lesson = conv.lesson || 0; payload.lessons = conv.codeProject ? [] : lessonTitles(conv); payload.codeProject = !!conv.codeProject; if (conv.codeProject) payload.projectName = conv.projectName || null; }
   if (conv.track === "premium") { payload.track = "premium"; payload.projectName = conv.projectName || null; }
   sendJson(res, 200, payload);
 }
@@ -3561,6 +3598,104 @@ async function handleProjectExport(req, res) {
   res.end(html);
 }
 
+// ============================================================================
+// « COMPRENDRE MON APPLICATION » — les coulisses du code
+// L'apprenant qui a construit un projet peut voir son code et comprendre ce
+// qu'il y a derrière. ÉCONOMIE DES CRÉDITS : l'explication personnalisée est
+// générée UNE SEULE FOIS puis enregistrée (conv.explain) ; on la ressert
+// gratuitement tant que le code ne change pas. Les questions libres sont
+// plafonnées et sauvegardées (conv.explainFaq) : une réponse sert à tous.
+// ============================================================================
+const EXPLAIN_MAX_Q = parseInt(process.env.EXPLAIN_MAX_Q, 10) || 6;
+function codeHash(s) { try { return crypto.createHash("sha1").update(String(s || "")).digest("hex").slice(0, 16); } catch (e) { return String((s || "").length); } }
+const EXPLAIN_SYSTEM = `Tu es un formateur bienveillant qui explique, EN FRANÇAIS SIMPLE, les coulisses d'une application web à une personne débutante qui vient de la créer (sans coder elle-même). On te donne le code (HTML/CSS/JavaScript). Explique ce qu'il y a derrière, de façon claire, encourageante et structurée, en t'appuyant sur SON code réel. Couvre notamment :
+- La STRUCTURE / mise en page (ce qui place les éléments : HTML, puis flexbox/grid en CSS).
+- Les COULEURS et le style (les variables de couleur, où elles sont définies, le rôle du CSS).
+- Les TEXTES et le contenu.
+- Les INTERACTIONS (boutons, formulaires) et, s'il y en a, le JavaScript et la « boîte à outils Batisseur » qui enregistre/affiche les données partagées, gère les comptes, le paiement.
+- Les ANIMATIONS éventuelles.
+Cite de courts extraits de SON code entre balises \`\`\` quand c'est utile, mais garde des explications courtes et accessibles (pas de jargon inutile). Termine par une phrase d'encouragement. N'invente rien qui ne soit pas dans le code.`;
+
+// GET /api/project/code?id=... — renvoie le code de l'application (lecture seule)
+async function handleProjectCode(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const conv = await loadConv(u.searchParams.get("id"));
+  if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+  if (conv.userId && !canView(cu)) return sendJson(res, 403, { error: "Accès non autorisé pour le moment." });
+  const code = stripKit(await readSite(conv.id)) || "";
+  sendJson(res, 200, { hasCode: !!code, code });
+}
+
+// GET /api/project/explain?id=... — état de l'explication (sans rien générer)
+async function handleProjectExplain(req, res) {
+  const u = new URL(req.url, "http://localhost");
+  const conv = await loadConv(u.searchParams.get("id"));
+  if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const cu = await currentUser(req);
+  if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+  if (conv.userId && !canView(cu)) return sendJson(res, 403, { error: "Accès non autorisé pour le moment." });
+  const code = stripKit(await readSite(conv.id)) || "";
+  const ex = conv.explain || null;
+  const faq = conv.explainFaq || [];
+  sendJson(res, 200, {
+    hasCode: !!code,
+    explanation: ex ? ex.text : null,
+    generatedAt: ex ? ex.at : null,
+    stale: ex ? (ex.codeHash !== codeHash(code)) : false,
+    faq,
+    questionsLeft: Math.max(0, EXPLAIN_MAX_Q - faq.length)
+  });
+}
+
+// POST /api/project/explain/generate {id} — génère UNE fois et enregistre (sinon ressert le cache)
+async function handleProjectExplainGenerate(req, res) {
+  if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante." });
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
+    const conv = await loadConv(p.id); if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+    const cu = await currentUser(req);
+    if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    if (conv.userId && !canView(cu)) return sendJson(res, 403, { error: "Accès non autorisé pour le moment." });
+    const code = stripKit(await readSite(conv.id)) || "";
+    if (!code) return sendJson(res, 400, { error: "Construisez d'abord votre projet : il n'y a pas encore de code à expliquer." });
+    const h = codeHash(code);
+    if (conv.explain && conv.explain.codeHash === h) return sendJson(res, 200, { explanation: conv.explain.text, generatedAt: conv.explain.at, cached: true });
+    if (!(await aiQuotaGuard(cu))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
+    const msg = [{ role: "user", content: "Voici le code de mon application. Explique-moi, simplement, ce qu'il y a derrière :\n```html\n" + code.slice(0, 48000) + "\n```" }];
+    const text = await callClaude(EXPLAIN_SYSTEM, msg, MODEL_LIGHT, 2048);
+    conv.explain = { text: String(text || "").trim(), codeHash: h, at: new Date().toISOString() };
+    conv.updatedAt = new Date().toISOString();
+    await saveConv(conv);
+    sendJson(res, 200, { explanation: conv.explain.text, generatedAt: conv.explain.at, cached: false });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
+// POST /api/project/explain/ask {id, question} — question libre, plafonnée et sauvegardée
+async function handleProjectExplainAsk(req, res) {
+  if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante." });
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
+    const conv = await loadConv(p.id); if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+    const cu = await currentUser(req);
+    if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    if (conv.userId && !canView(cu)) return sendJson(res, 403, { error: "Accès non autorisé pour le moment." });
+    const faq = conv.explainFaq || [];
+    if (faq.length >= EXPLAIN_MAX_Q) return sendJson(res, 200, { faq, questionsLeft: 0, limited: true });
+    const q = String(p.question || "").trim().slice(0, 300);
+    if (!q) return sendJson(res, 400, { error: "Question vide." });
+    if (!(await aiQuotaGuard(cu))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
+    const code = stripKit(await readSite(conv.id)) || "";
+    const sys = EXPLAIN_SYSTEM + "\n\nIci, réponds UNIQUEMENT et BRIÈVEMENT à la question posée, en t'appuyant sur le code ci-dessous.";
+    const text = await callClaude(sys, [{ role: "user", content: "Code de l'application :\n```html\n" + code.slice(0, 48000) + "\n```\n\nMa question : " + q }], MODEL_LIGHT, 1024);
+    faq.push({ q, a: String(text || "").trim(), at: new Date().toISOString() });
+    conv.explainFaq = faq; conv.updatedAt = new Date().toISOString();
+    await saveConv(conv);
+    sendJson(res, 200, { faq, questionsLeft: Math.max(0, EXPLAIN_MAX_Q - faq.length) });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS" && req.url.startsWith("/api/app/")) { res.writeHead(204, corsHeaders()); return res.end(); }
   if (req.method === "GET") { logVisit(req); }   // journal des visites (pages seulement, non bloquant)
@@ -3602,6 +3737,10 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/project/upgrade") return handleProjectUpgrade(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/project/dashboard")) return handleProjectDashboard(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/project/export")) return handleProjectExport(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/project/code")) return handleProjectCode(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/project/explain")) return handleProjectExplain(req, res);
+  if (req.method === "POST" && req.url === "/api/project/explain/generate") return handleProjectExplainGenerate(req, res);
+  if (req.method === "POST" && req.url === "/api/project/explain/ask") return handleProjectExplainAsk(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/upload")) return handleUploadDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/submissions")) return handleSubmissions(req, res);
   if (req.method === "POST" && req.url === "/api/submissions/delete") return handleSubmissionDelete(req, res);
