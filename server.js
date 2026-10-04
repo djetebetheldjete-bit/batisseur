@@ -1901,7 +1901,9 @@ async function handleAdminLearners(req, res) {
   const learnerUsers = users.filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)));
   // Pour le classement Premium : assiduité (28 derniers jours) + progression + notes du formateur.
   let actMap = {}; try { actMap = await activityForUsers(learnerUsers.map((x) => x.id), lastNDays(28)); } catch (e) {}
-  let pnotes = {}; try { const st = await getSettings(); pnotes = (st && st.premiumNotes) || {}; } catch (e) {}
+  let pnotes = {}, sessionsTotal = 0, attCounts = {};
+  try { const st = await getSettings(); pnotes = (st && st.premiumNotes) || {}; sessionsTotal = Array.isArray(st && st.attendanceDates) ? st.attendanceDates.length : 0; } catch (e) {}
+  try { attCounts = await attCountsByUser(); } catch (e) {}
   const learners = learnerUsers.map((x) => {
     const act = actMap[x.id] || {}; let secs = 0; Object.keys(act).forEach((d) => { secs += act[d] || 0; });
     let frac = 0; try { frac = progressSummary(listByUser[x.id] || []).frac || 0; } catch (e) {}
@@ -1909,6 +1911,7 @@ async function handleAdminLearners(req, res) {
     return { id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, cohortId: x.cohort_id || null, status: (x.status || "active"), premium: x.premium === true, paid: x.paid === true, createdAt: x.created_at || null,
       projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0,
       activitySeconds: secs, progressFrac: frac,
+      sessionsPresent: attCounts[x.id] || 0, sessionsTotal: sessionsTotal,
       noteProjet: (typeof n.projet === "number") ? n.projet : null, noteAttitude: (typeof n.attitude === "number") ? n.attitude : null };
   });
   const stats = {
@@ -2965,6 +2968,85 @@ async function handleActivityPing(req, res) {
   sendJson(res, 200, { ok: true, todaySeconds: today, goalMin: cfg.dailyGoalMin });
 }
 
+// ============================================================================
+// PRÉSENCE DU SAMEDI — « Code + WiFi »
+// Le formateur OUVRE la présence (il est l'ancre : ça remplace la règle « 3
+// apprenants + formateur »). Les apprenants sur le MÊME réseau WiFi que le
+// formateur sont mis présents automatiquement ; les autres saisissent le CODE
+// affiché en salle. Correction manuelle possible. Les absences comptent dans
+// le score. État de la séance : settings.attendance (seul le formateur écrit) ;
+// présences : table `attendance` (une ligne par apprenant → aucun conflit même
+// si tout le monde se connecte en même temps).
+// ============================================================================
+function genAttCode() { return String(Math.floor(1000 + Math.random() * 9000)); }
+async function attState() { try { const s = await getSettings(); return s.attendance || { open: false }; } catch (e) { return { open: false }; } }
+async function attSetState(obj) { try { await setSettings({ attendance: obj }); } catch (e) {} }
+async function attAddDate(date) { try { const s = await getSettings(); const dates = Array.isArray(s.attendanceDates) ? s.attendanceDates.slice() : []; if (!dates.includes(date)) { dates.push(date); await setSettings({ attendanceDates: dates }); } } catch (e) {} }
+async function attMark(date, userId, present, method) {
+  if (USE_DB) { try { await sb(`/attendance?on_conflict=session_date,user_id`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify([{ session_date: date, user_id: userId, present: !!present, method: method || "auto", marked_at: new Date().toISOString() }]) }); return true; } catch (e) { return false; } }
+  try { const f = path.join(DATA_DIR, "attendance.json"); let a = {}; try { a = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) {} (a[date] || (a[date] = {}))[userId] = { present: !!present, method: method || "auto", at: new Date().toISOString() }; fs.writeFileSync(f, JSON.stringify(a, null, 2)); return true; } catch (e) { return false; }
+}
+async function attRowsForDate(date) {
+  if (USE_DB) { try { return (await sb(`/attendance?session_date=eq.${encodeURIComponent(date)}&select=user_id,present,method,marked_at`)) || []; } catch (e) { return []; } }
+  try { const a = JSON.parse(fs.readFileSync(path.join(DATA_DIR, "attendance.json"), "utf8")); return Object.keys(a[date] || {}).map((uid) => ({ user_id: uid, present: a[date][uid].present, method: a[date][uid].method, marked_at: a[date][uid].at })); } catch (e) { return []; }
+}
+async function attCountsByUser() {
+  const out = {};
+  if (USE_DB) { try { const r = (await sb(`/attendance?present=eq.true&select=user_id`)) || []; r.forEach((x) => { out[x.user_id] = (out[x.user_id] || 0) + 1; }); } catch (e) {} return out; }
+  try { const a = JSON.parse(fs.readFileSync(path.join(DATA_DIR, "attendance.json"), "utf8")); Object.keys(a).forEach((d) => Object.keys(a[d]).forEach((uid) => { if (a[d][uid].present) out[uid] = (out[uid] || 0) + 1; })); } catch (e) {}
+  return out;
+}
+function sameNetwork(ipA, ipB) { if (!ipA || !ipB) return false; const a = String(ipA).replace(/^::ffff:/, ""), b = String(ipB).replace(/^::ffff:/, ""); return a === b; }
+
+async function handleAttOpen(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  const date = todayKey();
+  const st = { open: true, date, code: genAttCode(), roomIp: clientIp(req), openedBy: u.id, openedAt: new Date().toISOString() };
+  await attSetState(st); await attAddDate(date);
+  sendJson(res, 200, { open: true, date, code: st.code });
+}
+async function handleAttClose(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  const st = await attState(); st.open = false; await attSetState(st);
+  sendJson(res, 200, { open: false });
+}
+async function handleAttStatus(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  const st = await attState(); const date = st.date || todayKey();
+  const rows = await attRowsForDate(date); const map = {}; rows.forEach((r) => { map[r.user_id] = r; });
+  const users = (await adminListUsers()).filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)));
+  const present = [], absent = [];
+  users.forEach((x) => { const r = map[x.id]; if (r && r.present) present.push({ userId: x.id, name: x.name, method: r.method, at: r.marked_at }); else absent.push({ userId: x.id, name: x.name }); });
+  sendJson(res, 200, { open: !!st.open, date, code: st.open ? st.code : null, present, absent, total: users.length });
+}
+async function handleAttMark(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {}
+  if (!p.userId) return sendJson(res, 400, { error: "Apprenant manquant." });
+  const st = await attState(); const date = st.date || todayKey();
+  await attAddDate(date); await attMark(date, String(p.userId), !!p.present, "manuel");
+  sendJson(res, 200, { ok: true });
+}
+async function handleAttMe(req, res) {
+  const u = await currentUser(req); if (!u) return sendJson(res, 200, { open: false });
+  const st = await attState(); if (!st.open) return sendJson(res, 200, { open: false });
+  const date = st.date;
+  const rows = await attRowsForDate(date); const mine = rows.find((r) => r.user_id === u.id);
+  if (mine && mine.present) return sendJson(res, 200, { open: true, date, present: true });
+  if (!isAdmin(u) && sameNetwork(clientIp(req), st.roomIp)) { await attMark(date, u.id, true, "wifi"); return sendJson(res, 200, { open: true, date, present: true, method: "wifi" }); }
+  sendJson(res, 200, { open: true, date, present: false, needCode: true });
+}
+async function handleAttCheckin(req, res) {
+  const u = await currentUser(req); if (!u) return sendJson(res, 401, { error: "Non connecté." });
+  if (!rateOk("att:" + u.id, 10, 10 * 60 * 1000)) return sendJson(res, 429, { error: "Trop de tentatives, patientez." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {}
+  const st = await attState(); if (!st.open) return sendJson(res, 400, { error: "La présence n'est pas ouverte." });
+  const code = String(p.code || "").trim();
+  if (!code || code !== String(st.code)) return sendJson(res, 400, { error: "Code incorrect." });
+  await attMark(st.date, u.id, true, "code");
+  sendJson(res, 200, { ok: true, present: true });
+}
+
 // Résumé d'avancement d'un apprenant à partir de ses projets (étapes / leçons franchies).
 function progressSummary(list) {
   if (!list || !list.length) return { projects: 0, published: 0, text: "Pas encore de projet", frac: 0 };
@@ -3867,6 +3949,12 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/formation/reservation/cash") return handleFormationCash(req, res);
   if ((req.method === "GET" || req.method === "POST") && req.url.startsWith("/api/formation/settings")) return handleFormationSettings(req, res);
   if (req.method === "POST" && req.url === "/api/activity/ping") return handleActivityPing(req, res);
+  if (req.method === "POST" && req.url === "/api/attendance/open") return handleAttOpen(req, res);
+  if (req.method === "POST" && req.url === "/api/attendance/close") return handleAttClose(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/attendance/status")) return handleAttStatus(req, res);
+  if (req.method === "POST" && req.url === "/api/attendance/mark") return handleAttMark(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/attendance/me")) return handleAttMe(req, res);
+  if (req.method === "POST" && req.url === "/api/attendance/checkin") return handleAttCheckin(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/formation/activity")) return handleFormationActivity(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/quiz/programmation")) return handleQuizGet(req, res);
   if (req.method === "POST" && req.url === "/api/quiz/programmation/submit") return handleQuizSubmit(req, res);

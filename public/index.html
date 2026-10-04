@@ -672,6 +672,17 @@
     </div>
   </div>
 
+  <!-- Présence du jour (apprenant) : saisie du code affiché en salle -->
+  <div class="modal-bg" id="attModal">
+    <div class="modal" style="max-width:420px;">
+      <h3>Présence du jour</h3>
+      <p id="attMsg">Vous êtes en formation. Saisissez le code à 4 chiffres affiché par le formateur pour être marqué présent.</p>
+      <div class="stack"><input id="attCodeInput" type="text" inputmode="numeric" maxlength="4" placeholder="----" style="font-size:1.6rem;text-align:center;letter-spacing:.4em;"></div>
+      <div class="autherr" id="attErr"></div>
+      <div class="row"><button id="attLater" type="button">Plus tard</button><button id="attGo" class="primary" type="button">Je suis présent</button></div>
+    </div>
+  </div>
+
   <!-- Choix du langage (filière programmation) -->
   <div class="modal-bg" id="langModal">
     <div class="modal">
@@ -1646,6 +1657,7 @@
     async function startFlow(){
       refreshLock();
       maybeShowExamplesFirstTime();
+      checkAttendance();
       if(canBuildUI()){
         const saved = getSavedId();
         if(saved && await resume(saved)) return;
@@ -1775,15 +1787,59 @@
       if(l.paid)                return { key:"paidPending",   label:"Payé · en attente",     fg:"#1f7a5a", bg:"rgba(46,139,111,.14)", bd:"rgba(46,139,111,.50)" };
       return                           { key:"unpaidPending", label:"Non payé · en attente", fg:"#c0392b", bg:"rgba(192,57,43,.12)", bd:"rgba(192,57,43,.45)" };
     }
+    // Panneau « Présence du samedi » (formateur) : ouvrir/fermer, code, liste, correction manuelle.
+    async function renderAttendancePanel(box){
+      box.innerHTML = '<div class="aempty" style="padding:6px 0;">Chargement…</div>';
+      let d;
+      try{ const r=await fetch("/api/attendance/status"); d=await r.json(); if(!r.ok){ box.innerHTML='<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; } }
+      catch(e){ box.innerHTML='<div class="aempty">Impossible de charger.</div>'; return; }
+      box.innerHTML="";
+      const top=document.createElement("div"); top.style.cssText="display:flex;align-items:center;gap:12px;flex-wrap:wrap;";
+      if(d.open){
+        const left=document.createElement("div"); left.style.cssText="flex:1;min-width:160px;";
+        left.innerHTML='<div style="font-size:.8rem;color:var(--ink-faint);">Présence OUVERTE — code à afficher en salle :</div><div style="font-size:2.3rem;font-weight:800;letter-spacing:.25em;color:var(--accent-deep,#0C5866);">'+escHtmlMsg(String(d.code||""))+'</div>';
+        top.appendChild(left);
+        const close=document.createElement("button"); close.className="dlbtn"; close.textContent="Fermer la présence";
+        close.addEventListener("click", async()=>{ close.disabled=true; await fetch("/api/attendance/close",{method:"POST"}).catch(()=>{}); renderAttendancePanel(box); });
+        top.appendChild(close);
+      } else {
+        const left=document.createElement("div"); left.style.cssText="flex:1;min-width:160px;color:var(--ink-soft);font-size:.9rem;"; left.textContent="La présence est fermée. Ouvre-la quand le groupe est réuni en salle.";
+        top.appendChild(left);
+        const open=document.createElement("button"); open.className="primary"; open.textContent="Ouvrir la présence";
+        open.addEventListener("click", async()=>{ open.disabled=true; await fetch("/api/attendance/open",{method:"POST"}).catch(()=>{}); renderAttendancePanel(box); });
+        top.appendChild(open);
+      }
+      box.appendChild(top);
+      const info=document.createElement("div"); info.style.cssText="margin-top:10px;font-size:.88rem;color:var(--ink-soft);";
+      info.innerHTML='<b style="color:var(--good);">'+d.present.length+'</b> présent(s) · <b style="color:#c0392b;">'+d.absent.length+'</b> absent(s) · '+d.total+' au total'+(d.date?(' · '+escHtmlMsg(d.date)):'');
+      box.appendChild(info);
+      const list=document.createElement("div"); list.style.cssText="margin-top:8px;max-height:230px;overflow:auto;";
+      function rowFor(x, present){
+        const r=document.createElement("div"); r.style.cssText="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);";
+        const meth = present&&x.method ? (x.method==="wifi"?"WiFi":x.method==="code"?"code":x.method==="manuel"?"manuel":x.method) : "";
+        r.innerHTML='<span style="width:9px;height:9px;border-radius:50%;flex:none;background:'+(present?'var(--good)':'#c0392b')+';"></span><span style="flex:1;">'+escHtmlMsg(x.name||"—")+(meth?' <span style="color:var(--ink-faint);font-size:.78rem;">('+meth+')</span>':'')+'</span>';
+        const btn=document.createElement("button"); btn.className="dlbtn"; btn.style.cssText="font-size:10px;padding:3px 8px;"; btn.textContent=present?"Marquer absent":"Marquer présent";
+        btn.addEventListener("click", async()=>{ btn.disabled=true; await fetch("/api/attendance/mark",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:x.userId, present:!present})}).catch(()=>{}); renderAttendancePanel(box); });
+        r.appendChild(btn); return r;
+      }
+      d.present.forEach(x=> list.appendChild(rowFor(x,true)));
+      d.absent.forEach(x=> list.appendChild(rowFor(x,false)));
+      if(!d.present.length && !d.absent.length) list.innerHTML='<div class="aempty">Aucun apprenant.</div>';
+      box.appendChild(list);
+    }
+
     // Score Premium : auto (assiduité/25, projets/25, progression/10, relatifs au groupe) + manuel (projet final/30, attitude/10).
     function premiumScore(l, maxP, maxSecs){
       const p = (l.published||0)*3 + (l.projects||0);
       const aProjets = maxP>0 ? 25*(p/maxP) : 0;
-      const aAssid = maxSecs>0 ? 25*((l.activitySeconds||0)/maxSecs) : 0;
+      const actRel = maxSecs>0 ? ((l.activitySeconds||0)/maxSecs) : 0;
+      // Présence aux séances : si des séances ont eu lieu, elle compte pour 60 % de l'assiduité.
+      const attRate = (l.sessionsTotal>0) ? ((l.sessionsPresent||0)/l.sessionsTotal) : null;
+      const aAssid = 25 * ((attRate!=null) ? (0.6*attRate + 0.4*actRel) : actRel);
       const aProg = (l.progressFrac||0)*10;
       const mProjet = (typeof l.noteProjet==="number") ? l.noteProjet : 0;
       const mAttitude = (typeof l.noteAttitude==="number") ? l.noteAttitude : 0;
-      return { aProjets, aAssid, aProg, mProjet, mAttitude, total: aProjets+aAssid+aProg+mProjet+mAttitude };
+      return { aProjets, aAssid, aProg, mProjet, mAttitude, attRate, total: aProjets+aAssid+aProg+mProjet+mAttitude };
     }
     function renderPremiumBoard(box, L){
       box.innerHTML = "";
@@ -1804,7 +1860,8 @@
           + '<span style="font-weight:800;color:var(--accent-deep,#0C5866);">'+Math.round(r.s.total)+'<span style="font-size:.7rem;color:var(--ink-faint);font-weight:600;"> /100</span></span>';
         row.appendChild(head);
         const det = document.createElement("div"); det.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:.82rem;color:var(--ink-soft);";
-        det.innerHTML = '<span>Assiduité <b>'+Math.round(r.s.aAssid)+'</b>/25</span> · <span>Projets <b>'+Math.round(r.s.aProjets)+'</b>/25</span> · <span>Progr. <b>'+Math.round(r.s.aProg)+'</b>/10</span>';
+        det.innerHTML = '<span>Assiduité <b>'+Math.round(r.s.aAssid)+'</b>/25</span> · <span>Projets <b>'+Math.round(r.s.aProjets)+'</b>/25</span> · <span>Progr. <b>'+Math.round(r.s.aProg)+'</b>/10</span>'
+          + ((r.l.sessionsTotal>0) ? (' · <span>Présences <b>'+(r.l.sessionsPresent||0)+'</b>/'+r.l.sessionsTotal+'</span>') : '');
         const wrap = document.createElement("span"); wrap.style.cssText = "display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap;";
         const lblP = document.createElement("span"); lblP.textContent = "Projet final"; lblP.style.cssText = "font-size:.78rem;";
         const inP = document.createElement("input"); inP.type="number"; inP.min="0"; inP.max="30"; inP.value=(typeof r.l.noteProjet==="number")?r.l.noteProjet:""; inP.placeholder="/30"; inP.title="Qualité du projet final (0 à 30)"; inP.style.cssText="width:58px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;font:inherit;background:var(--surface);";
@@ -1852,6 +1909,11 @@
       aiInner += '<div style="margin-top:12px;"><a class="dlbtn" href="/api/admin/export" style="text-decoration:none;display:inline-block;" title="Télécharger une sauvegarde des données clés (comptes, réservations, projets) — sans les mots de passe">⬇ Télécharger une sauvegarde</a></div>';
       aibox.innerHTML = aiInner;
       adminBody.appendChild(aibox);
+
+      // --- Présence du samedi ---
+      const atth = document.createElement("div"); atth.className = "asection"; atth.textContent = "Présence du samedi"; adminBody.appendChild(atth);
+      const attbox = document.createElement("div"); attbox.style.cssText = "border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px;background:var(--surface);"; adminBody.appendChild(attbox);
+      renderAttendancePanel(attbox);
 
       // --- Classement Premium : auto (plateforme) + tes notes (projet final, attitude) ---
       const ph = document.createElement("div"); ph.className = "asection"; ph.textContent = "Classement Premium"; adminBody.appendChild(ph);
@@ -2154,6 +2216,27 @@
       { const hc=$("helpClose"); if(hc) hc.addEventListener("click", ()=>{ hm.classList.remove("show"); }); }
       if(hm) hm.addEventListener("click",(e)=>{ if(e.target===hm) hm.classList.remove("show"); });
     }
+    // Présence du jour (apprenant) : auto-WiFi via /me, sinon saisie du code
+    const attModalEl = $("attModal");
+    async function checkAttendance(){
+      if(!me || me.isAdmin) return;
+      try{ const r=await fetch("/api/attendance/me"); const d=await r.json(); if(d && d.open && !d.present && d.needCode){ openAtt(); } }catch(e){}
+    }
+    function openAtt(){ $("attErr").textContent=""; $("attCodeInput").value=""; attModalEl.classList.add("show"); setTimeout(()=>{ try{$("attCodeInput").focus();}catch(e){} },60); }
+    function closeAtt(){ attModalEl.classList.remove("show"); }
+    async function attCheckin(){
+      const code=($("attCodeInput").value||"").trim(); const err=$("attErr"); err.textContent="";
+      if(!/^\d{4}$/.test(code)){ err.textContent="Entrez le code à 4 chiffres."; return; }
+      const b=$("attGo"); b.disabled=true; const prev=b.textContent; b.textContent="…";
+      try{ const r=await fetch("/api/attendance/checkin",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code})}); const d=await r.json(); if(!r.ok){ err.textContent=d.error||"Code incorrect."; return; } closeAtt(); bubble("✓ Vous êtes marqué présent. Bonne séance !","ai"); }
+      catch(e){ err.textContent="Impossible de joindre le serveur."; }
+      finally{ b.disabled=false; b.textContent=prev; }
+    }
+    { const g=$("attGo"); if(g) g.addEventListener("click", attCheckin); }
+    { const l=$("attLater"); if(l) l.addEventListener("click", closeAtt); }
+    { const ci=$("attCodeInput"); if(ci) ci.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); attCheckin(); } }); }
+    if(attModalEl) attModalEl.addEventListener("click",(e)=>{ if(e.target===attModalEl) closeAtt(); });
+
     // « Les coulisses » (comprendre le code)
     { const cb=$("codeBtn"); if(cb) cb.addEventListener("click", openCode); }
     $("codeClose").addEventListener("click", closeCode);
