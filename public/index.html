@@ -1797,8 +1797,16 @@
       const top=document.createElement("div"); top.style.cssText="display:flex;align-items:center;gap:12px;flex-wrap:wrap;";
       if(d.open){
         const left=document.createElement("div"); left.style.cssText="flex:1;min-width:160px;";
-        left.innerHTML='<div style="font-size:.8rem;color:var(--ink-faint);">Présence OUVERTE — code à afficher en salle :</div><div style="font-size:2.3rem;font-weight:800;letter-spacing:.25em;color:var(--accent-deep,#0C5866);">'+escHtmlMsg(String(d.code||""))+'</div>';
+        let closeTxt="";
+        if(d.closesAt){ try{ const t=new Date(d.closesAt); closeTxt="Se ferme automatiquement vers "+String(t.getHours()).padStart(2,"0")+":"+String(t.getMinutes()).padStart(2,"0"); }catch(e){} }
+        left.innerHTML='<div style="font-size:.8rem;color:var(--ink-faint);">Présence OUVERTE — code à afficher en salle :</div><div style="font-size:2.3rem;font-weight:800;letter-spacing:.25em;color:var(--accent-deep,#0C5866);">'+escHtmlMsg(String(d.code||""))+'</div>'+(closeTxt?'<div style="font-size:.78rem;color:var(--ink-faint);margin-top:2px;">'+closeTxt+'</div>':'');
         top.appendChild(left);
+        const url = location.origin + "/?att=" + encodeURIComponent(d.code||"");
+        const qr = document.createElement("img"); qr.alt="QR de présence"; qr.width=118; qr.height=118;
+        qr.style.cssText="border-radius:10px;border:1px solid var(--line);background:#fff;flex:none;";
+        qr.src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data="+encodeURIComponent(url);
+        qr.onerror=function(){ qr.style.display="none"; };
+        top.appendChild(qr);
         const close=document.createElement("button"); close.className="dlbtn"; close.textContent="Fermer la présence";
         close.addEventListener("click", async()=>{ close.disabled=true; await fetch("/api/attendance/close",{method:"POST"}).catch(()=>{}); renderAttendancePanel(box); });
         top.appendChild(close);
@@ -1810,6 +1818,7 @@
         top.appendChild(open);
       }
       box.appendChild(top);
+      if(d.open){ const hint=document.createElement("div"); hint.style.cssText="margin-top:6px;font-size:.8rem;color:var(--ink-faint);"; hint.textContent="Les apprenants scannent le QR ou saisissent le code — et ceux sur le WiFi de la salle sont détectés automatiquement."; box.appendChild(hint); }
       const info=document.createElement("div"); info.style.cssText="margin-top:10px;font-size:.88rem;color:var(--ink-soft);";
       info.innerHTML='<b style="color:var(--good);">'+d.present.length+'</b> présent(s) · <b style="color:#c0392b;">'+d.absent.length+'</b> absent(s) · '+d.total+' au total'+(d.date?(' · '+escHtmlMsg(d.date)):'');
       box.appendChild(info);
@@ -2218,8 +2227,15 @@
     }
     // Présence du jour (apprenant) : auto-WiFi via /me, sinon saisie du code
     const attModalEl = $("attModal");
+    function pendingAttCode(){ try{ return new URLSearchParams(location.search).get("att"); }catch(e){ return null; } }
     async function checkAttendance(){
       if(!me || me.isAdmin) return;
+      // Si l'apprenant a scanné le QR (…?att=CODE), on le marque présent tout seul.
+      const qr = pendingAttCode();
+      if(qr && /^\d{4}$/.test(qr)){
+        try{ await fetch("/api/attendance/checkin",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code:qr})}); }catch(e){}
+        try{ history.replaceState(null,"",location.pathname); }catch(e){}
+      }
       try{ const r=await fetch("/api/attendance/me"); const d=await r.json(); if(d && d.open && !d.present && d.needCode){ openAtt(); } }catch(e){}
     }
     function openAtt(){ $("attErr").textContent=""; $("attCodeInput").value=""; attModalEl.classList.add("show"); setTimeout(()=>{ try{$("attCodeInput").focus();}catch(e){} },60); }

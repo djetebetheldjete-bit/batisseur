@@ -2979,6 +2979,8 @@ async function handleActivityPing(req, res) {
 // si tout le monde se connecte en même temps).
 // ============================================================================
 function genAttCode() { return String(Math.floor(1000 + Math.random() * 9000)); }
+const ATT_WINDOW_MS = 5 * 60 * 60 * 1000; // la présence se ferme automatiquement 5 h après l'ouverture
+function attOpenNow(st) { return !!(st && st.open && st.openedAt && (Date.now() - new Date(st.openedAt).getTime() < ATT_WINDOW_MS)); }
 async function attState() { try { const s = await getSettings(); return s.attendance || { open: false }; } catch (e) { return { open: false }; } }
 async function attSetState(obj) { try { await setSettings({ attendance: obj }); } catch (e) {} }
 async function attAddDate(date) { try { const s = await getSettings(); const dates = Array.isArray(s.attendanceDates) ? s.attendanceDates.slice() : []; if (!dates.includes(date)) { dates.push(date); await setSettings({ attendanceDates: dates }); } } catch (e) {} }
@@ -3013,11 +3015,14 @@ async function handleAttClose(req, res) {
 async function handleAttStatus(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
   const st = await attState(); const date = st.date || todayKey();
+  const openNow = attOpenNow(st);
+  if (st.open && !openNow) { try { st.open = false; await attSetState(st); } catch (e) {} }   // fermeture auto après 5 h
   const rows = await attRowsForDate(date); const map = {}; rows.forEach((r) => { map[r.user_id] = r; });
   const users = (await adminListUsers()).filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)));
   const present = [], absent = [];
   users.forEach((x) => { const r = map[x.id]; if (r && r.present) present.push({ userId: x.id, name: x.name, method: r.method, at: r.marked_at }); else absent.push({ userId: x.id, name: x.name }); });
-  sendJson(res, 200, { open: !!st.open, date, code: st.open ? st.code : null, present, absent, total: users.length });
+  const closesAt = (openNow && st.openedAt) ? new Date(new Date(st.openedAt).getTime() + ATT_WINDOW_MS).toISOString() : null;
+  sendJson(res, 200, { open: openNow, date, code: openNow ? st.code : null, closesAt, present, absent, total: users.length });
 }
 async function handleAttMark(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
@@ -3029,7 +3034,7 @@ async function handleAttMark(req, res) {
 }
 async function handleAttMe(req, res) {
   const u = await currentUser(req); if (!u) return sendJson(res, 200, { open: false });
-  const st = await attState(); if (!st.open) return sendJson(res, 200, { open: false });
+  const st = await attState(); if (!attOpenNow(st)) return sendJson(res, 200, { open: false });
   const date = st.date;
   const rows = await attRowsForDate(date); const mine = rows.find((r) => r.user_id === u.id);
   if (mine && mine.present) return sendJson(res, 200, { open: true, date, present: true });
@@ -3040,7 +3045,7 @@ async function handleAttCheckin(req, res) {
   const u = await currentUser(req); if (!u) return sendJson(res, 401, { error: "Non connecté." });
   if (!rateOk("att:" + u.id, 10, 10 * 60 * 1000)) return sendJson(res, 429, { error: "Trop de tentatives, patientez." });
   let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {}
-  const st = await attState(); if (!st.open) return sendJson(res, 400, { error: "La présence n'est pas ouverte." });
+  const st = await attState(); if (!attOpenNow(st)) return sendJson(res, 400, { error: "La présence n'est pas ouverte." });
   const code = String(p.code || "").trim();
   if (!code || code !== String(st.code)) return sendJson(res, 400, { error: "Code incorrect." });
   await attMark(st.date, u.id, true, "code");
