@@ -235,6 +235,16 @@
     .pane[data-pane]{display:none;}
     .pane[data-pane].show{display:flex;}
     .railpane.pane.show{display:block;}
+    /* Finitions mobile : barre du haut défilable (pas de boutons coupés), plus compacte */
+    .top{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;gap:8px;padding:8px 12px;scrollbar-width:none;}
+    .top::-webkit-scrollbar{display:none;}
+    .top .brand,.top .newbtn,.top .topbtn,.top .acctname,.top #workBadge{flex:0 0 auto;}
+    .top .k{display:none;}
+    .top .grow{flex:0 0 4px;}
+    /* Barre d'outils de l'aperçu : défilable horizontalement si trop de boutons */
+    .pv-tools{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px;}
+    .pv-tools::-webkit-scrollbar{display:none;}
+    .pv-tools .dlbtn,.pv-tools .pubbtn,.pv-tools .publink,.pv-tools .seg{flex:0 0 auto;}
   }
   /* --- Suivi & assiduité --- */
   #activityModal .modal{ max-width:680px; }
@@ -301,6 +311,7 @@
       <button class="topbtn" id="examplesBtn" type="button" style="display:none;" title="Voir des exemples d'interfaces de sites et d'applications">Exemples</button>
       <button class="topbtn" id="espaceBtn" type="button" style="display:none;">Mon espace</button>
       <button class="topbtn" id="logoutBtn" type="button" style="display:none;">Se déconnecter</button>
+      <button class="topbtn" id="helpBtn" type="button" title="Comment ça marche : guide rapide">Aide</button>
       <button class="newbtn" id="newBtn" type="button">Recommencer</button>
     </div>
 
@@ -630,6 +641,34 @@
       </div>
 
       <div class="row" style="margin-top:14px;"><button id="codeClose" type="button">Fermer</button></div>
+    </div>
+  </div>
+
+  <!-- Aide : guide rapide pour les apprenants -->
+  <div class="modal-bg" id="helpModal">
+    <div class="modal wide" style="max-width:720px;">
+      <h3>Bienvenue sur Bâtisseur — guide rapide</h3>
+      <p>Bâtisseur t'aide à créer de vrais sites et applications, ou à apprendre à programmer — en discutant, pas à pas. Voici l'essentiel.</p>
+      <div style="display:flex;flex-direction:column;gap:12px;margin:6px 0 2px;">
+        <div style="border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:var(--surface-2);">
+          <b>1. Choisir quoi faire</b>
+          <div style="color:var(--ink-soft);font-size:.92rem;margin-top:4px;">Clique sur <b>« Recommencer »</b> : créer un site/app, apprendre à programmer, <b>coder ton projet toi-même</b>, ou l'atelier avancé (sur sélection).</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:var(--surface-2);">
+          <b>2. Construire en discutant</b>
+          <div style="color:var(--ink-soft);font-size:.92rem;margin-top:4px;">Explique ton idée en français. L'assistant construit, tu vois le résultat dans <b>« Aperçu »</b>, et tu l'améliores en continuant à discuter (ex. « mets le titre en bleu »).</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:var(--surface-2);">
+          <b>3. Les boutons utiles</b>
+          <div style="color:var(--ink-soft);font-size:.92rem;margin-top:4px;"><b>Exemples</b> : des modèles pour s'inspirer. <b>Mon espace</b> : tous tes projets enregistrés. <b>Les coulisses</b> : comprendre le code derrière ton projet. <b>Publier</b> / <b>Exporter</b> : mettre en ligne ou rendre ton projet indépendant.</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:var(--surface-2);">
+          <b>4. Sur téléphone</b>
+          <div style="color:var(--ink-soft);font-size:.92rem;margin-top:4px;">Utilise les onglets <b>Parcours · Discussion · Aperçu</b> en haut pour passer d'un écran à l'autre.</div>
+        </div>
+      </div>
+      <p style="font-size:.9rem;color:var(--ink-faint);margin-top:12px;">Un doute ? Pose ta question à l'assistant dans la discussion, ou demande à ton formateur. Bon travail !</p>
+      <div class="row"><button id="helpClose" type="button">Fermer</button></div>
     </div>
   </div>
 
@@ -2036,6 +2075,12 @@
     $("exampleViewBack").addEventListener("click", closeExampleView);
     $("exampleCreate").addEventListener("click", createLikeExample);
     exampleViewModal.addEventListener("click",(e)=>{ if(e.target===exampleViewModal) closeExampleView(); });
+    // Aide (guide rapide)
+    { const hm=$("helpModal"); const hb=$("helpBtn");
+      if(hb) hb.addEventListener("click", ()=>{ hm.classList.add("show"); });
+      { const hc=$("helpClose"); if(hc) hc.addEventListener("click", ()=>{ hm.classList.remove("show"); }); }
+      if(hm) hm.addEventListener("click",(e)=>{ if(e.target===hm) hm.classList.remove("show"); });
+    }
     // « Les coulisses » (comprendre le code)
     { const cb=$("codeBtn"); if(cb) cb.addEventListener("click", openCode); }
     $("codeClose").addEventListener("click", closeCode);
