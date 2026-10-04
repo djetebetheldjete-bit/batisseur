@@ -1748,6 +1748,7 @@
 
     // ===== Espace formateur (admin) =====
     let adminCohorts = [];
+    let adminAiStats = null;
     function escHtml(s){ const d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
     function cohortOptions(selected){
       let h = '<option value="">— Aucune —</option>';
@@ -1759,10 +1760,11 @@
     async function loadAdmin(){
       adminBody.innerHTML = '<div class="aempty">Chargement…</div>';
       try{
-        const [lr, cr] = await Promise.all([ fetch("/api/admin/learners"), fetch("/api/admin/cohorts") ]);
+        const [lr, cr, ar] = await Promise.all([ fetch("/api/admin/learners"), fetch("/api/admin/cohorts"), fetch("/api/admin/ai-stats").catch(()=>null) ]);
         const ld = await lr.json(); const cd = await cr.json().catch(()=>({cohorts:[]}));
         if(!lr.ok){ adminBody.innerHTML = '<div class="aempty">'+(ld.error||"Erreur")+'</div>'; return; }
         adminCohorts = cd.cohorts || [];
+        adminAiStats = (ar && ar.ok) ? await ar.json().catch(()=>null) : null;
         renderAdmin(ld);
       }catch(e){ adminBody.innerHTML = '<div class="aempty">Impossible de joindre le serveur.</div>'; }
     }
@@ -1785,6 +1787,23 @@
         c.querySelector("b").textContent = val; c.querySelector("span").textContent = lab; stats.appendChild(c);
       });
       adminBody.appendChild(stats);
+
+      // --- Activité IA (suivi des coûts) & sauvegarde ---
+      const aih = document.createElement("div"); aih.className = "asection"; aih.textContent = "Activité IA & sauvegarde"; adminBody.appendChild(aih);
+      const aibox = document.createElement("div"); aibox.style.cssText = "border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px;background:var(--surface);";
+      let aiInner = "";
+      if(adminAiStats){
+        aiInner += '<div><b style="font-size:1.3rem;color:var(--accent-deep,#0C5866);">'+(adminAiStats.total||0)+'</b> <span style="color:var(--ink-faint);font-size:.85rem;">appels à l\'IA aujourd\'hui</span></div>';
+        if(adminAiStats.users && adminAiStats.users.length){
+          aiInner += '<div style="margin-top:8px;font-size:.88rem;color:var(--ink-soft);">Les plus actifs : '+ adminAiStats.users.slice(0,5).map(u=> escHtmlMsg(u.name)+' ('+u.count+')').join(' · ') +'</div>';
+        }
+        aiInner += '<div style="margin-top:4px;font-size:.78rem;color:var(--ink-faint);">Repère indicatif pour surveiller les coûts, remis à zéro au redémarrage du serveur.</div>';
+      } else {
+        aiInner += '<div style="color:var(--ink-faint);font-size:.88rem;">Compteur d\'IA indisponible pour le moment.</div>';
+      }
+      aiInner += '<div style="margin-top:12px;"><a class="dlbtn" href="/api/admin/export" style="text-decoration:none;display:inline-block;" title="Télécharger une sauvegarde des données clés (comptes, réservations, projets) — sans les mots de passe">⬇ Télécharger une sauvegarde</a></div>';
+      aibox.innerHTML = aiInner;
+      adminBody.appendChild(aibox);
 
       // --- Sessions de formation ---
       const sh = document.createElement("div"); sh.className = "asection"; sh.textContent = "Sessions de formation"; adminBody.appendChild(sh);

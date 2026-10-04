@@ -822,7 +822,21 @@ async function producePremium(conv) {
   if (ex.html && htmlLooksComplete(ex.html)) {
     if (await writeSite(conv.id, ex.html)) { siteUpdated = true; conv.hasSite = true; }
   } else if (ex.html) {
-    message = "Ton application est devenue trop grande pour être écrite d'un seul coup, donc je n'ai pas écrasé la version précédente. Dis-moi « continue » pour que je termine, ou construisons-la par petites étapes : d'abord le catalogue et le panier, puis l'espace membre, puis le paiement.";
+    // Reprise automatique : la réponse a été coupée (trop longue). On redemande
+    // UNE fois une version compacte et complète, sans déranger l'apprenant.
+    try {
+      const retrySys = system + "\n\nIMPORTANT : ta réponse précédente a été COUPÉE car trop longue. Renvoie MAINTENANT l'application ENTIÈRE dans UN SEUL bloc qui se termine bien par </html>, en restant plus COMPACT (CSS concis, pas de répétitions) pour tenir en une seule réponse.";
+      const retry = await callClaude(retrySys, conv.messages, MODEL_PREMIUM, PREMIUM_BUILD_TOKENS);
+      const ex2 = extractSite(retry);
+      if (ex2.html && htmlLooksComplete(ex2.html) && await writeSite(conv.id, ex2.html)) {
+        siteUpdated = true; conv.hasSite = true;
+        if (ex2.message && ex2.message.trim()) message = ex2.message;
+      } else {
+        message = "Ton application est devenue trop grande pour être écrite d'un seul coup. Dis-moi « continue » pour que je termine, ou construisons-la par petites étapes.";
+      }
+    } catch (e) {
+      message = "Ton application est devenue trop grande pour être écrite d'un seul coup. Dis-moi « continue » pour que je termine, ou construisons-la par petites étapes.";
+    }
   }
   if (!message || !message.trim()) message = siteUpdated ? "✓ Application mise à jour — regardez l'aperçu." : reply;
   conv.messages.push({ role: "assistant", content: message });
@@ -1281,7 +1295,21 @@ ${current}
     const withKit = injectKit(ex.html, mods, conv, baseUrl);
     if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; }
   } else if (isBuild && ex.html) {
-    message = "Votre site est devenu un peu trop grand pour être écrit d'un seul coup, donc je n'ai pas remplacé la version précédente. Dites « continue » pour que je termine, ou avançons par petites étapes.";
+    // Reprise automatique : la réponse a été coupée. On redemande une version compacte et complète.
+    try {
+      const retrySys = system + "\n\nIMPORTANT : ta réponse précédente a été COUPÉE car trop longue. Renvoie MAINTENANT le site ENTIER dans UN SEUL bloc qui se termine bien par </html>, en restant plus COMPACT (CSS concis, pas de répétitions).";
+      const retry = await callClaude(retrySys, conv.messages, MODEL, BUILD_TOKENS);
+      const ex2 = extractSite(retry);
+      if (ex2.html && htmlLooksComplete(ex2.html)) {
+        const withKit2 = injectKit(ex2.html, mods, conv, baseUrl);
+        if (await writeSite(conv.id, withKit2)) { siteUpdated = true; conv.hasSite = true; }
+        if (ex2.message && ex2.message.trim()) message = ex2.message;
+      } else {
+        message = "Votre site est devenu un peu trop grand pour être écrit d'un seul coup. Dites « continue » pour que je termine, ou avançons par petites étapes.";
+      }
+    } catch (e) {
+      message = "Votre site est devenu un peu trop grand pour être écrit d'un seul coup. Dites « continue » pour que je termine, ou avançons par petites étapes.";
+    }
   }
   if (!message || !message.trim()) message = siteUpdated ? "✓ J'ai mis à jour votre site — regardez l'aperçu." : (ex.html ? "✓ C'est fait." : reply);
 
@@ -1817,6 +1845,36 @@ async function allConvs() {
 }
 
 // GET /api/admin/learners
+// GET /api/admin/ai-stats — activité IA du jour (réservé formateur)
+async function handleAiStats(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  const users = Object.values(AI_STATS.byUser).sort((a, b) => b.count - a.count).slice(0, 12);
+  sendJson(res, 200, { day: AI_STATS.day || dayKey(), total: AI_STATS.total, users });
+}
+
+// GET /api/admin/export — télécharge une sauvegarde JSON des données clés (réservé formateur)
+async function handleAdminExport(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Réservé à l'administrateur."); }
+  const bundle = { exportedAt: new Date().toISOString(), note: "Sauvegarde Bâtisseur — données clés (les mots de passe ne sont pas inclus)." };
+  try {
+    const usersRaw = await adminListUsers();
+    bundle.users = (usersRaw || []).map((x) => { const y = Object.assign({}, x); delete y.pass; return y; });
+  } catch (e) { bundle.users = []; }
+  try { bundle.reservations = USE_DB ? ((await sb(`/reservations?select=*`).catch(() => [])) || []) : []; } catch (e) { bundle.reservations = []; }
+  try { bundle.cohorts = USE_DB ? ((await sb(`/cohorts?select=*`).catch(() => [])) || []).map((x) => x.data || x) : []; } catch (e) { bundle.cohorts = []; }
+  try { bundle.settings = await getSettings(); } catch (e) { bundle.settings = {}; }
+  try {
+    const convs = await allConvs();
+    bundle.projects = (convs || []).map((c) => ({ id: c.id, userId: c.userId || null, ownerName: c.ownerName || null, track: c.track || "web", projectName: c.projectName || null, codeProject: !!c.codeProject, publishedUrl: c.publishedUrl || null, createdAt: c.createdAt || null, updatedAt: c.updatedAt || null }));
+  } catch (e) { bundle.projects = []; }
+  bundle.counts = { users: (bundle.users || []).length, reservations: (bundle.reservations || []).length, cohorts: (bundle.cohorts || []).length, projects: (bundle.projects || []).length };
+  const json = JSON.stringify(bundle, null, 2);
+  res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-disposition": 'attachment; filename="batisseur-sauvegarde-' + dayKey() + '.json"' });
+  res.end(json);
+}
+
 async function handleAdminLearners(req, res) {
   const u = await currentUser(req);
   if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
@@ -2406,8 +2464,25 @@ async function aiDailyLimit() {
   _aiLimCache = { v: cfg.aiDailyLimit, at: now };
   return cfg.aiDailyLimit;
 }
+// --- Compteur d'appels à l'IA (suivi des coûts, côté formateur) --------------
+// Léger et en mémoire : donne une idée de l'activité du jour. Remis à zéro au
+// redémarrage du serveur (c'est un repère pour repérer une hausse, pas une
+// comptabilité exacte).
+function dayKey() { return new Date().toISOString().slice(0, 10); }
+let AI_STATS = { day: dayKey(), total: 0, byUser: {} };
+function recordAiCall(user) {
+  const d = dayKey();
+  if (AI_STATS.day !== d) AI_STATS = { day: d, total: 0, byUser: {} };
+  AI_STATS.total++;
+  const id = (user && user.id) || "anon";
+  const name = (user && user.name) || "—";
+  const u = AI_STATS.byUser[id] || { name, count: 0 };
+  u.name = name; u.count++; AI_STATS.byUser[id] = u;
+}
+
 // Vrai si l'apprenant peut encore solliciter l'IA. Le formateur (admin) n'est jamais limité.
 async function aiQuotaGuard(user) {
+  recordAiCall(user);   // on compte toutes les sollicitations de l'IA (suivi des coûts)
   if (!user || isAdmin(user)) return true;
   const lim = await aiDailyLimit();
   if (!(lim > 0)) return true; // 0 ou vide = pas de plafond
@@ -3711,6 +3786,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/auth/me")) return handleMe(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/projects")) return handleProjects(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/admin/learners")) return handleAdminLearners(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/admin/ai-stats")) return handleAiStats(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/admin/export")) return handleAdminExport(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/create") return handleAdminCreate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/update") return handleAdminUpdate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/delete") return handleAdminDelete(req, res);
