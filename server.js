@@ -3051,6 +3051,24 @@ async function handleAttCheckin(req, res) {
   await attMark(st.date, u.id, true, "code");
   sendJson(res, 200, { ok: true, present: true });
 }
+// Annuler une séance : la retire de la liste des séances (donc du calcul des scores)
+// et efface les présences enregistrées pour cette date. Utile si une séance a été
+// ouverte par erreur. Par défaut la date du jour ; sinon la date fournie.
+async function attRemoveDate(date) { try { const s = await getSettings(); const dates = (Array.isArray(s.attendanceDates) ? s.attendanceDates : []).filter((d) => d !== date); await setSettings({ attendanceDates: dates }); } catch (e) {} }
+async function attDeleteRows(date) {
+  if (USE_DB) { try { await sb(`/attendance?session_date=eq.${encodeURIComponent(date)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); } catch (e) {} return; }
+  try { const f = path.join(DATA_DIR, "attendance.json"); let a = {}; try { a = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) {} delete a[date]; fs.writeFileSync(f, JSON.stringify(a, null, 2)); } catch (e) {}
+}
+async function handleAttReset(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {}
+  const st = await attState();
+  const date = String(p.date || st.date || todayKey());
+  await attRemoveDate(date);
+  await attDeleteRows(date);
+  if ((st.date || todayKey()) === date) { await attSetState({ open: false }); }
+  sendJson(res, 200, { ok: true, date });
+}
 
 // Résumé d'avancement d'un apprenant à partir de ses projets (étapes / leçons franchies).
 function progressSummary(list) {
@@ -3960,6 +3978,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/attendance/mark") return handleAttMark(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/attendance/me")) return handleAttMe(req, res);
   if (req.method === "POST" && req.url === "/api/attendance/checkin") return handleAttCheckin(req, res);
+  if (req.method === "POST" && req.url === "/api/attendance/reset") return handleAttReset(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/formation/activity")) return handleFormationActivity(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/quiz/programmation")) return handleQuizGet(req, res);
   if (req.method === "POST" && req.url === "/api/quiz/programmation/submit") return handleQuizSubmit(req, res);

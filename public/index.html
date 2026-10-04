@@ -1819,6 +1819,22 @@
       }
       box.appendChild(top);
       if(d.open){ const hint=document.createElement("div"); hint.style.cssText="margin-top:6px;font-size:.8rem;color:var(--ink-faint);"; hint.textContent="Les apprenants scannent le QR ou saisissent le code — et ceux sur le WiFi de la salle sont détectés automatiquement."; box.appendChild(hint); }
+      if(d.date){
+        const resetWrap=document.createElement("div"); resetWrap.style.cssText="margin-top:8px;";
+        const reset=document.createElement("button"); reset.className="dlbtn"; reset.style.cssText="font-size:11px;padding:4px 9px;color:#c0392b;border-color:#e4b9b9;";
+        reset.textContent="Annuler cette séance";
+        let armed=false; let t0=null;
+        reset.addEventListener("click", async()=>{
+          if(!armed){ armed=true; reset.textContent="Confirmer l'annulation ?"; t0=setTimeout(()=>{ armed=false; reset.textContent="Annuler cette séance"; },4000); return; }
+          clearTimeout(t0); reset.disabled=true; reset.textContent="Annulation…";
+          await fetch("/api/attendance/reset",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({date:d.date})}).catch(()=>{});
+          renderAttendancePanel(box);
+        });
+        resetWrap.appendChild(reset);
+        const rh=document.createElement("span"); rh.style.cssText="margin-left:8px;font-size:.76rem;color:var(--ink-faint);"; rh.textContent="Retire la séance des classements et efface ses présences (en cas d'ouverture par erreur).";
+        resetWrap.appendChild(rh);
+        box.appendChild(resetWrap);
+      }
       const info=document.createElement("div"); info.style.cssText="margin-top:10px;font-size:.88rem;color:var(--ink-soft);";
       info.innerHTML='<b style="color:var(--good);">'+d.present.length+'</b> présent(s) · <b style="color:#c0392b;">'+d.absent.length+'</b> absent(s) · '+d.total+' au total'+(d.date?(' · '+escHtmlMsg(d.date)):'');
       box.appendChild(info);

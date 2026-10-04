@@ -120,6 +120,16 @@ create table if not exists activity (
   primary key (user_id, day)
 );
 
+-- --- Présences des séances du samedi (une ligne par apprenant et par séance) ---
+create table if not exists attendance (
+  session_date text not null,          -- la date de la séance, ex. 2026-10-11
+  user_id      text not null,          -- l'apprenant
+  present      boolean not null default true,
+  method       text,                   -- "wifi", "code" ou "manuel"
+  marked_at    timestamptz default now(),
+  primary key (session_date, user_id)
+);
+
 -- --- Résultats de l'examen de programmation (QCM) ---
 create table if not exists quiz_results (
   user_id text not null,
