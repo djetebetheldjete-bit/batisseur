@@ -1805,6 +1805,26 @@
       aibox.innerHTML = aiInner;
       adminBody.appendChild(aibox);
 
+      // --- Classement Premium (indicatif) : aide à choisir les 2 meilleurs ---
+      const ph = document.createElement("div"); ph.className = "asection"; ph.textContent = "Candidats Premium (classement indicatif)"; adminBody.appendChild(ph);
+      const pbox = document.createElement("div"); pbox.style.cssText = "border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px;background:var(--surface);";
+      const ranked = L.map(l=>({ l, score:(l.published||0)*3 + (l.projects||0) })).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,6);
+      if(ranked.length){
+        let inner = '<div style="font-size:.82rem;color:var(--ink-faint);margin-bottom:8px;">D\'après l\'activité sur la plateforme (projets menés et publiés). Un repère : à compléter par le jour de démo et ton barème.</div>';
+        ranked.forEach((x,i)=>{
+          const top = i<2;
+          inner += '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);">'
+            + '<span style="width:24px;height:24px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:.8rem;color:#fff;background:'+(top?'var(--warm,#D98A2B)':'var(--accent,#147C8C)')+';">'+(i+1)+'</span>'
+            + '<span style="flex:1;font-weight:600;">'+escHtmlMsg(x.l.name||"—")+(x.l.premium?' <span style="color:var(--warm,#D98A2B);font-size:.8rem;">★ Premium</span>':'')+'</span>'
+            + '<span style="color:var(--ink-soft);font-size:.85rem;white-space:nowrap;">'+(x.l.published||0)+' publié(s) · '+(x.l.projects||0)+' projet(s)</span>'
+            + '</div>';
+        });
+        pbox.innerHTML = inner;
+      } else {
+        pbox.innerHTML = '<div style="color:var(--ink-faint);font-size:.88rem;">Le classement apparaîtra dès que les apprenants auront créé des projets.</div>';
+      }
+      adminBody.appendChild(pbox);
+
       // --- Sessions de formation ---
       const sh = document.createElement("div"); sh.className = "asection"; sh.textContent = "Sessions de formation"; adminBody.appendChild(sh);
       const gen = document.createElement("div"); gen.className = "acreate";
