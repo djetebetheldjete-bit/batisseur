@@ -1850,7 +1850,7 @@ async function handleAiStats(req, res) {
   const u = await currentUser(req);
   if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
   const users = Object.values(AI_STATS.byUser).sort((a, b) => b.count - a.count).slice(0, 12);
-  sendJson(res, 200, { day: AI_STATS.day || dayKey(), total: AI_STATS.total, users });
+  sendJson(res, 200, { day: AI_STATS.day || todayKey(), total: AI_STATS.total, users });
 }
 
 // GET /api/admin/export — télécharge une sauvegarde JSON des données clés (réservé formateur)
@@ -1871,8 +1871,24 @@ async function handleAdminExport(req, res) {
   } catch (e) { bundle.projects = []; }
   bundle.counts = { users: (bundle.users || []).length, reservations: (bundle.reservations || []).length, cohorts: (bundle.cohorts || []).length, projects: (bundle.projects || []).length };
   const json = JSON.stringify(bundle, null, 2);
-  res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-disposition": 'attachment; filename="batisseur-sauvegarde-' + dayKey() + '.json"' });
+  res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-disposition": 'attachment; filename="batisseur-sauvegarde-' + todayKey() + '.json"' });
   res.end(json);
+}
+
+// POST /api/admin/premium-note { userId, projet, attitude } — note manuelle du formateur (classement Premium)
+async function handlePremiumNote(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const uid = String(p.userId || ""); if (!uid) return sendJson(res, 400, { error: "Apprenant manquant." });
+  const st = await getSettings();
+  const notes = Object.assign({}, st.premiumNotes || {});
+  const cur = Object.assign({}, notes[uid] || {});
+  if (p.projet === null) delete cur.projet; else if (p.projet != null) { let v = parseFloat(p.projet); if (isNaN(v)) v = 0; cur.projet = Math.max(0, Math.min(30, v)); }
+  if (p.attitude === null) delete cur.attitude; else if (p.attitude != null) { let v = parseFloat(p.attitude); if (isNaN(v)) v = 0; cur.attitude = Math.max(0, Math.min(10, v)); }
+  notes[uid] = cur;
+  await setSettings({ premiumNotes: notes });
+  sendJson(res, 200, { ok: true, userId: uid, projet: (typeof cur.projet === "number") ? cur.projet : null, attitude: (typeof cur.attitude === "number") ? cur.attitude : null });
 }
 
 async function handleAdminLearners(req, res) {
@@ -1880,11 +1896,21 @@ async function handleAdminLearners(req, res) {
   if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
   const users = await adminListUsers();
   const convs = await allConvs();
-  const byUser = {};
-  convs.forEach((c) => { if (!c || !c.userId) return; const b = byUser[c.userId] || (byUser[c.userId] = { projects: 0, published: 0 }); b.projects++; if (c.publishedUrl) b.published++; });
-  const learners = users
-    .filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)))
-    .map((x) => ({ id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, cohortId: x.cohort_id || null, status: (x.status || "active"), premium: x.premium === true, paid: x.paid === true, createdAt: x.created_at || null, projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0 }));
+  const byUser = {}; const listByUser = {};
+  convs.forEach((c) => { if (!c || !c.userId) return; const b = byUser[c.userId] || (byUser[c.userId] = { projects: 0, published: 0 }); b.projects++; if (c.publishedUrl) b.published++; (listByUser[c.userId] || (listByUser[c.userId] = [])).push(c); });
+  const learnerUsers = users.filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)));
+  // Pour le classement Premium : assiduité (28 derniers jours) + progression + notes du formateur.
+  let actMap = {}; try { actMap = await activityForUsers(learnerUsers.map((x) => x.id), lastNDays(28)); } catch (e) {}
+  let pnotes = {}; try { const st = await getSettings(); pnotes = (st && st.premiumNotes) || {}; } catch (e) {}
+  const learners = learnerUsers.map((x) => {
+    const act = actMap[x.id] || {}; let secs = 0; Object.keys(act).forEach((d) => { secs += act[d] || 0; });
+    let frac = 0; try { frac = progressSummary(listByUser[x.id] || []).frac || 0; } catch (e) {}
+    const n = pnotes[x.id] || {};
+    return { id: x.id, email: x.email, name: x.name, cohort: x.cohort || null, cohortId: x.cohort_id || null, status: (x.status || "active"), premium: x.premium === true, paid: x.paid === true, createdAt: x.created_at || null,
+      projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0,
+      activitySeconds: secs, progressFrac: frac,
+      noteProjet: (typeof n.projet === "number") ? n.projet : null, noteAttitude: (typeof n.attitude === "number") ? n.attitude : null };
+  });
   const stats = {
     total: learners.length,
     active: learners.filter((l) => l.status === "active").length,
@@ -2468,10 +2494,11 @@ async function aiDailyLimit() {
 // Léger et en mémoire : donne une idée de l'activité du jour. Remis à zéro au
 // redémarrage du serveur (c'est un repère pour repérer une hausse, pas une
 // comptabilité exacte).
-function dayKey() { return new Date().toISOString().slice(0, 10); }
-let AI_STATS = { day: dayKey(), total: 0, byUser: {} };
+function todayKey() { return new Date().toISOString().slice(0, 10); }
+function lastNDays(n) { const out = []; const now = Date.now(); for (let i = 0; i < n; i++) out.push(new Date(now - i * 86400000).toISOString().slice(0, 10)); return out; }
+let AI_STATS = { day: todayKey(), total: 0, byUser: {} };
 function recordAiCall(user) {
-  const d = dayKey();
+  const d = todayKey();
   if (AI_STATS.day !== d) AI_STATS = { day: d, total: 0, byUser: {} };
   AI_STATS.total++;
   const id = (user && user.id) || "anon";
@@ -3788,6 +3815,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/admin/learners")) return handleAdminLearners(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/admin/ai-stats")) return handleAiStats(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/admin/export")) return handleAdminExport(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/premium-note") return handlePremiumNote(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/create") return handleAdminCreate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/update") return handleAdminUpdate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/delete") return handleAdminDelete(req, res);

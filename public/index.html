@@ -1775,6 +1775,54 @@
       if(l.paid)                return { key:"paidPending",   label:"Payé · en attente",     fg:"#1f7a5a", bg:"rgba(46,139,111,.14)", bd:"rgba(46,139,111,.50)" };
       return                           { key:"unpaidPending", label:"Non payé · en attente", fg:"#c0392b", bg:"rgba(192,57,43,.12)", bd:"rgba(192,57,43,.45)" };
     }
+    // Score Premium : auto (assiduité/25, projets/25, progression/10, relatifs au groupe) + manuel (projet final/30, attitude/10).
+    function premiumScore(l, maxP, maxSecs){
+      const p = (l.published||0)*3 + (l.projects||0);
+      const aProjets = maxP>0 ? 25*(p/maxP) : 0;
+      const aAssid = maxSecs>0 ? 25*((l.activitySeconds||0)/maxSecs) : 0;
+      const aProg = (l.progressFrac||0)*10;
+      const mProjet = (typeof l.noteProjet==="number") ? l.noteProjet : 0;
+      const mAttitude = (typeof l.noteAttitude==="number") ? l.noteAttitude : 0;
+      return { aProjets, aAssid, aProg, mProjet, mAttitude, total: aProjets+aAssid+aProg+mProjet+mAttitude };
+    }
+    function renderPremiumBoard(box, L){
+      box.innerHTML = "";
+      if(!L || !L.length){ box.innerHTML = '<div style="color:var(--ink-faint);font-size:.88rem;">Aucun apprenant pour le moment.</div>'; return; }
+      const maxP = Math.max(1, ...L.map(l=>(l.published||0)*3+(l.projects||0)));
+      const maxSecs = Math.max(1, ...L.map(l=>l.activitySeconds||0));
+      const rows = L.map(l=>({ l, s: premiumScore(l, maxP, maxSecs) })).sort((a,b)=> b.s.total - a.s.total);
+      const intro = document.createElement("div"); intro.style.cssText = "font-size:.82rem;color:var(--ink-faint);margin-bottom:10px;";
+      intro.innerHTML = "Calculé par la plateforme : <b>assiduité</b>, <b>projets</b>, <b>progression</b>. À saisir par toi : <b>projet final</b> /30 et <b>attitude</b> /10 (enregistré aussitôt). Les <b>2 premiers</b> = Premium.";
+      box.appendChild(intro);
+      rows.forEach((r,i)=>{
+        const top = i<2;
+        const row = document.createElement("div");
+        row.style.cssText = "border:1px solid "+(top?"var(--warm,#D98A2B)":"var(--line)")+";border-radius:11px;padding:10px 12px;margin-bottom:8px;background:"+(top?"color-mix(in srgb,var(--warm,#D98A2B) 9%,var(--surface))":"var(--surface-2)")+";";
+        const head = document.createElement("div"); head.style.cssText = "display:flex;align-items:center;gap:10px;";
+        head.innerHTML = '<span style="width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:.82rem;color:#fff;background:'+(top?"var(--warm,#D98A2B)":"var(--accent,#147C8C)")+';">'+(i+1)+'</span>'
+          + '<span style="flex:1;font-weight:700;">'+escHtmlMsg(r.l.name||"—")+(top?' <span style="color:var(--warm,#D98A2B);font-size:.78rem;">★ Premium</span>':'')+(r.l.premium?' <span style="color:var(--good);font-size:.74rem;">(accès activé)</span>':'')+'</span>'
+          + '<span style="font-weight:800;color:var(--accent-deep,#0C5866);">'+Math.round(r.s.total)+'<span style="font-size:.7rem;color:var(--ink-faint);font-weight:600;"> /100</span></span>';
+        row.appendChild(head);
+        const det = document.createElement("div"); det.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:.82rem;color:var(--ink-soft);";
+        det.innerHTML = '<span>Assiduité <b>'+Math.round(r.s.aAssid)+'</b>/25</span> · <span>Projets <b>'+Math.round(r.s.aProjets)+'</b>/25</span> · <span>Progr. <b>'+Math.round(r.s.aProg)+'</b>/10</span>';
+        const wrap = document.createElement("span"); wrap.style.cssText = "display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap;";
+        const lblP = document.createElement("span"); lblP.textContent = "Projet final"; lblP.style.cssText = "font-size:.78rem;";
+        const inP = document.createElement("input"); inP.type="number"; inP.min="0"; inP.max="30"; inP.value=(typeof r.l.noteProjet==="number")?r.l.noteProjet:""; inP.placeholder="/30"; inP.title="Qualité du projet final (0 à 30)"; inP.style.cssText="width:58px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;font:inherit;background:var(--surface);";
+        const lblA = document.createElement("span"); lblA.textContent = "Attitude"; lblA.style.cssText = "font-size:.78rem;";
+        const inA = document.createElement("input"); inA.type="number"; inA.min="0"; inA.max="10"; inA.value=(typeof r.l.noteAttitude==="number")?r.l.noteAttitude:""; inA.placeholder="/10"; inA.title="Attitude (0 à 10)"; inA.style.cssText="width:52px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;font:inherit;background:var(--surface);";
+        function save(){
+          const projet = inP.value===""?null:Math.max(0,Math.min(30,parseFloat(inP.value)||0));
+          const attitude = inA.value===""?null:Math.max(0,Math.min(10,parseFloat(inA.value)||0));
+          r.l.noteProjet = projet; r.l.noteAttitude = attitude;
+          fetch("/api/admin/premium-note",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:r.l.id, projet:projet, attitude:attitude})}).catch(()=>{});
+          renderPremiumBoard(box, L);
+        }
+        inP.addEventListener("change", save); inA.addEventListener("change", save);
+        wrap.appendChild(lblP); wrap.appendChild(inP); wrap.appendChild(lblA); wrap.appendChild(inA);
+        det.appendChild(wrap); row.appendChild(det);
+        box.appendChild(row);
+      });
+    }
     function renderAdmin(d){
       const s = d.stats || { total:0, active:0, pending:0, finished:0 };
       const L = d.learners || [];
@@ -1805,25 +1853,11 @@
       aibox.innerHTML = aiInner;
       adminBody.appendChild(aibox);
 
-      // --- Classement Premium (indicatif) : aide à choisir les 2 meilleurs ---
-      const ph = document.createElement("div"); ph.className = "asection"; ph.textContent = "Candidats Premium (classement indicatif)"; adminBody.appendChild(ph);
+      // --- Classement Premium : auto (plateforme) + tes notes (projet final, attitude) ---
+      const ph = document.createElement("div"); ph.className = "asection"; ph.textContent = "Classement Premium"; adminBody.appendChild(ph);
       const pbox = document.createElement("div"); pbox.style.cssText = "border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px;background:var(--surface);";
-      const ranked = L.map(l=>({ l, score:(l.published||0)*3 + (l.projects||0) })).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,6);
-      if(ranked.length){
-        let inner = '<div style="font-size:.82rem;color:var(--ink-faint);margin-bottom:8px;">D\'après l\'activité sur la plateforme (projets menés et publiés). Un repère : à compléter par le jour de démo et ton barème.</div>';
-        ranked.forEach((x,i)=>{
-          const top = i<2;
-          inner += '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);">'
-            + '<span style="width:24px;height:24px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:.8rem;color:#fff;background:'+(top?'var(--warm,#D98A2B)':'var(--accent,#147C8C)')+';">'+(i+1)+'</span>'
-            + '<span style="flex:1;font-weight:600;">'+escHtmlMsg(x.l.name||"—")+(x.l.premium?' <span style="color:var(--warm,#D98A2B);font-size:.8rem;">★ Premium</span>':'')+'</span>'
-            + '<span style="color:var(--ink-soft);font-size:.85rem;white-space:nowrap;">'+(x.l.published||0)+' publié(s) · '+(x.l.projects||0)+' projet(s)</span>'
-            + '</div>';
-        });
-        pbox.innerHTML = inner;
-      } else {
-        pbox.innerHTML = '<div style="color:var(--ink-faint);font-size:.88rem;">Le classement apparaîtra dès que les apprenants auront créé des projets.</div>';
-      }
       adminBody.appendChild(pbox);
+      renderPremiumBoard(pbox, L);
 
       // --- Sessions de formation ---
       const sh = document.createElement("div"); sh.className = "asection"; sh.textContent = "Sessions de formation"; adminBody.appendChild(sh);
