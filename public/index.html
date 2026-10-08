@@ -1612,6 +1612,19 @@
         el.style.display = "block";
       } else if(el){ el.style.display = "none"; }
     }
+    // Bandeau d'accueil : invite à rejoindre la communauté WhatsApp de sa session (apprenants dont la place est validée).
+    function showCommunityHome(){
+      let el = document.getElementById("communityHome");
+      if(me && !me.isAdmin && me.community){
+        if(!el){
+          el = document.createElement("div"); el.id = "communityHome";
+          el.style.cssText = "margin:10px 0;padding:12px 14px;border:1px solid #1ebe57;background:#e9f9ef;border-radius:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;";
+          if(resumedNote && resumedNote.parentNode) resumedNote.parentNode.insertBefore(el, resumedNote);
+        }
+        el.innerHTML = '<div style="flex:1;min-width:150px;color:#0b3d22;font-size:.92rem;line-height:1.35;"><b>Ta communauté WhatsApp t’attend 👋</b><br><span style="color:#2a5a3f;">Rejoins le groupe de ta session pour échanger, poser tes questions et rester informé.</span></div><a href="' + me.community + '" target="_blank" rel="noopener" style="background:#25D366;color:#fff;font-weight:700;text-decoration:none;padding:10px 16px;border-radius:10px;white-space:nowrap;">💬 Rejoindre</a>';
+        el.style.display = "flex";
+      } else if(el){ el.style.display = "none"; }
+    }
     const authName = $("authName"), authEmail = $("authEmail"), authPass = $("authPass"), authErr = $("authErr"), authCohort = $("authCohort");
     const authGo = $("authGo");
     const espaceModal = $("espaceModal"), projList = $("projList");
@@ -1639,6 +1652,7 @@
         logoutBtn.style.display = "none";
         var wb = document.getElementById("workBadge"); if(wb) wb.style.display = "none";
       }
+      try{ showCommunityHome(); }catch(e){}
     }
     async function loadMe(){
       try{ const r = await fetch("/api/auth/me"); const d = await r.json(); me = d.user || null; }
