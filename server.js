@@ -1768,7 +1768,7 @@ async function handleMe(req, res) {
   if (pub && !pub.isAdmin) {
     pub.paid = !!(u && u.paid === true);
     pub.sessionLaunched = await sessionLaunchedFor(u);
-    if (u && u.cohort_id) { try { const c = await getCohort(u.cohort_id); pub.sessionStart = c ? (c.startDate || null) : null; pub.sessionLabel = c ? (c.label || null) : null; } catch (e) {} }
+    if (u && u.cohort_id) { try { const c = await getCohort(u.cohort_id); pub.sessionStart = c ? (c.startDate || null) : null; pub.sessionLabel = c ? (c.label || null) : null; if (pub.paid) { const cfg = formationConfig(await getSettings()); pub.community = cohortCommunityLink(c, cfg); } } catch (e) {} }
   }
   sendJson(res, 200, { user: pub });
 }
@@ -2716,14 +2716,14 @@ async function handleReserveDeclare(req, res) {
     if (!r) return sendJson(res, 404, { error: "Réservation introuvable." });
     if (normEmail(p.email) !== r.email) return sendJson(res, 403, { error: "Cet e-mail ne correspond pas à la réservation." });
     const cfg0 = formationConfig(await getSettings());
-    const community = cohortCommunityLink(await getCohort(r.cohortId), cfg0);
-    if (r.status === "admis") return sendJson(res, 200, { ok: true, status: "admis", community });
+    // Le lien de la communauté n'est donné qu'APRÈS validation du formateur (statut "admis").
+    if (r.status === "admis") { const community = cohortCommunityLink(await getCohort(r.cohortId), cfg0); return sendJson(res, 200, { ok: true, status: "admis", community }); }
     if (cfg0.proofRequired) {                                    // preuve obligatoire : refuser la déclaration sans capture
       const existing = await getUpload(r.id, "reservation_proof");
       if (!existing) return sendJson(res, 400, { error: "La preuve de paiement (capture) est obligatoire. Joignez-la pour valider." });
     }
     await updateReservation(r.id, { status: "paiement_declare", declaredAt: new Date().toISOString() });
-    sendJson(res, 200, { ok: true, status: "paiement_declare", community });
+    sendJson(res, 200, { ok: true, status: "paiement_declare" });
   } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
 }
 
@@ -2745,8 +2745,10 @@ async function handleReserveProof(req, res) {
     await deleteUpload(r.id, "reservation_proof");                 // remplace une éventuelle preuve précédente
     await addUpload({ id: r.id, projectId: "reservation_proof", name: safeName(p.name || "preuve"), type, size, data, createdAt: new Date().toISOString() });
     if (r.status !== "admis") await updateReservation(r.id, { status: "paiement_declare", declaredAt: new Date().toISOString() });
-    const community = cohortCommunityLink(await getCohort(r.cohortId), formationConfig(await getSettings()));
-    sendJson(res, 200, { ok: true, status: r.status === "admis" ? "admis" : "paiement_declare", community });
+    const resp = { ok: true, status: r.status === "admis" ? "admis" : "paiement_declare" };
+    // Lien de la communauté réservé aux places déjà validées par le formateur.
+    if (r.status === "admis") resp.community = cohortCommunityLink(await getCohort(r.cohortId), formationConfig(await getSettings()));
+    sendJson(res, 200, resp);
   } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
 }
 

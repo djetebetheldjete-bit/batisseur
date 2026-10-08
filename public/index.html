@@ -310,6 +310,7 @@
       <button class="topbtn" id="progBtn" type="button" style="display:none;" title="Voir le programme de ma session et comment travailler">Mon programme</button>
       <button class="topbtn" id="examplesBtn" type="button" style="display:none;" title="Voir des exemples d'interfaces de sites et d'applications">Exemples</button>
       <button class="topbtn" id="espaceBtn" type="button" style="display:none;">Mon espace</button>
+      <button class="topbtn" id="waBtn" type="button" style="display:none;background:#25D366;color:#fff;border-color:#25D366;font-weight:700;" title="Rejoindre la communauté WhatsApp de ta session">💬 Communauté</button>
       <button class="topbtn" id="logoutBtn" type="button" style="display:none;">Se déconnecter</button>
       <button class="topbtn" id="helpBtn" type="button" title="Comment ça marche : guide rapide">Aide</button>
       <button class="newbtn" id="newBtn" type="button">Recommencer</button>
@@ -1625,6 +1626,7 @@
         { const pb=document.getElementById("progBtn"); if(pb) pb.style.display = (!me.isAdmin) ? "inline-block" : "none"; }
         espaceBtn.style.display = canViewUI() ? "inline-block" : "none";
         { const eb=document.getElementById("examplesBtn"); if(eb) eb.style.display = canViewUI() ? "inline-block" : "none"; }
+        { const wb2=document.getElementById("waBtn"); if(wb2){ if(!me.isAdmin && me.community){ wb2.style.display="inline-block"; wb2.onclick=function(){ window.open(me.community,"_blank","noopener"); }; } else { wb2.style.display="none"; } } }
         logoutBtn.style.display = "inline-block";
       } else {
         loginOpenBtn.style.display = "inline-block";
@@ -1633,6 +1635,7 @@
         { const pb=document.getElementById("progBtn"); if(pb) pb.style.display = "none"; }
         espaceBtn.style.display = "none";
         { const eb=document.getElementById("examplesBtn"); if(eb) eb.style.display = "none"; }
+        { const wb2=document.getElementById("waBtn"); if(wb2) wb2.style.display = "none"; }
         logoutBtn.style.display = "none";
         var wb = document.getElementById("workBadge"); if(wb) wb.style.display = "none";
       }
