@@ -194,6 +194,14 @@
       m.textContent = (f ? "Merci ! Votre paiement et votre preuve ont été transmis au formateur." : "Merci ! Votre paiement est signalé au formateur.")
         + " Vous serez ajouté à la liste des admis dès vérification. Vous pouvez fermer cette page.";
       btn.disabled = true;
+      var cw = document.getElementById("communityWrap");
+      if(!cw){ cw = document.createElement("div"); cw.id = "communityWrap"; cw.style.cssText = "margin-top:14px;"; m.parentNode.insertBefore(cw, m.nextSibling); }
+      if(res.d && res.d.community){
+        cw.innerHTML = '<a href="' + res.d.community + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#fff;font-weight:700;text-decoration:none;padding:12px 18px;border-radius:12px;">💬 Rejoindre la communauté WhatsApp</a>'
+          + '<div style="font-size:.85rem;color:#45566c;margin-top:8px;">Vous recevrez aussi ce lien par e-mail dès la validation de votre place.</div>';
+      } else {
+        cw.innerHTML = '<div style="font-size:.9rem;color:#45566c;">💬 Le lien de la communauté WhatsApp vous sera envoyé par e-mail dès la validation de votre place.</div>';
+      }
     };
     var fail = function(){ btn.disabled=false; btn.textContent=lbl; $("payMsg").className="err"; $("payMsg").textContent = "Impossible de joindre le serveur."; };
     if(f){

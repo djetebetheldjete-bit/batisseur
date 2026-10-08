@@ -546,6 +546,9 @@
             <label class="pwachk" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;"><input type="checkbox" id="setOpen"> Réservations ouvertes</label>
             <label class="pwachk" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;"><input type="checkbox" id="setProof"> Preuve de paiement obligatoire</label>
           </div>
+          <label style="font-size:12px;color:var(--ink-soft)">Lien d'invitation de la communauté WhatsApp <span style="color:var(--ink-faint)">— envoyé automatiquement aux admis</span></label>
+          <input id="setWa" type="url" placeholder="https://chat.whatsapp.com/…" maxlength="300">
+          <div style="font-size:11px;color:var(--ink-faint);margin-top:-2px;">Dans WhatsApp → votre communauté/groupe → « Inviter via un lien » → Copier le lien, puis collez-le ici.</div>
           <div class="autherr" id="setErr"></div>
           <div><button id="setSave" class="primary" type="button">Enregistrer les réglages</button></div>
         </div>
@@ -1973,6 +1976,10 @@
         if(c.enrolled >= c.capacity){ const badge = document.createElement("span"); badge.className = "tag"; badge.textContent = "Complète"; badge.style.color = "var(--bad)"; badge.style.borderColor = "color-mix(in srgb, var(--bad) 45%, var(--line))"; row.appendChild(badge); }
         if(c.launched){ const lb = document.createElement("span"); lb.className = "tag"; lb.textContent = "Lancée ✓"; lb.style.color = "var(--good,#2E8B6F)"; lb.style.borderColor = "color-mix(in srgb, var(--good,#2E8B6F) 45%, var(--line))"; row.appendChild(lb); }
         row.appendChild(cap); row.appendChild(sel);
+        const wa = document.createElement("input"); wa.type = "url"; wa.value = c.whatsappLink || ""; wa.placeholder = "Lien WhatsApp de la session"; wa.className = "lcohort"; wa.style.cssText = "flex:1;min-width:170px;"; wa.title = "Lien d'invitation WhatsApp envoyé automatiquement aux admis de CETTE session";
+        wa.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); wa.blur(); } });
+        wa.addEventListener("blur", function(){ var v = wa.value.trim(); if(v !== (c.whatsappLink||"")) saveCohortWa(c.id, v, wa, c); });
+        row.appendChild(wa);
         // Bouton « Lancer la session » : ouvre la création de projet pour les apprenants (place confirmée).
         // Bascule : « Lancer » (ouvre) / « Verrouiller » (referme). Confirmation en 2 temps.
         const target = !c.launched; // état visé au clic
@@ -2092,6 +2099,15 @@
     async function updateCohort(id, closed, capacity){
       try{ await fetch("/api/admin/cohort/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,closed:closed,capacity:capacity})}); }catch(e){}
       await loadAdmin();
+    }
+    async function saveCohortWa(id, link, el, c){
+      try{
+        const r=await fetch("/api/admin/cohort/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,whatsappLink:link})});
+        const d=await r.json().catch(function(){return{};});
+        if(!r.ok){ if(el){ el.style.borderColor="#c0392b"; el.title=d.error||"Lien invalide"; } return; }
+        if(c) c.whatsappLink=link;
+        if(el){ el.style.borderColor="var(--good,#2E8B6F)"; setTimeout(function(){ el.style.borderColor=""; },1500); }
+      }catch(e){}
     }
     async function launchCohortNow(id, launched, btn){
       if(btn){ btn.disabled = true; btn.textContent = launched ? "Lancement…" : "…"; }
@@ -2288,14 +2304,14 @@
     function escR(s){ const d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
     async function openResv(){
       resvModal.classList.add("show"); $("accessNote").style.display="none";
-      try{ const r=await fetch("/api/formation/settings"); const d=await r.json(); const s=d.settings||{}; $("setLink").value=s.payLink||""; $("setPrice").value=(s.price!=null?s.price:""); $("setCur").value=s.currency||"FCFA"; $("setOpen").checked=(s.open!==false); $("setProof").checked=(s.proofRequired===true); }catch(e){}
+      try{ const r=await fetch("/api/formation/settings"); const d=await r.json(); const s=d.settings||{}; $("setLink").value=s.payLink||""; $("setPrice").value=(s.price!=null?s.price:""); $("setCur").value=s.currency||"FCFA"; $("setOpen").checked=(s.open!==false); $("setProof").checked=(s.proofRequired===true); if($("setWa")) $("setWa").value=s.whatsappLink||""; }catch(e){}
       try{ const r=await fetch("/api/admin/cohorts"); const d=await r.json(); const list=(d.cohorts||[]); resvSession.innerHTML=list.map(c=>'<option value="'+c.id+'">'+escR(c.label)+(c.closed?" (fermée)":"")+'</option>').join(""); }catch(e){ resvSession.innerHTML=""; }
       if(resvSession.value) loadResv();
     }
     function closeResv(){ resvModal.classList.remove("show"); }
     async function saveSettings(){
       $("setErr").textContent="";
-      const body={ payLink:$("setLink").value.trim(), price:$("setPrice").value.trim(), currency:$("setCur").value.trim(), open:$("setOpen").checked, proofRequired:$("setProof").checked };
+      const body={ payLink:$("setLink").value.trim(), price:$("setPrice").value.trim(), currency:$("setCur").value.trim(), open:$("setOpen").checked, proofRequired:$("setProof").checked, whatsappLink:($("setWa")?$("setWa").value.trim():"") };
       const b=$("setSave"); b.disabled=true; const l=b.textContent; b.textContent="…";
       try{ const r=await fetch("/api/formation/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}); const d=await r.json(); if(!r.ok){ $("setErr").textContent=d.error||"Enregistrement impossible."; } else { $("setErr").className="autherr ok"; $("setErr").textContent="Réglages enregistrés."; } }
       catch(e){ $("setErr").textContent="Serveur injoignable."; } finally{ b.disabled=false; b.textContent=l; }

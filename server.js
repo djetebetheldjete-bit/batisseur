@@ -2020,7 +2020,7 @@ async function handleCohorts(req, res) {
 async function handleAdminCohorts(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
   const list = await listCohorts(); const counts = await cohortCounts(); const pend = await cohortPendingCounts();
-  sendJson(res, 200, { cohorts: list.map((c) => ({ id: c.id, label: c.label, startDate: c.startDate, capacity: c.capacity, closed: !!c.closed, enrolled: counts[c.id] || 0, launched: !!c.launched, pending: pend[c.id] || 0 })) });
+  sendJson(res, 200, { cohorts: list.map((c) => ({ id: c.id, label: c.label, startDate: c.startDate, capacity: c.capacity, closed: !!c.closed, enrolled: counts[c.id] || 0, launched: !!c.launched, pending: pend[c.id] || 0, whatsappLink: c.whatsappLink || "" })) });
 }
 // Nombre d'apprenants « en attente » (pending) par session — pour le bouton « Lancer ».
 async function cohortPendingCounts() {
@@ -2065,6 +2065,7 @@ async function handleAdminCohortUpdate(req, res) {
   if (p.capacity !== undefined) { const c = parseInt(p.capacity, 10); if (c >= 1) fields.capacity = c; }
   if (p.price !== undefined) { const pr = parseInt(p.price, 10); fields.price = (pr > 0) ? pr : null; }
   if (typeof p.label === "string" && p.label.trim()) fields.label = p.label.trim().slice(0, 120);
+  if (typeof p.whatsappLink === "string") { const l = p.whatsappLink.trim(); if (l && !/^https:\/\/(chat\.whatsapp\.com|wa\.me|whatsapp\.com)\//i.test(l)) return sendJson(res, 400, { error: "Lien WhatsApp invalide (il commence par https://chat.whatsapp.com/…)." }); fields.whatsappLink = l; }
   if (!Object.keys(fields).length) return sendJson(res, 400, { error: "Rien à modifier." });
   const c = await updateCohortRec(p.id, fields);
   if (!c) return sendJson(res, 404, { error: "Session introuvable." });
@@ -2481,9 +2482,14 @@ function formationConfig(s) {
     // Plafond de messages IA par apprenant et par 24 h (protège le coût d'API).
     // Volontairement large : un apprenant normal ne l'atteint jamais. Le formateur
     // n'est pas concerné. Réglable depuis l'Espace formateur.
-    aiDailyLimit: (s && s.aiDailyLimit != null) ? s.aiDailyLimit : (parseInt(process.env.AI_DAILY_LIMIT, 10) || 150)
+    aiDailyLimit: (s && s.aiDailyLimit != null) ? s.aiDailyLimit : (parseInt(process.env.AI_DAILY_LIMIT, 10) || 150),
+    // Lien d'invitation de la communauté WhatsApp : envoyé automatiquement aux admis.
+    whatsappLink: (s && typeof s.whatsappLink === "string") ? s.whatsappLink : (process.env.WHATSAPP_COMMUNITY_LINK || "")
   };
 }
+function communityLink(cfg) { return (cfg && cfg.whatsappLink) ? String(cfg.whatsappLink) : ""; }
+// Lien de la communauté WhatsApp propre à la SESSION, avec repli sur le lien global des réglages.
+function cohortCommunityLink(cohort, cfg) { return (cohort && cohort.whatsappLink) ? String(cohort.whatsappLink) : communityLink(cfg); }
 // Limite IA par apprenant : petit cache (60 s) pour éviter de relire les réglages à chaque message.
 let _aiLimCache = { v: null, at: 0 };
 async function aiDailyLimit() {
@@ -2574,6 +2580,26 @@ function reminderMessages(resv, cohort, cfg) {
     + "Nous restons à votre disposition.\nL'équipe Bâtisseur";
   const wa = "Bonjour " + resv.name + ", ici l'équipe Bâtisseur. Pour conserver votre place à la session du " + dateStr + ", merci de régler " + amount + " avant la veille de la session. Paiement Wave : " + payLink + " — sans règlement d'ici la fin de journée, la place sera proposée à une autre personne. Merci de votre compréhension.";
   return { subject, email, wa };
+}
+// E-mail d'admission envoyé automatiquement dès qu'une place est validée (admis) :
+// bienvenue + identifiants éventuels + lien de la communauté WhatsApp.
+async function sendAdmissionEmail(resv, cohort, cfg, access) {
+  try {
+    if (!resv || !resv.email || !emailAutoConfigured()) return;
+    const dateStr = cohort ? frDate(cohort.startDate) : "";
+    const base = process.env.PUBLIC_BASE_URL || "https://batisseur.onrender.com";
+    const link = cohortCommunityLink(cohort, cfg);
+    const subject = "Bâtisseur — votre place est confirmée 🎉";
+    let body = "Bonjour " + resv.name + ",\n\n"
+      + "Bonne nouvelle : votre place" + (dateStr ? (" pour la session du " + dateStr) : "") + " est confirmée. Bienvenue dans Bâtisseur !\n\n"
+      + "Connectez-vous dès maintenant pour commencer : " + base + "\n";
+    if (access && access.created && access.password) {
+      body += "\nVos identifiants de connexion :\n- E-mail : " + resv.email + "\n- Mot de passe provisoire : " + access.password + "\n(Vous pourrez le modifier après votre première connexion.)\n";
+    }
+    if (link) body += "\nRejoignez la communauté WhatsApp de la promo ici :\n" + link + "\n";
+    body += "\nÀ très vite, et bonne construction !\nL'équipe Bâtisseur";
+    await sendReminderEmail(resv.email, subject, body);
+  } catch (e) { console.error("E-mail admission:", e && e.message); }
 }
 function waLink(number, text) { const n = String(number || "").replace(/[^0-9]/g, ""); return n ? ("https://wa.me/" + n + "?text=" + encodeURIComponent(text)) : ""; }
 function mailtoLink(email, subject, body) { return email ? ("mailto:" + encodeURIComponent(email) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body)) : ""; }
@@ -2689,14 +2715,15 @@ async function handleReserveDeclare(req, res) {
     const r = await getReservation(p.id);
     if (!r) return sendJson(res, 404, { error: "Réservation introuvable." });
     if (normEmail(p.email) !== r.email) return sendJson(res, 403, { error: "Cet e-mail ne correspond pas à la réservation." });
-    if (r.status === "admis") return sendJson(res, 200, { ok: true, status: "admis" });
     const cfg0 = formationConfig(await getSettings());
+    const community = cohortCommunityLink(await getCohort(r.cohortId), cfg0);
+    if (r.status === "admis") return sendJson(res, 200, { ok: true, status: "admis", community });
     if (cfg0.proofRequired) {                                    // preuve obligatoire : refuser la déclaration sans capture
       const existing = await getUpload(r.id, "reservation_proof");
       if (!existing) return sendJson(res, 400, { error: "La preuve de paiement (capture) est obligatoire. Joignez-la pour valider." });
     }
     await updateReservation(r.id, { status: "paiement_declare", declaredAt: new Date().toISOString() });
-    sendJson(res, 200, { ok: true, status: "paiement_declare" });
+    sendJson(res, 200, { ok: true, status: "paiement_declare", community });
   } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
 }
 
@@ -2718,7 +2745,8 @@ async function handleReserveProof(req, res) {
     await deleteUpload(r.id, "reservation_proof");                 // remplace une éventuelle preuve précédente
     await addUpload({ id: r.id, projectId: "reservation_proof", name: safeName(p.name || "preuve"), type, size, data, createdAt: new Date().toISOString() });
     if (r.status !== "admis") await updateReservation(r.id, { status: "paiement_declare", declaredAt: new Date().toISOString() });
-    sendJson(res, 200, { ok: true, status: r.status === "admis" ? "admis" : "paiement_declare" });
+    const community = cohortCommunityLink(await getCohort(r.cohortId), formationConfig(await getSettings()));
+    sendJson(res, 200, { ok: true, status: r.status === "admis" ? "admis" : "paiement_declare", community });
   } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
 }
 
@@ -2843,7 +2871,10 @@ async function handleFormationReservationStatus(req, res) {
   const fields = { status }; if (status === "admis") fields.admittedAt = new Date().toISOString();
   await updateReservation(r.id, fields);
   let access = null;
-  if (status === "admis") { try { access = await grantAccessForReservation(Object.assign({}, r, fields)); } catch (e) {} }
+  if (status === "admis") {
+    try { access = await grantAccessForReservation(Object.assign({}, r, fields)); } catch (e) {}
+    try { const cfg = formationConfig(await getSettings()); const cohort = await getCohort(r.cohortId); await sendAdmissionEmail(Object.assign({}, r, fields), cohort, cfg, access); } catch (e) {}
+  }
   sendJson(res, 200, { ok: true, access });
 }
 
@@ -2875,6 +2906,7 @@ async function handleFormationCash(req, res) {
   const rec = { id, cohortId: cohort.id, name, email, whatsapp, status: "admis", source: "especes", admittedAt: new Date().toISOString(), createdAt: new Date().toISOString() };
   await addReservation(rec);
   let access = null; try { access = await grantAccessForReservation(rec); } catch (e) {}
+  try { const cfg = formationConfig(await getSettings()); await sendAdmissionEmail(rec, cohort, cfg, access); } catch (e) {}
   sendJson(res, 200, { ok: true, id, access });
 }
 
@@ -2891,6 +2923,7 @@ async function handleFormationSettings(req, res) {
   if (p.dailyGoalMin !== undefined) { const n = parseInt(p.dailyGoalMin, 10); if (!(n >= 5 && n <= 600)) return sendJson(res, 400, { error: "Objectif quotidien : entre 5 et 600 minutes." }); fields.dailyGoalMin = n; }
   if (typeof p.proofRequired === "boolean") fields.proofRequired = p.proofRequired;
   if (p.aiDailyLimit !== undefined) { const n = parseInt(p.aiDailyLimit, 10); if (!(n >= 20 && n <= 2000)) return sendJson(res, 400, { error: "Plafond IA par apprenant : entre 20 et 2000 messages par jour." }); fields.aiDailyLimit = n; }
+  if (typeof p.whatsappLink === "string") { const l = p.whatsappLink.trim(); if (l && !/^https:\/\/(chat\.whatsapp\.com|wa\.me|whatsapp\.com)\//i.test(l)) return sendJson(res, 400, { error: "Collez un lien d'invitation WhatsApp valide (il commence par https://chat.whatsapp.com/…)." }); fields.whatsappLink = l; }
   const next = await setSettings(fields);
   _aiLimCache.at = 0; // forcer la prise en compte immédiate du nouveau plafond
   sendJson(res, 200, { settings: formationConfig(next) });
