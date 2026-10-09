@@ -1881,14 +1881,90 @@ async function handlePremiumNote(req, res) {
   if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
   let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
   const uid = String(p.userId || ""); if (!uid) return sendJson(res, 400, { error: "Apprenant manquant." });
+  const cohortId = String(p.cohortId || ""); if (!cohortId) return sendJson(res, 400, { error: "Session manquante." });
   const st = await getSettings();
+  // Notes RANGÉES PAR SESSION : premiumNotes[cohortId][uid]. Une nouvelle session repart donc à zéro.
   const notes = Object.assign({}, st.premiumNotes || {});
-  const cur = Object.assign({}, notes[uid] || {});
+  const cn = Object.assign({}, (notes[cohortId] && typeof notes[cohortId] === "object") ? notes[cohortId] : {});
+  const cur = Object.assign({}, cn[uid] || {});
   if (p.projet === null) delete cur.projet; else if (p.projet != null) { let v = parseFloat(p.projet); if (isNaN(v)) v = 0; cur.projet = Math.max(0, Math.min(30, v)); }
   if (p.attitude === null) delete cur.attitude; else if (p.attitude != null) { let v = parseFloat(p.attitude); if (isNaN(v)) v = 0; cur.attitude = Math.max(0, Math.min(10, v)); }
-  notes[uid] = cur;
+  cn[uid] = cur; notes[cohortId] = cn;
   await setSettings({ premiumNotes: notes });
   sendJson(res, 200, { ok: true, userId: uid, projet: (typeof cur.projet === "number") ? cur.projet : null, attitude: (typeof cur.attitude === "number") ? cur.attitude : null });
+}
+
+// ---- Classement Premium PAR SESSION ----
+// Chaque session (cohorte) a son propre classement : assiduité, projets, progression,
+// présences et notes du formateur sont calculés sur la FENÊTRE de la session
+// (du lancement à la fin). Une nouvelle session repart donc à zéro.
+const SESSION_WINDOW_DAYS = parseInt(process.env.SESSION_WINDOW_DAYS, 10) || 16; // couvre ~2 semaines / 3 samedis
+async function currentSessionCohort() {
+  const list = await listCohorts();
+  const launched = list.filter((c) => c && c.launched && c.launchedAt);
+  if (launched.length) { launched.sort((a, b) => String(b.launchedAt).localeCompare(String(a.launchedAt))); return launched[0]; }
+  const sorted = list.filter(Boolean).sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")));
+  return sorted[0] || null;
+}
+function sessionWindow(cohort) {
+  // Le classement ne démarre qu'au LANCEMENT de la session (bouton « Lancer »).
+  // Tant que launchedAt est absent, il n'y a pas de fenêtre : rien ne compte.
+  if (!cohort || !cohort.launchedAt) return null;
+  const start = String(cohort.launchedAt).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return null;
+  const s = new Date(start + "T00:00:00Z");
+  const end = new Date(s.getTime() + SESSION_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+  return { start, end, startTs: String(cohort.launchedAt) };
+}
+function daysBetween(start, end) {
+  const out = []; let d = new Date(start + "T00:00:00Z"); const e = new Date(end + "T00:00:00Z");
+  while (d <= e) { out.push(d.toISOString().slice(0, 10)); d = new Date(d.getTime() + 86400000); }
+  return out;
+}
+async function attCountsForDates(dates) {
+  const out = {}; const set = Array.from(new Set(dates || []));
+  for (const d of set) { try { const rows = await attRowsForDate(d); rows.forEach((r) => { if (r.present) out[r.user_id] = (out[r.user_id] || 0) + 1; }); } catch (e) {} }
+  return out;
+}
+async function handlePremiumBoard(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  const qs = new URLSearchParams((req.url.split("?")[1] || ""));
+  const list = await listCohorts();
+  let cohort = qs.get("cohortId") ? await getCohort(qs.get("cohortId")) : await currentSessionCohort();
+  const sessions = list.filter(Boolean).map((c) => ({ id: c.id, label: c.label, startDate: c.startDate, launched: !!c.launched }))
+    .sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")));
+  if (!cohort) return sendJson(res, 200, { cohortId: null, cohortLabel: null, sessions, learners: [], launched: false });
+  const win = sessionWindow(cohort);
+  const launched = !!win;
+  const users = (await adminListUsers()).filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)) && x.cohort_id === cohort.id);
+  const st = await getSettings();
+  const notesAll = (st.premiumNotes && typeof st.premiumNotes === "object") ? st.premiumNotes : {};
+  const cohortNotes = (notesAll[cohort.id] && typeof notesAll[cohort.id] === "object") ? notesAll[cohort.id] : {};
+  // Session PAS ENCORE LANCÉE : aucun score ne compte, tout est à zéro (le classement démarre au lancement).
+  if (!launched) {
+    const learners0 = users.map((x) => { const n = cohortNotes[x.id] || {}; return { id: x.id, name: x.name, email: x.email, premium: x.premium === true, paid: x.paid === true, projects: 0, published: 0, activitySeconds: 0, progressFrac: 0, sessionsPresent: 0, sessionsTotal: 0, noteProjet: (typeof n.projet === "number") ? n.projet : null, noteAttitude: (typeof n.attitude === "number") ? n.attitude : null }; });
+    return sendJson(res, 200, { cohortId: cohort.id, cohortLabel: cohort.label, window: null, launched: false, sessions, learners: learners0 });
+  }
+  const windowDays = daysBetween(win.start, win.end);
+  // Projets/progression : on ne compte que l'activité À PARTIR du lancement (updatedAt ≥ lancement).
+  const convs = (await allConvs()).filter((c) => c && c.userId && String(c.updatedAt || c.createdAt || "") >= win.startTs);
+  const byUser = {}, listByUser = {};
+  convs.forEach((c) => { const b = byUser[c.userId] || (byUser[c.userId] = { projects: 0, published: 0 }); b.projects++; if (c.publishedUrl) b.published++; (listByUser[c.userId] || (listByUser[c.userId] = [])).push(c); });
+  let actMap = {}; try { actMap = await activityForUsers(users.map((x) => x.id), windowDays); } catch (e) {}
+  const allDates = Array.isArray(st.attendanceDates) ? st.attendanceDates : [];
+  const sessionDates = allDates.filter((d) => d >= win.start && d <= win.end);
+  let attCounts = {}; try { attCounts = await attCountsForDates(sessionDates); } catch (e) {}
+  const learners = users.map((x) => {
+    const act = actMap[x.id] || {}; let secs = 0; Object.keys(act).forEach((d) => { secs += act[d] || 0; });
+    let frac = 0; try { frac = progressSummary(listByUser[x.id] || []).frac || 0; } catch (e) {}
+    const n = cohortNotes[x.id] || {};
+    return { id: x.id, name: x.name, email: x.email, premium: x.premium === true, paid: x.paid === true,
+      projects: byUser[x.id] ? byUser[x.id].projects : 0, published: byUser[x.id] ? byUser[x.id].published : 0,
+      activitySeconds: secs, progressFrac: frac, sessionsPresent: attCounts[x.id] || 0, sessionsTotal: sessionDates.length,
+      noteProjet: (typeof n.projet === "number") ? n.projet : null, noteAttitude: (typeof n.attitude === "number") ? n.attitude : null };
+  });
+  sendJson(res, 200, { cohortId: cohort.id, cohortLabel: cohort.label, window: win, launched: true, sessions, learners });
 }
 
 async function handleAdminLearners(req, res) {
@@ -3955,6 +4031,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/admin/learners")) return handleAdminLearners(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/admin/ai-stats")) return handleAiStats(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/admin/export")) return handleAdminExport(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/admin/premium-board")) return handlePremiumBoard(req, res);
   if (req.method === "POST" && req.url === "/api/admin/premium-note") return handlePremiumNote(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/create") return handleAdminCreate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/learner/update") return handleAdminUpdate(req, res);
