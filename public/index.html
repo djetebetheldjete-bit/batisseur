@@ -347,6 +347,7 @@
           <div class="st" id="stepLabel">Comprendre le projet<small id="stepSub">Orientation</small></div>
           <div class="ch-actions">
             <span class="typebadge" id="typeBadge" style="display:none;"></span>
+            <button class="certbtn" id="addModBtn" type="button" style="display:none;background:var(--surface);color:var(--accent-deep);border:1px solid var(--accent);" title="Ajouter une fonctionnalité (boutique, rendez-vous, espace membre) à ce projet, sans rien perdre">+ Ajouter un volet</button>
             <button class="certbtn" id="examBtn" type="button" style="display:none;background:#0C5866;color:#fff;">Passer l'examen</button>
             <button class="certbtn" id="certBtn" type="button" style="display:none;">Mon attestation</button>
             <button class="nextbtn" id="prevBtn" type="button" style="display:none;background:var(--surface);color:var(--ink);border:1px solid var(--line);" title="Revenir à l'étape précédente">← Précédent</button>
@@ -711,6 +712,19 @@
     </div>
   </div>
 
+  <!-- Ajouter un volet à un projet déjà commencé -->
+  <div class="modal-bg" id="addModModal">
+    <div class="modal wide">
+      <h3>Ajouter un volet à votre projet</h3>
+      <p>Choisissez une fonctionnalité à ajouter. L'assistant l'intègre à votre site actuel <b>sans rien perdre</b> de ce que vous avez déjà fait.</p>
+      <div class="choices" id="addModChoices"></div>
+      <div class="row">
+        <button id="addModCancel" type="button">Annuler</button>
+        <button id="addModGo" class="primary" type="button" disabled>Ajouter ce volet</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Connexion / inscription (Palier 4) -->
   <div class="modal-bg" id="authModal">
     <div class="modal">
@@ -768,6 +782,8 @@
     const $ = (id) => document.getElementById(id);
     const thread = $("thread"), form = $("form"), input = $("input"), sendBtn = $("send");
     const newBtn = $("newBtn"), nextBtn = $("nextBtn"), prevBtn = $("prevBtn"), resumedNote = $("resumed"), certBtn = $("certBtn"), examBtn = $("examBtn");
+    const addModBtn = $("addModBtn"), addModModal = $("addModModal"), addModChoices = $("addModChoices"), addModGo = $("addModGo");
+    let addModSel = null;
     let quizPassed = false;
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
@@ -879,6 +895,51 @@
       closeTypeChooser(); clearSavedId(); convId = null; startNew(mods.length ? mods : ["presentation"]);
     }
 
+    // --- Ajouter un volet à un projet DÉJÀ commencé (sans perdre le travail) ---
+    function openAddMod(){
+      if(!convId || track!=="web" || codeProject) return;
+      addModSel = null; addModGo.disabled = true;
+      addModChoices.innerHTML = "";
+      // On ne propose que les volets interactifs pas encore actifs (jamais « présentation »).
+      const avail = MODULE_ORDER.filter(k => k!=="presentation" && currentModules.indexOf(k)<0);
+      if(!avail.length){
+        const p=document.createElement("p"); p.style.margin="4px 0 0"; p.style.color="var(--ink-soft)";
+        p.textContent="Tous les volets disponibles sont déjà présents dans ce projet.";
+        addModChoices.appendChild(p);
+      } else {
+        avail.forEach((key)=>{
+          const t = MODULES_UI[key];
+          const b = document.createElement("button");
+          b.className = "choice"; b.type = "button"; b.dataset.key = key;
+          b.innerHTML = '<span class="chk"></span><span class="pi">'+(t.short||"?").charAt(0).toUpperCase()+'</span><span class="pb"><b></b><span></span></span>';
+          b.querySelector("b").textContent = t.short;
+          b.querySelector(".pb > span").textContent = t.tagline;
+          b.addEventListener("click", ()=>{
+            addModSel = key; addModGo.disabled = false;
+            addModChoices.querySelectorAll(".choice").forEach(el=>el.classList.toggle("sel", el.dataset.key===key));
+          });
+          addModChoices.appendChild(b);
+        });
+      }
+      addModModal.classList.add("show");
+    }
+    function closeAddMod(){ addModModal.classList.remove("show"); }
+    async function confirmAddMod(){
+      if(!convId || !addModSel){ closeAddMod(); return; }
+      const key = addModSel; closeAddMod();
+      const typing = bubble("…","ai typing"); setBusy(true); addModBtn.disabled = true;
+      try{
+        const r = await fetch("/api/add-module",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId, module:key})});
+        const data = await r.json(); typing.remove();
+        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur."),"err"); return; }
+        if(data.modules) currentModules = normMods(data.modules);
+        renderTypeBadge(); renderRail();
+        if(data.reply) bubbleRich(""+data.reply,"ai");
+        if(data.siteUpdated) reloadPreview();
+      }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); }
+      finally{ setBusy(false); addModBtn.disabled = false; }
+    }
+
     const STORAGE_KEY = "batisseur_parcours_id";
     let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null, currentModules = ["presentation"];
     let codeProject = false, codeProjName = "";   // espace « coder soi-même » (guide + éditeur)
@@ -965,7 +1026,7 @@
         row.innerHTML='<span class="mk">★</span><span class="ml"><b>Atelier Premium</b><i>Application avancée</i></span>';
         railInner.appendChild(row);
         stepLabel.childNodes[0].nodeValue="Atelier Premium"; stepSub.textContent="Application avancée";
-        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none"; examBtn.style.display="none"; prevBtn.style.display="none";
+        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none"; examBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none";
         return;
       }
       nextBtn.style.display="";
@@ -975,7 +1036,7 @@
         row.querySelector("b").textContent = codeProjName || "Mon projet";
         railInner.appendChild(row);
         stepLabel.childNodes[0].nodeValue = codeProjName || "Mon projet"; stepSub.textContent="Je code moi-même";
-        nextBtn.disabled=true; nextBtn.style.display="none"; examBtn.style.display="none"; certBtn.style.display="none"; prevBtn.style.display="none";
+        nextBtn.disabled=true; nextBtn.style.display="none"; examBtn.style.display="none"; certBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none";
         return;
       }
       if(track === "code"){
@@ -993,7 +1054,7 @@
         const atEnd = lesson >= total - 1;
         nextBtn.disabled = atEnd;
         nextBtn.textContent = atEnd ? "Programme terminé ✓" : "Leçon suivante →";
-        prevBtn.style.display=""; prevBtn.disabled = (lesson<=0);
+        prevBtn.style.display=""; prevBtn.disabled = (lesson<=0); addModBtn.style.display="none";
         examBtn.style.display = (convId && atEnd) ? "inline-block" : "none";
         examBtn.textContent = quizPassed ? "Examen réussi ✓ — revoir" : "Passer l'examen";
         certBtn.style.display = (convId && atEnd && quizPassed) ? "inline-block" : "none";
@@ -1012,6 +1073,7 @@
       nextBtn.disabled = step >= LAST;
       nextBtn.textContent = step >= LAST ? "Parcours terminé ✓" : "Étape suivante →";
       prevBtn.style.display=""; prevBtn.disabled = (step<=0);
+      addModBtn.style.display = convId ? "inline-block" : "none";
       certBtn.style.display = (convId && step >= LAST) ? "inline-block" : "none";
     }
 
@@ -1529,6 +1591,10 @@
     }
     function goPrev(){ const isLesson=(track==="code" && !codeProject); gotoStep(isLesson ? (lesson-1) : (step-1)); }
     prevBtn.addEventListener("click", goPrev);
+    addModBtn.addEventListener("click", openAddMod);
+    addModGo.addEventListener("click", confirmAddMod);
+    $("addModCancel").addEventListener("click", closeAddMod);
+    addModModal.addEventListener("click",(e)=>{ if(e.target===addModModal) closeAddMod(); });
     nextBtn.addEventListener("click", goNext);
     pubBtn.addEventListener("click", doPublish);
     dataBtn.addEventListener("click", openData);

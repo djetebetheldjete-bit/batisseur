@@ -567,7 +567,7 @@ Bâtisseur ne fait pas que des sites vitrines : c'est aussi un créateur d'appli
 - Une APPLICATION INSTALLABLE : au moment de la publication, la personne peut cocher « Installable sur téléphone » pour que son site s'installe comme une vraie appli (icône sur l'écran d'accueil, ouverture en plein écran, fonctionne même hors connexion). La plateforme s'occupe de tout automatiquement — rien à écrire.
 - L'ENVOI DE FICHIERS : un visiteur peut joindre une photo, un PDF ou un document à une commande, un rendez-vous ou un message (par exemple un imprimeur qui reçoit le fichier à imprimer, un artisan qui reçoit une photo du projet). Le propriétaire retrouve les fichiers dans son tableau de bord « Données ». Il suffit d'ajouter un champ fichier au formulaire — la plateforme gère tout.
 - LE PAIEMENT EN LIGNE (Wave) : la personne peut activer le paiement depuis le bouton « Paiement » (en haut de l'aperçu) en collant SON lien de paiement Wave — un bouton « Payer avec Wave » apparaît alors sur sa boutique, et le bouton « Commander » propose le règlement. Les commandes payées sont signalées « Payé » dans le tableau de bord. La configuration se fait par ce bouton (jamais dans la discussion, jamais de clé à coller ici). Tu peux aussi, sur demande, ajouter un bouton de paiement dans une page : <a data-bat-pay data-amount="5000">Payer</a> (data-amount facultatif).
-Explique ces possibilités comme des idées concrètes (« on pourrait ajouter… »), sans forcer. Si une fonction demande un volet qui n'est pas activé (Boutique, Rendez-vous, Espace membre), invite gentiment la personne à cliquer « Recommencer » et à cocher le ou les volets voulus (on peut en combiner plusieurs).`;
+Explique ces possibilités comme des idées concrètes (« on pourrait ajouter… »), sans forcer. Si une fonction demande un volet qui n'est pas activé (Boutique, Rendez-vous, Espace membre), invite gentiment la personne à cliquer le bouton « + Ajouter un volet » (en haut de la discussion) : le volet s'ajoute au projet et s'intègre au site existant SANS rien perdre du travail déjà fait. (Elle peut en combiner plusieurs ; inutile de recommencer le projet.)`;
 
 // Consigne commune : proposer des CHOIX cliquables quand une décision guidée aide l'apprenant.
 const CHOIX_HELP = `
@@ -1459,6 +1459,90 @@ async function handleGoto(req, res) {
     const title = (STEPS[to] && STEPS[to].label) || ("Étape " + (to + 1));
     return sendJson(res, 200, { step: conv.step, atEnd: conv.step >= LAST_STEP, reply: "◀ Retour à l'étape " + (to + 1) + " — « " + title + " ». Vous pouvez relire ou ajuster cette étape, puis continuer avec « Étape suivante ».", siteUpdated: false, nav: true });
   } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
+}
+
+// POST /api/add-module : ajoute un volet (boutique, rendez-vous, espace membre) à un
+// projet DÉJÀ commencé, en ENRICHISSANT le site existant sans rien perdre du travail fait.
+// Réservé aux projets « web » (sites / applications à volets).
+async function handleAddModule(req, res) {
+  if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const conv = await loadConv(p.id);
+    if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+    const user = await currentUser(req);
+    if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    { const g = await accessGate(user, "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
+    if (conv.track === "code" || conv.track === "premium" || conv.codeProject) {
+      return sendJson(res, 400, { error: "On ne peut ajouter un volet qu'à un projet de type site ou application." });
+    }
+    const mod = String(p.module || "").trim();
+    if (!MODULES[mod] || mod === "presentation") return sendJson(res, 400, { error: "Volet inconnu." });
+    const mods = convModules(conv);
+    if (mods.includes(mod)) {
+      return sendJson(res, 200, { modules: mods, already: true, siteUpdated: false, reply: "Le volet « " + MODULES[mod].short + " » fait déjà partie de votre projet." });
+    }
+    // On ajoute le volet et on l'enregistre : il sera pris en compte à chaque construction.
+    const newMods = MODULE_ORDER.filter((k) => mods.includes(k) || k === mod);
+    conv.modules = newMods;
+    logConv(conv, "module", "A ajouté le volet « " + MODULES[mod].short + " »");
+    // Site pas encore construit : on confirme simplement l'ajout (rien à enrichir pour l'instant).
+    const current = stripKit(await readSite(conv.id));
+    if (!current) {
+      conv.updatedAt = new Date().toISOString(); await saveConv(conv);
+      return sendJson(res, 200, { modules: newMods, siteUpdated: false, reply: "Le volet « " + MODULES[mod].short + " » est ajouté à votre projet. Il sera intégré automatiquement dès que votre site sera construit." });
+    }
+    if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
+    // Construction ENRICHIE : on part du site actuel et on y AJOUTE le nouveau volet.
+    let system = "Tu es l'assistant de construction de Bâtisseur. Tu pars d'un site existant et tu l'enrichis."
+      + "\n\n=== CONTEXTE DU PROJET ===\n" + modulesContext(newMods)
+      + SINGLE_INSTRUCTION;
+    const focus = modulesBuild(newMods); if (focus) system += focus;
+    system += `
+
+=== DEMANDE PRÉCISE ===
+La personne vient d'AJOUTER le volet « ${MODULES[mod].label} » à son projet. Intègre ce nouveau volet au site EXISTANT :
+- Ajoute une NOUVELLE SECTION dédiée (avec son id) et son entrée dans le menu, en suivant les consignes de ce volet ci-dessus.
+- GARDE absolument tout le contenu, le style et les rubriques déjà présents : tu ne supprimes rien et tu ne repars jamais de zéro.
+- Conserve une identité visuelle unique et cohérente avec l'existant.
+Renvoie la page ENTIÈRE à jour.`;
+    system += `
+
+=== ÉTAT ACTUEL DU SITE (index.html) ===
+Voici le code EXACT du site tel qu'il est maintenant. Tu PARS de ce code, tu ajoutes le nouveau volet, et tu renvoies le fichier ENTIER à jour.
+\`\`\`html
+${current}
+\`\`\``;
+    const baseUrl = reqBase(req);
+    conv.messages.push({ role: "user", content: "Ajoute le volet « " + MODULES[mod].label + " » à mon site, en gardant tout ce qui existe déjà.", hidden: true });
+    const reply = await callClaude(system, conv.messages, MODEL, BUILD_TOKENS);
+    const ex = extractSite(reply);
+    let siteUpdated = false; let message = ex.message;
+    if (ex.html && htmlLooksComplete(ex.html)) {
+      const withKit = injectKit(ex.html, newMods, conv, baseUrl);
+      if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; }
+    } else if (ex.html) {
+      try {
+        const retrySys = system + "\n\nIMPORTANT : ta réponse précédente a été COUPÉE car trop longue. Renvoie MAINTENANT le site ENTIER dans UN SEUL bloc qui se termine bien par </html>, en restant plus COMPACT (CSS concis, pas de répétitions).";
+        const retry = await callClaude(retrySys, conv.messages, MODEL, BUILD_TOKENS);
+        const ex2 = extractSite(retry);
+        if (ex2.html && htmlLooksComplete(ex2.html)) {
+          const withKit2 = injectKit(ex2.html, newMods, conv, baseUrl);
+          if (await writeSite(conv.id, withKit2)) { siteUpdated = true; conv.hasSite = true; }
+          if (ex2.message && ex2.message.trim()) message = ex2.message;
+        } else {
+          message = "Le volet est ajouté à votre projet, mais le site est devenu un peu trop grand pour tout réécrire d'un coup. Dites « ajoute la section " + MODULES[mod].short + " » dans le chat pour que je termine.";
+        }
+      } catch (e) {
+        message = "Le volet est ajouté à votre projet. Dites « ajoute la section " + MODULES[mod].short + " » dans le chat pour que je l'intègre au site.";
+      }
+    }
+    if (!message || !message.trim()) message = siteUpdated ? ("J'ai ajouté le volet « " + MODULES[mod].short + " » à votre site — regardez l'aperçu.") : "C'est fait.";
+    conv.messages.push({ role: "assistant", content: message });
+    conv.updatedAt = new Date().toISOString();
+    await saveConv(conv);
+    return sendJson(res, 200, { modules: newMods, siteUpdated, reply: message });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
 // GET /api/download?id=... : télécharge le site (index.html) en pièce jointe
@@ -4076,6 +4160,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
   if (req.method === "POST" && req.url === "/api/goto") return handleGoto(req, res);
+  if (req.method === "POST" && req.url === "/api/add-module") return handleAddModule(req, res);
   if (req.method === "POST" && req.url === "/api/publish") return handlePublish(req, res);
   if (req.method === "POST" && req.url === "/api/auth/register") return handleRegister(req, res);
   if (req.method === "POST" && req.url === "/api/auth/login") return handleLogin(req, res);
