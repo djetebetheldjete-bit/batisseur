@@ -1972,9 +1972,18 @@
       } else {
         aiInner += '<div style="color:var(--ink-faint);font-size:.88rem;">Compteur d\'IA indisponible pour le moment.</div>';
       }
-      aiInner += '<div style="margin-top:12px;"><a class="dlbtn" href="/api/admin/export" style="text-decoration:none;display:inline-block;" title="Télécharger une sauvegarde des données clés (comptes, réservations, projets) — sans les mots de passe">⬇ Télécharger une sauvegarde</a></div>';
+      aiInner += '<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;"><a class="dlbtn" href="/api/admin/export" style="text-decoration:none;display:inline-block;" title="Télécharger une sauvegarde des données clés (comptes, réservations, projets) — sans les mots de passe">⬇ Télécharger une sauvegarde</a><button class="dlbtn" id="resetActBtn" type="button" style="color:#c0392b;border-color:#e4b9b9;" title="Remet à zéro le temps de travail compté pour tous les apprenants">↺ Réinitialiser l\'assiduité</button></div>';
       aibox.innerHTML = aiInner;
       adminBody.appendChild(aibox);
+      (function(){
+        var b=document.getElementById("resetActBtn"); if(!b) return; var armed=false,t0=null;
+        b.addEventListener("click", async function(){
+          if(!armed){ armed=true; b.textContent="Confirmer la remise à zéro ?"; t0=setTimeout(function(){ armed=false; b.textContent="↺ Réinitialiser l'assiduité"; },4000); return; }
+          clearTimeout(t0); armed=false; b.disabled=true; b.textContent="Remise à zéro…";
+          try{ await fetch("/api/admin/activity/reset",{method:"POST"}); }catch(e){}
+          b.textContent="✓ Temps remis à zéro"; setTimeout(function(){ b.disabled=false; b.textContent="↺ Réinitialiser l'assiduité"; },1500);
+        });
+      })();
 
       // --- Présence du samedi ---
       const atth = document.createElement("div"); atth.className = "asection"; atth.textContent = "Présence du samedi"; adminBody.appendChild(atth);
@@ -2538,8 +2547,21 @@
         const wk=document.createElement("div"); wk.className="actcell wk"; wk.innerHTML='<b>'+l.daysMetThisWeek+'/5</b><span>'+fmtDur(l.weekTotal)+'</span>';
         row.appendChild(wk);
         wrap.appendChild(row);
+        // Détail « ce qu'il a fait chaque jour » (repliable en cliquant sur le nom)
+        const jr=(l.journal||[]);
+        const det=document.createElement("div"); det.style.cssText="display:none;margin:-2px 0 8px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);font-size:.86rem;min-width:560px;";
+        if(!jr.length){ det.innerHTML='<div style="color:var(--ink-faint);">Pas encore d\'activité enregistrée (démarrage de projet, étapes, publication…).</div>'; }
+        else { det.innerHTML = jr.map(function(day){
+          const evs=(day.events||[]).map(function(e){ var ic=e.t==="start"?"🚀":e.t==="publish"?"🌐":e.t==="lesson"?"📘":e.t==="step"?"➡️":"•"; var hh=(e.at||"").slice(11,16); return '<div style="margin:2px 0;">'+ic+' <b style="font-weight:600;">'+hh+'</b> '+escHtmlMsg(e.x||"")+(e.project?' <span style="color:var(--ink-faint);">('+escHtmlMsg(e.project)+')</span>':'')+'</div>'; }).join("");
+          const dstr=day.d.slice(8,10)+"/"+day.d.slice(5,7);
+          return '<div style="margin-bottom:9px;"><div style="font-weight:700;color:var(--accent-deep,#0C5866);">'+dstr+' <span style="font-weight:500;color:var(--ink-faint);">· '+fmtDur(day.seconds||0)+'</span></div>'+evs+'</div>';
+        }).join(""); }
+        nm.style.cursor="pointer"; nm.title="Cliquer pour voir le détail jour par jour";
+        nm.addEventListener("click", function(){ det.style.display = (det.style.display==="none"?"block":"none"); });
+        wrap.appendChild(det);
       });
-      activityBody.innerHTML=""; activityBody.appendChild(wrap);
+      const hint=document.createElement("div"); hint.style.cssText="margin-top:8px;font-size:.78rem;color:var(--ink-faint);"; hint.textContent="Astuce : clique sur le nom d'un apprenant pour voir, jour par jour, ce qu'il a fait (démarrage, étapes, publication).";
+      activityBody.innerHTML=""; activityBody.appendChild(wrap); activityBody.appendChild(hint);
     }
     async function saveGoal(){
       const g=parseInt($("goalSel").value,10)||60; const msg=$("goalMsg"); msg.textContent="";

@@ -1321,6 +1321,17 @@ ${current}
 }
 
 // POST /api/start
+// Journal d'activité d'un projet : on note ce que l'apprenant FAIT (démarrage, étape, publication),
+// avec la date, pour que le formateur voie son activité jour par jour. Attaché à la conversation.
+function logConv(conv, type, detail) {
+  try {
+    if (!conv) return;
+    if (!Array.isArray(conv.log)) conv.log = [];
+    const at = new Date().toISOString();
+    conv.log.push({ at, d: at.slice(0, 10), t: type, x: (detail != null ? String(detail).slice(0, 120) : "") });
+    if (conv.log.length > 300) conv.log = conv.log.slice(-300);
+  } catch (e) {}
+}
 async function handleStart(req, res) {
   if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
   try {
@@ -1364,6 +1375,7 @@ async function handleStart(req, res) {
     const mods = normalizeModules(p.modules, p.projectType);
     const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
     const conv = { id, step: 0, modules: mods, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
+    logConv(conv, "start", "A démarré un projet de site : " + modulesLabel(mods));
     const out = await produceCurrent(conv, reqBase(req));
     sendJson(res, 200, { id, step: 0, modules: mods, ...out });
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
@@ -1405,6 +1417,7 @@ async function handleNext(req, res) {
       const lessons = lessonsOf(conv); const cur = Math.min(Math.max(0, conv.lesson || 0), lessons.length - 1);
       if (cur >= lessons.length - 1) return sendJson(res, 200, { lesson: cur, atEnd: true, reply: null, siteUpdated: false });
       conv.lesson = cur + 1;
+      logConv(conv, "lesson", "Leçon : " + (lessons[conv.lesson] && lessons[conv.lesson].title ? lessons[conv.lesson].title : ("n°" + (conv.lesson + 1))));
       // Le cours écrit de la nouvelle leçon s'affiche directement (aucun appel à l'IA).
       conv.messages.push({ role: "user", content: `Leçon suivante : « ${lessons[conv.lesson].title} ».`, hidden: true });
       const card = lessonCard(conv);
@@ -1417,6 +1430,7 @@ async function handleNext(req, res) {
     if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
     if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
     conv.step = current + 1;
+    logConv(conv, "step", "Étape " + (conv.step + 1) + (STEPS[conv.step] && STEPS[conv.step].title ? " — " + STEPS[conv.step].title : ""));
     conv.messages.push({ role: "user", content: STEPS[conv.step].kickoff, hidden: true });
     const out = await produceCurrent(conv, reqBase(req));
     sendJson(res, 200, { step: conv.step, atEnd: conv.step >= LAST_STEP, ...out });
@@ -1690,7 +1704,9 @@ async function publishSite(conv, baseUrl) {
     await new Promise((r) => setTimeout(r, 1500));
     try { const d = await netlify(`/deploys/${deploy.id}`); state = d.state; if (d.ssl_url) url = d.ssl_url; } catch (e) { break; }
   }
+  const wasPublished = !!conv.publishedUrl;
   if (url) conv.publishedUrl = conv.publishedUrl || url;
+  if (conv.publishedUrl && !wasPublished) logConv(conv, "publish", "A publié son site en ligne");
   await saveConv(conv);
   return { url: conv.publishedUrl, state };
 }
@@ -3046,6 +3062,17 @@ async function addActivity(userId, addSeconds) {
   saveActivityLocal(a);
   return u[day];
 }
+// Remise à zéro du décompte du temps (assiduité) — action du formateur.
+async function clearActivity() {
+  if (USE_DB) { try { await sb(`/activity?user_id=neq.__none__`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); } catch (e) { console.error("clearActivity:", e.message); } return; }
+  try { saveActivityLocal({}); } catch (e) {}
+}
+async function handleActivityReset(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  await clearActivity();
+  sendJson(res, 200, { ok: true });
+}
 async function activityForUsers(userIds, dayKeys) {
   const out = {}; userIds.forEach((id) => (out[id] = {}));
   if (!userIds.length || !dayKeys.length) return out;
@@ -3207,7 +3234,7 @@ async function handleFormationActivity(req, res) {
   const users = (await adminListUsers()).filter((x) => !ADMIN_EMAILS.includes(normEmail(x.email)));
   const week = weekdaysThisWeek();
   const today = dayKey(new Date());
-  const allDays = Array.from(new Set(week.concat([today])));
+  const allDays = Array.from(new Set(week.concat([today]).concat(lastNDays(14))));
   const act = await activityForUsers(users.map((x) => x.id), allDays);
   // avancement : projets par apprenant
   const convs = await allConvs();
@@ -3218,7 +3245,11 @@ async function handleFormationActivity(req, res) {
     const days = {}; let daysMet = 0, weekTotal = 0;
     week.forEach((d) => { const sec = a[d] || 0; days[d] = sec; weekTotal += sec; if (sec >= goalSec) daysMet++; });
     const todaySec = a[today] || 0;
-    return { id: x.id, name: x.name, email: x.email, cohort: x.cohort || null, status: x.status || "active", today: todaySec, metToday: todaySec >= goalSec, days, daysMetThisWeek: daysMet, weekTotal, progress: progressSummary(byUser[x.id] || []) };
+    // Journal « ce qu'il a fait chaque jour » : regroupe les événements des projets par date.
+    const evByDay = {};
+    (byUser[x.id] || []).forEach((c) => { (Array.isArray(c.log) ? c.log : []).forEach((ev) => { const d = ev.d || String(ev.at || "").slice(0, 10); if (!d) return; (evByDay[d] || (evByDay[d] = [])).push({ t: ev.t, x: ev.x, at: ev.at, project: c.projectName || null }); }); });
+    const journal = Object.keys(evByDay).sort().reverse().slice(0, 14).map((d) => ({ d, seconds: a[d] || 0, events: evByDay[d].sort((p, q) => String(p.at).localeCompare(String(q.at))) }));
+    return { id: x.id, name: x.name, email: x.email, cohort: x.cohort || null, status: x.status || "active", today: todaySec, metToday: todaySec >= goalSec, days, daysMetThisWeek: daysMet, weekTotal, journal, progress: progressSummary(byUser[x.id] || []) };
   });
   learners.sort((A, B) => (A.metToday - B.metToday) || (B.today - A.today));
   sendJson(res, 200, { goalMin: cfg.dailyGoalMin, week, today, learners });
@@ -4084,6 +4115,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/formation/reservation/cash") return handleFormationCash(req, res);
   if ((req.method === "GET" || req.method === "POST") && req.url.startsWith("/api/formation/settings")) return handleFormationSettings(req, res);
   if (req.method === "POST" && req.url === "/api/activity/ping") return handleActivityPing(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/activity/reset") return handleActivityReset(req, res);
   if (req.method === "POST" && req.url === "/api/attendance/open") return handleAttOpen(req, res);
   if (req.method === "POST" && req.url === "/api/attendance/close") return handleAttClose(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/attendance/status")) return handleAttStatus(req, res);
