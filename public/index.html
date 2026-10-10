@@ -349,6 +349,7 @@
             <span class="typebadge" id="typeBadge" style="display:none;"></span>
             <button class="certbtn" id="examBtn" type="button" style="display:none;background:#0C5866;color:#fff;">Passer l'examen</button>
             <button class="certbtn" id="certBtn" type="button" style="display:none;">Mon attestation</button>
+            <button class="nextbtn" id="prevBtn" type="button" style="display:none;background:var(--surface);color:var(--ink);border:1px solid var(--line);" title="Revenir à l'étape précédente">← Précédent</button>
             <button class="nextbtn" id="nextBtn" type="button" disabled>Étape suivante →</button>
           </div>
         </div>
@@ -766,7 +767,7 @@
 
     const $ = (id) => document.getElementById(id);
     const thread = $("thread"), form = $("form"), input = $("input"), sendBtn = $("send");
-    const newBtn = $("newBtn"), nextBtn = $("nextBtn"), resumedNote = $("resumed"), certBtn = $("certBtn"), examBtn = $("examBtn");
+    const newBtn = $("newBtn"), nextBtn = $("nextBtn"), prevBtn = $("prevBtn"), resumedNote = $("resumed"), certBtn = $("certBtn"), examBtn = $("examBtn");
     let quizPassed = false;
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
@@ -964,7 +965,7 @@
         row.innerHTML='<span class="mk">★</span><span class="ml"><b>Atelier Premium</b><i>Application avancée</i></span>';
         railInner.appendChild(row);
         stepLabel.childNodes[0].nodeValue="Atelier Premium"; stepSub.textContent="Application avancée";
-        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none"; examBtn.style.display="none";
+        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none"; examBtn.style.display="none"; prevBtn.style.display="none";
         return;
       }
       nextBtn.style.display="";
@@ -974,7 +975,7 @@
         row.querySelector("b").textContent = codeProjName || "Mon projet";
         railInner.appendChild(row);
         stepLabel.childNodes[0].nodeValue = codeProjName || "Mon projet"; stepSub.textContent="Je code moi-même";
-        nextBtn.disabled=true; nextBtn.style.display="none"; examBtn.style.display="none"; certBtn.style.display="none";
+        nextBtn.disabled=true; nextBtn.style.display="none"; examBtn.style.display="none"; certBtn.style.display="none"; prevBtn.style.display="none";
         return;
       }
       if(track === "code"){
@@ -984,6 +985,7 @@
           row.className = "mrow " + (i < lesson ? "done" : (i === lesson ? "cur" : "todo"));
           row.innerHTML = `<span class="mk">${i < lesson ? "✓" : (i+1)}</span><span class="ml"><b></b><i>Leçon ${i+1}</i></span>`;
           row.querySelector("b").textContent = title;
+          if(i < lesson){ row.style.cursor="pointer"; row.title="Revenir à cette leçon"; row.addEventListener("click", function(){ gotoStep(i); }); }
           railInner.appendChild(row);
         });
         stepLabel.childNodes[0].nodeValue = lessons[lesson] || "Leçon";
@@ -991,6 +993,7 @@
         const atEnd = lesson >= total - 1;
         nextBtn.disabled = atEnd;
         nextBtn.textContent = atEnd ? "Programme terminé ✓" : "Leçon suivante →";
+        prevBtn.style.display=""; prevBtn.disabled = (lesson<=0);
         examBtn.style.display = (convId && atEnd) ? "inline-block" : "none";
         examBtn.textContent = quizPassed ? "Examen réussi ✓ — revoir" : "Passer l'examen";
         certBtn.style.display = (convId && atEnd && quizPassed) ? "inline-block" : "none";
@@ -1001,12 +1004,14 @@
         const row = document.createElement("div");
         row.className = "mrow " + (i < step ? "done" : (i === step ? "cur" : "todo"));
         row.innerHTML = `<span class="mk">${i < step ? "✓" : (i+1)}</span><span class="ml"><b>${s.label}</b><i>${s.sub}</i></span>`;
+        if(i < step){ row.style.cursor="pointer"; row.title="Revenir à cette étape"; row.addEventListener("click", function(){ gotoStep(i); }); }
         railInner.appendChild(row);
       });
       stepLabel.childNodes[0].nodeValue = STEP_LABELS[step].label;
       stepSub.textContent = STEP_LABELS[step].sub;
       nextBtn.disabled = step >= LAST;
       nextBtn.textContent = step >= LAST ? "Parcours terminé ✓" : "Étape suivante →";
+      prevBtn.style.display=""; prevBtn.disabled = (step<=0);
       certBtn.style.display = (convId && step >= LAST) ? "inline-block" : "none";
     }
 
@@ -1506,6 +1511,24 @@
     $("typeGo").addEventListener("click", confirmTypeChooser);
     $("typeCancel").addEventListener("click", ()=>{ closeTypeChooser(); });
     typeModal.addEventListener("click",(e)=>{ if(e.target===typeModal){ closeTypeChooser(); } });
+    // Navigation « revenir en arrière » : revoir une étape/leçon déjà faite (sans reconstruire, sans IA).
+    async function gotoStep(target){
+      if(!convId || target==null || target<0) return;
+      const isLesson = (track==="code" && !codeProject);
+      prevBtn.disabled = true;
+      try{
+        const body = isLesson ? {id:convId, lesson:target} : {id:convId, step:target};
+        const r = await fetch("/api/goto",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+        const data = await r.json();
+        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur."),"err"); renderRail(); return; }
+        if(isLesson && typeof data.lesson==="number") lesson = data.lesson;
+        else if(typeof data.step==="number") step = data.step;
+        if(data.reply) bubbleRich(""+data.reply,"ai");
+        renderRail();
+      }catch(e){ bubble("Impossible de joindre le serveur.","err"); renderRail(); }
+    }
+    function goPrev(){ const isLesson=(track==="code" && !codeProject); gotoStep(isLesson ? (lesson-1) : (step-1)); }
+    prevBtn.addEventListener("click", goPrev);
     nextBtn.addEventListener("click", goNext);
     pubBtn.addEventListener("click", doPublish);
     dataBtn.addEventListener("click", openData);

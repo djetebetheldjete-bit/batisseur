@@ -1437,6 +1437,30 @@ async function handleNext(req, res) {
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
+// POST /api/goto : navigation dans le parcours (revenir en arrière ou revoir une étape).
+// Ne reconstruit RIEN et n'appelle PAS l'IA : repositionne simplement l'étape/la leçon.
+async function handleGoto(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {}
+    const conv = await loadConv(p.id);
+    if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+    const user = await currentUser(req);
+    if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    if (conv.track === "code" && !conv.codeProject) {
+      const lessons = lessonsOf(conv);
+      let to = parseInt(p.lesson, 10); if (isNaN(to)) to = (conv.lesson || 0) - 1;
+      to = Math.max(0, Math.min(lessons.length - 1, to));
+      conv.lesson = to; conv.updatedAt = new Date().toISOString(); await saveConv(conv);
+      return sendJson(res, 200, { lesson: conv.lesson, atEnd: conv.lesson >= lessons.length - 1, reply: lessonCard(conv), siteUpdated: false, nav: true });
+    }
+    let to = parseInt(p.step, 10); if (isNaN(to)) to = (conv.step || 0) - 1;
+    to = Math.max(0, Math.min(LAST_STEP, to));
+    conv.step = to; conv.updatedAt = new Date().toISOString(); await saveConv(conv);
+    const title = (STEPS[to] && STEPS[to].label) || ("Étape " + (to + 1));
+    return sendJson(res, 200, { step: conv.step, atEnd: conv.step >= LAST_STEP, reply: "◀ Retour à l'étape " + (to + 1) + " — « " + title + " ». Vous pouvez relire ou ajuster cette étape, puis continuer avec « Étape suivante ».", siteUpdated: false, nav: true });
+  } catch (e) { sendJson(res, 500, { error: "Erreur serveur." }); }
+}
+
 // GET /api/download?id=... : télécharge le site (index.html) en pièce jointe
 async function handleDownload(req, res) {
   const u = new URL(req.url, "http://localhost");
@@ -4051,6 +4075,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/start") return handleStart(req, res);
   if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
+  if (req.method === "POST" && req.url === "/api/goto") return handleGoto(req, res);
   if (req.method === "POST" && req.url === "/api/publish") return handlePublish(req, res);
   if (req.method === "POST" && req.url === "/api/auth/register") return handleRegister(req, res);
   if (req.method === "POST" && req.url === "/api/auth/login") return handleLogin(req, res);
