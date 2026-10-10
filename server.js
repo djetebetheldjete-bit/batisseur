@@ -642,7 +642,21 @@ Bâtisseur ne fait pas que des sites vitrines : c'est aussi un créateur d'appli
 - Une APPLICATION INSTALLABLE : au moment de la publication, la personne peut cocher « Installable sur téléphone » pour que son site s'installe comme une vraie appli (icône sur l'écran d'accueil, ouverture en plein écran, fonctionne même hors connexion). La plateforme s'occupe de tout automatiquement — rien à écrire.
 - L'ENVOI DE FICHIERS : un visiteur peut joindre une photo, un PDF ou un document à une commande, un rendez-vous ou un message (par exemple un imprimeur qui reçoit le fichier à imprimer, un artisan qui reçoit une photo du projet). Le propriétaire retrouve les fichiers dans son tableau de bord « Données ». Il suffit d'ajouter un champ fichier au formulaire — la plateforme gère tout.
 - LE PAIEMENT EN LIGNE (Wave) : la personne peut activer le paiement depuis le bouton « Paiement » (en haut de l'aperçu) en collant SON lien de paiement Wave — un bouton « Payer avec Wave » apparaît alors sur sa boutique, et le bouton « Commander » propose le règlement. Les commandes payées sont signalées « Payé » dans le tableau de bord. La configuration se fait par ce bouton (jamais dans la discussion, jamais de clé à coller ici). Tu peux aussi, sur demande, ajouter un bouton de paiement dans une page : <a data-bat-pay data-amount="5000">Payer</a> (data-amount facultatif).
+- PLUSIEURS PAGES : le site peut tenir sur une seule page (menu qui fait défiler) OU être organisé en PLUSIEURS PAGES (Accueil, À propos, Services, Contact…), où le visiteur passe d'une page à l'autre. Le tout reste un seul fichier. La personne bascule quand elle veut avec le bouton « Passer en plusieurs pages » (en haut de l'aperçu) ; le contenu est réorganisé sans rien perdre.
 Explique ces possibilités comme des idées concrètes (« on pourrait ajouter… »), sans forcer. Si une fonction demande un volet qui n'est pas activé (Boutique, Rendez-vous, Espace membre), invite gentiment la personne à cliquer le bouton « + Ajouter un volet » (en haut de la discussion) : le volet s'ajoute au projet et s'intègre au site existant SANS rien perdre du travail déjà fait. (Elle peut en combiner plusieurs ; inutile de recommencer le projet.)`;
+
+// Consigne ajoutée au TOUT PREMIER échange (étape « diagnostic ») : l'assistant
+// présente spontanément, à CHAQUE personne qui arrive, les possibilités offertes.
+const INTRO_PROPOSAL = `
+
+=== PREMIER ÉCHANGE — PRÉSENTE LES POSSIBILITÉS À TOUT LE MONDE ===
+Dès ta PREMIÈRE réponse, après un accueil bref et chaleureux, présente SPONTANÉMENT à la personne, en langage simple et sans jargon, ce qu'elle peut créer ici (un petit menu d'idées concrètes, pas une liste technique) :
+- un SITE VITRINE pour présenter son activité, son métier ou son association ;
+- une BOUTIQUE en ligne avec panier et commandes ;
+- une PRISE DE RENDEZ-VOUS ;
+- un ESPACE MEMBRE (comptes de visiteurs, sections réservées) ;
+- et la possibilité d'avoir PLUSIEURS PAGES (Accueil, À propos, Contact…) ou de tout mettre sur une seule page.
+Termine en lui demandant, simplement, ce qu'elle a en tête. Ne décide jamais à sa place : propose, puis écoute. Garde cela court et accueillant.`;
 
 // Consigne commune : proposer des CHOIX cliquables quand une décision guidée aide l'apprenant.
 const CHOIX_HELP = `
@@ -1336,6 +1350,8 @@ async function produceCurrent(conv, baseUrl) {
 ${modulesContext(mods)}`;
   // Étapes de discussion : l'assistant propose de lui-même les fonctions « appli ».
   if (!isBuild) system += PLATFORM_CAPABILITIES + CHOIX_HELP;
+  // Tout premier échange : présenter les possibilités à chaque personne qui arrive.
+  if (!isBuild && step === 0) system += INTRO_PROPOSAL;
   // Ton professionnel imposé sur toutes les étapes.
   system += "\n\n=== TON ===\nAdopte un ton professionnel, clair et sobre. N'emploie pas d'émojis dans tes messages.";
   if (isBuild) {
@@ -1447,6 +1463,16 @@ async function handleStart(req, res) {
       const conv = { id, track: "code", codeProject: true, language, projectName: projName || null, lesson: 0, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
       const out = await produceCode(conv);
       return sendJson(res, 200, { id, track: "code", codeProject: true, language, projectName: conv.projectName, lessons: [], ...out });
+    }
+    // Limite : un apprenant qui a DÉJÀ publié un site web ne peut plus en créer un nouveau
+    // (il peut continuer à modifier le sien). Ne concerne que les sites/applis web, pas le formateur.
+    if (!isAdmin(user)) {
+      try {
+        const mine = await listConvsForUser(user.id);
+        if (mine.some((s) => !s.track && s.publishedUrl)) {
+          return sendJson(res, 403, { error: "Vous avez déjà publié votre site. Vous pouvez continuer à le modifier, mais vous ne pouvez pas créer un nouveau site.", projectDone: true });
+        }
+      } catch (e) {}
     }
     const mods = normalizeModules(p.modules, p.projectType);
     const multipage = !!p.multipage;
@@ -2065,6 +2091,7 @@ async function handleMe(req, res) {
   if (pub && !pub.isAdmin) {
     pub.paid = !!(u && u.paid === true);
     pub.sessionLaunched = await sessionLaunchedFor(u);
+    try { const mine = await listConvsForUser(u.id); pub.webDone = mine.some((s) => !s.track && s.publishedUrl); } catch (e) {}
     if (u && u.cohort_id) { try { const c = await getCohort(u.cohort_id); pub.sessionStart = c ? (c.startDate || null) : null; pub.sessionLabel = c ? (c.label || null) : null; if (pub.paid) { const cfg = formationConfig(await getSettings()); pub.community = cohortCommunityLink(c, cfg); } } catch (e) {} }
   }
   sendJson(res, 200, { user: pub });

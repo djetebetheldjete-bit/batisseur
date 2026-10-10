@@ -581,6 +581,7 @@
         <button class="bcard" id="chooseSelf" type="button"><span class="ic">{ }</span><span><b>Coder mon projet moi-même</b><span>Vous décrivez votre idée : vous recevez un plan pour la réaliser vous-même, et un éditeur pour écrire et exécuter votre code, accompagné d'un mentor.</span></span></button>
         <button class="bcard" id="choosePremium" type="button" style="display:none;"><span class="ic" style="background:color-mix(in srgb,var(--warm,#D98A2B) 18%,transparent);color:var(--warm,#D98A2B);">★</span><span><b>Application avancée (Premium)</b><span>Réservé aux apprenants sélectionnés : l'IA écrit du vrai code pour bâtir une application sur mesure.</span></span></button>
       </div>
+      <div id="webDoneNote" style="display:none;margin:4px 2px 0;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--accent) 8%,transparent);color:var(--ink-soft);font-size:.9rem;">Vous avez déjà publié votre site web. Vous pouvez continuer à le modifier depuis « Mon espace », mais vous ne pouvez pas créer un nouveau site.</div>
       <div class="row"><button id="startCancel" type="button">Annuler</button></div>
     </div>
   </div>
@@ -831,7 +832,16 @@
     }
     // --- Choix de la filière (web / programmation) ---
     const startModal = $("startModal"), langModal = $("langModal"), langChoices = $("langChoices");
-    function openStart(){ $("choosePremium").style.display = (me && me.premium) ? "flex" : "none"; startModal.classList.add("show"); }
+    function webBlocked(){ return !!(me && !me.isAdmin && me.webDone); }
+    function openStart(){
+      $("choosePremium").style.display = (me && me.premium) ? "flex" : "none";
+      // Si l'apprenant a déjà publié un site, le choix « Créer un site » est bloqué.
+      const wb = webBlocked();
+      const cw = $("chooseWeb");
+      cw.disabled = wb; cw.style.opacity = wb ? "0.5" : ""; cw.style.pointerEvents = wb ? "none" : "";
+      $("webDoneNote").style.display = wb ? "block" : "none";
+      startModal.classList.add("show");
+    }
     function closeStart(){ startModal.classList.remove("show"); }
     let langPickMode = "lesson";   // "lesson" = apprendre ; "project" = coder son projet
     function openLang(mode){
@@ -1144,6 +1154,7 @@
         if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Publication impossible."),"err"); pubBtn.textContent=prev; pubBtn.disabled=false; return; }
         showPublished(data.url);
         if(data.pwa){ pwaChk.checked = true; }
+        if(me && !me.isAdmin){ me.webDone = true; }   // un site publié = projet final (plus de nouveau site)
         bubble("Votre site est en ligne : " + data.url + "\n(Après une modification, cliquez « Republier » pour mettre à jour.)","ai");
         if(data.pwa){ bubble("Votre site est aussi une application installable. Sur téléphone, ouvrez l'adresse puis, dans le menu du navigateur, choisissez « Ajouter à l'écran d'accueil » (sur iPhone, via le bouton Partager). Une icône apparaîtra comme pour une vraie appli.","ai"); }
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); pubBtn.textContent=prev; }
@@ -1589,7 +1600,7 @@
     form.addEventListener("submit",(e)=>{ e.preventDefault(); const t=input.value.trim(); if(!t||!convId) return; input.value=""; send(t); });
     input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); form.requestSubmit(); } });
     newBtn.addEventListener("click", ()=>{ if(canBuildUI()) openStart(); else notifyBlocked(); });
-    $("chooseWeb").addEventListener("click", ()=>{ closeStart(); openTypeChooser(); });
+    $("chooseWeb").addEventListener("click", ()=>{ if(webBlocked()) return; closeStart(); openTypeChooser(); });
     $("chooseCode").addEventListener("click", ()=>{ closeStart(); openLang("lesson"); });
     $("chooseSelf").addEventListener("click", ()=>{ closeStart(); openLang("project"); });
     $("choosePremium").addEventListener("click", ()=>{ closeStart(); const name = window.prompt("Quel est le nom de ton projet ?", ""); const idea = window.prompt("En une phrase, que doit faire ton application ?", ""); clearSavedId(); convId=null; startPremium(idea||"", name||""); });
