@@ -153,7 +153,8 @@ ESPACES MÉDIAS — DEMANDE AVANT DE SUPPOSER :
 // que la plateforme affiche une à la fois (navigation gérée automatiquement).
 const MULTIPAGE_NOTE = `
 
-=== STRUCTURE EN PLUSIEURS PAGES (mode activé — remplace la règle « une seule page ») ===
+=== STRUCTURE EN PLUSIEURS PAGES (mode activé — PRIORITAIRE, remplace la règle « une seule page ») ===
+IMPÉRATIF : ce site est en PLUSIEURS PAGES. Oublie toute consigne précédente disant « une seule page » ou « menu à ancres internes » : elle ne s'applique pas ici. Même s'il n'y a qu'une seule rubrique pour l'instant, tu structures le site en pages dès maintenant (au minimum une page « accueil »).
 Le site est organisé en PLUSIEURS PAGES, mais TOUJOURS dans un SEUL fichier index.html. Tu ne crées JAMAIS d'autre fichier et tu ne fais JAMAIS de lien vers un fichier .html externe.
 - Chaque page est un bloc : <section data-bat-page="xxx" data-bat-title="Titre de la page"> … contenu complet de la page … </section>. « xxx » est un identifiant court, en minuscules, sans accents ni espaces (ex. accueil, apropos, services, boutique, contact).
 - Marque la page d'accueil avec l'attribut data-bat-home (ex. <section data-bat-page="accueil" data-bat-home data-bat-title="Accueil">). C'est elle qui s'affiche en premier.
@@ -1383,9 +1384,10 @@ ${current}
 
   // Anti-page-blanche : on n'enregistre un site que s'il est complet (</html>).
   // Un fichier coupé (plafond atteint) est refusé — on garde la version actuelle.
+  let builtHtml = null;
   if (isBuild && ex.html && htmlLooksComplete(ex.html)) {
     const withKit = injectKit(ex.html, mods, conv, baseUrl);
-    if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; }
+    if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; builtHtml = ex.html; }
   } else if (isBuild && ex.html) {
     // Reprise automatique : la réponse a été coupée. On redemande une version compacte et complète.
     try {
@@ -1394,7 +1396,7 @@ ${current}
       const ex2 = extractSite(retry);
       if (ex2.html && htmlLooksComplete(ex2.html)) {
         const withKit2 = injectKit(ex2.html, mods, conv, baseUrl);
-        if (await writeSite(conv.id, withKit2)) { siteUpdated = true; conv.hasSite = true; }
+        if (await writeSite(conv.id, withKit2)) { siteUpdated = true; conv.hasSite = true; builtHtml = ex2.html; }
         if (ex2.message && ex2.message.trim()) message = ex2.message;
       } else {
         message = "Votre site est devenu un peu trop grand pour être écrit d'un seul coup. Dites « continue » pour que je termine, ou avançons par petites étapes.";
@@ -1409,7 +1411,9 @@ ${current}
   conv.messages.push({ role: "assistant", content: message });
   conv.updatedAt = new Date().toISOString();
   await saveConv(conv);
-  return { reply: message, siteUpdated };
+  const out = { reply: message, siteUpdated };
+  if (builtHtml != null) out.hasPages = /data-bat-page\b/i.test(builtHtml);
+  return out;
 }
 
 // POST /api/start
@@ -1624,10 +1628,10 @@ ${current}
     conv.messages.push({ role: "user", content: "Ajoute le volet « " + MODULES[mod].label + " » à mon site, en gardant tout ce qui existe déjà.", hidden: true });
     const reply = await callClaude(system, conv.messages, MODEL, BUILD_TOKENS);
     const ex = extractSite(reply);
-    let siteUpdated = false; let message = ex.message;
+    let siteUpdated = false; let message = ex.message; let builtHtml = null;
     if (ex.html && htmlLooksComplete(ex.html)) {
       const withKit = injectKit(ex.html, newMods, conv, baseUrl);
-      if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; }
+      if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; builtHtml = ex.html; }
     } else if (ex.html) {
       try {
         const retrySys = system + "\n\nIMPORTANT : ta réponse précédente a été COUPÉE car trop longue. Renvoie MAINTENANT le site ENTIER dans UN SEUL bloc qui se termine bien par </html>, en restant plus COMPACT (CSS concis, pas de répétitions).";
@@ -1635,7 +1639,7 @@ ${current}
         const ex2 = extractSite(retry);
         if (ex2.html && htmlLooksComplete(ex2.html)) {
           const withKit2 = injectKit(ex2.html, newMods, conv, baseUrl);
-          if (await writeSite(conv.id, withKit2)) { siteUpdated = true; conv.hasSite = true; }
+          if (await writeSite(conv.id, withKit2)) { siteUpdated = true; conv.hasSite = true; builtHtml = ex2.html; }
           if (ex2.message && ex2.message.trim()) message = ex2.message;
         } else {
           message = "Le volet est ajouté à votre projet, mais le site est devenu un peu trop grand pour tout réécrire d'un coup. Dites « ajoute la section " + MODULES[mod].short + " » dans le chat pour que je termine.";
@@ -1648,7 +1652,9 @@ ${current}
     conv.messages.push({ role: "assistant", content: message });
     conv.updatedAt = new Date().toISOString();
     await saveConv(conv);
-    return sendJson(res, 200, { modules: newMods, siteUpdated, reply: message });
+    const resp = { modules: newMods, siteUpdated, reply: message };
+    if (builtHtml != null) resp.hasPages = /data-bat-page\b/i.test(builtHtml);
+    return sendJson(res, 200, resp);
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
@@ -1667,20 +1673,27 @@ async function handlePageMode(req, res) {
       return sendJson(res, 400, { error: "Le mode « plusieurs pages » ne concerne que les projets de type site ou application." });
     }
     const want = !!p.multipage;
-    if (!!conv.multipage === want) {
-      return sendJson(res, 200, { multipage: want, siteUpdated: false, reply: want ? "Votre site est déjà en plusieurs pages." : "Votre site est déjà sur une seule page." });
-    }
-    conv.multipage = want;
-    logConv(conv, "pages", want ? "Est passé en plusieurs pages" : "Est revenu à une seule page");
     const mods = convModules(conv);
     const current = stripKit(await readSite(conv.id));
+    // On décide d'après la STRUCTURE RÉELLE du site, pas seulement d'après le drapeau :
+    // ainsi la bascule fonctionne même si le site a été construit « à plat » alors que
+    // le mode était déjà coché (ex. juste après la base).
+    const hasPagesNow = !!current && /data-bat-page\b/i.test(current);
+    conv.multipage = want;
     // Pas encore de site : on mémorise simplement le choix.
     if (!current) {
+      logConv(conv, "pages", want ? "A choisi plusieurs pages" : "A choisi une seule page");
       conv.updatedAt = new Date().toISOString(); await saveConv(conv);
-      return sendJson(res, 200, { multipage: want, siteUpdated: false, reply: want
+      return sendJson(res, 200, { multipage: want, hasPages: false, siteUpdated: false, reply: want
         ? "Mode « plusieurs pages » activé. Votre site sera organisé en plusieurs pages dès sa construction."
         : "Mode « une seule page » activé. Votre site sera construit sur une seule page." });
     }
+    // Le site est déjà dans l'état demandé : rien à reconstruire.
+    if (want === hasPagesNow) {
+      conv.updatedAt = new Date().toISOString(); await saveConv(conv);
+      return sendJson(res, 200, { multipage: want, hasPages: hasPagesNow, siteUpdated: false, reply: want ? "Votre site est déjà en plusieurs pages." : "Votre site est déjà sur une seule page." });
+    }
+    logConv(conv, "pages", want ? "Est passé en plusieurs pages" : "Est revenu à une seule page");
     if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
     // Réorganisation du site EXISTANT (sans rien perdre).
     let system = "Tu es l'assistant de construction de Bâtisseur. Tu réorganises un site existant sans en perdre le contenu."
@@ -1714,10 +1727,10 @@ ${current}
     conv.messages.push({ role: "user", content: want ? "Réorganise mon site en plusieurs pages, en gardant tout le contenu." : "Regroupe mon site sur une seule page, en gardant tout le contenu.", hidden: true });
     const reply = await callClaude(system, conv.messages, MODEL, BUILD_TOKENS);
     const ex = extractSite(reply);
-    let siteUpdated = false; let message = ex.message;
+    let siteUpdated = false; let message = ex.message; let builtHtml = null;
     if (ex.html && htmlLooksComplete(ex.html)) {
       const withKit = injectKit(ex.html, mods, conv, baseUrl);
-      if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; }
+      if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; builtHtml = ex.html; }
     } else if (ex.html) {
       try {
         const retrySys = system + "\n\nIMPORTANT : ta réponse précédente a été COUPÉE car trop longue. Renvoie MAINTENANT le site ENTIER dans UN SEUL bloc qui se termine bien par </html>, en restant plus COMPACT (CSS concis, pas de répétitions).";
@@ -1725,7 +1738,7 @@ ${current}
         const ex2 = extractSite(retry);
         if (ex2.html && htmlLooksComplete(ex2.html)) {
           const withKit2 = injectKit(ex2.html, mods, conv, baseUrl);
-          if (await writeSite(conv.id, withKit2)) { siteUpdated = true; conv.hasSite = true; }
+          if (await writeSite(conv.id, withKit2)) { siteUpdated = true; conv.hasSite = true; builtHtml = ex2.html; }
           if (ex2.message && ex2.message.trim()) message = ex2.message;
         } else {
           message = "Le mode est changé, mais le site est un peu trop grand pour tout réécrire d'un coup. Dites « réorganise le site » dans le chat pour que je termine.";
@@ -1740,7 +1753,8 @@ ${current}
     conv.messages.push({ role: "assistant", content: message });
     conv.updatedAt = new Date().toISOString();
     await saveConv(conv);
-    return sendJson(res, 200, { multipage: want, siteUpdated, reply: message });
+    const hasPages = builtHtml != null ? /data-bat-page\b/i.test(builtHtml) : hasPagesNow;
+    return sendJson(res, 200, { multipage: want, hasPages, siteUpdated, reply: message });
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
@@ -1771,7 +1785,8 @@ async function handleGetConversation(req, res) {
   const cu = await currentUser(req);
   if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
   if (conv.userId && !canView(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
-  const payload = { id: conv.id, step: conv.step || 0, modules: convModules(conv), multipage: !!conv.multipage, hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) };
+  const siteHtml = await readSite(conv.id).catch(() => null);
+  const payload = { id: conv.id, step: conv.step || 0, modules: convModules(conv), multipage: !!conv.multipage, hasPages: !!siteHtml && /data-bat-page\b/i.test(siteHtml), hasSite: !!siteHtml, publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) };
   if (conv.track === "code") { payload.track = "code"; payload.language = normalizeLanguage(conv.language); payload.lesson = conv.lesson || 0; payload.lessons = conv.codeProject ? [] : lessonTitles(conv); payload.codeProject = !!conv.codeProject; if (conv.codeProject) payload.projectName = conv.projectName || null; }
   if (conv.track === "premium") { payload.track = "premium"; payload.projectName = conv.projectName || null; }
   sendJson(res, 200, payload);
