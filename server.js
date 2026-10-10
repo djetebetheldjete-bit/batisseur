@@ -148,6 +148,21 @@ ESPACES MÉDIAS — DEMANDE AVANT DE SUPPOSER :
 - Quand un espace n'est pas clair (zone d'image, galerie, document…), tu DEMANDES d'abord à la personne à quoi il sert : « des photos », « du texte », ou « des documents (PDF / Word / PowerPoint) » — puis tu poses le bon espace réservé.
 - Pour une image : un cadre réservé propre avec une légende. Pour un document : une zone qui annonce le document à venir. Tu n'inventes jamais d'image externe.`;
 
+// Consigne ajoutée quand le projet est en mode « plusieurs pages ».
+// Le site reste UN SEUL fichier index.html, mais le contenu est réparti en pages
+// que la plateforme affiche une à la fois (navigation gérée automatiquement).
+const MULTIPAGE_NOTE = `
+
+=== STRUCTURE EN PLUSIEURS PAGES (mode activé — remplace la règle « une seule page ») ===
+Le site est organisé en PLUSIEURS PAGES, mais TOUJOURS dans un SEUL fichier index.html. Tu ne crées JAMAIS d'autre fichier et tu ne fais JAMAIS de lien vers un fichier .html externe.
+- Chaque page est un bloc : <section data-bat-page="xxx" data-bat-title="Titre de la page"> … contenu complet de la page … </section>. « xxx » est un identifiant court, en minuscules, sans accents ni espaces (ex. accueil, apropos, services, boutique, contact).
+- Marque la page d'accueil avec l'attribut data-bat-home (ex. <section data-bat-page="accueil" data-bat-home data-bat-title="Accueil">). C'est elle qui s'affiche en premier.
+- L'EN-TÊTE de navigation (<header> avec le menu) se place AVANT les blocs de pages, et le PIED DE PAGE (<footer>) APRÈS : ils sont communs à toutes les pages et restent visibles partout. Ne les mets jamais à l'intérieur d'un bloc data-bat-page.
+- Le menu contient un lien par page, sous la forme <a href="#xxx">Titre</a> où « xxx » correspond EXACTEMENT au data-bat-page de la page visée. Jamais de lien vide ni de lien vers un fichier.
+- La plateforme gère TOUTE la navigation : elle affiche une seule page à la fois, masque les autres, remonte en haut à chaque changement et met le lien actif en évidence. Tu n'écris AUCUN JavaScript et tu ne caches aucune page toi-même (pas de style display:none).
+- Chaque page doit être COMPLÈTE et cohérente à elle seule. Si un volet interactif est présent (boutique, rendez-vous, espace membre), donne-lui sa PROPRE page (ex. data-bat-page="boutique").
+- Garde une identité visuelle unique et cohérente sur toutes les pages.`;
+
 // --- KIT D'INTERACTIVITÉ (Panier / Réservation) ---------------------------
 // Petit script vanilla, FIXE et testé, injecté par la plateforme (jamais écrit par
 // le modèle) dans les sites « boutique » / « rendez-vous ». Le modèle ne fournit que
@@ -380,22 +395,82 @@ const INTERACTIVE_KIT = `<script>
 })();
 </script>`;
 
+// --- NAVIGATION « PLUSIEURS PAGES » (un seul fichier) ----------------------
+// Script FIXE injecté par la plateforme quand le site contient des blocs
+// <section data-bat-page="xxx">. Il affiche UNE page à la fois, masque les
+// autres, remonte en haut à chaque changement et met en évidence le lien actif.
+// Le modèle ne fournit que la structure déclarative (aucun JavaScript).
+const PAGE_NAV = `<style>[data-bat-page]{display:none}[data-bat-home]{display:block}a[aria-current="page"]{font-weight:700}</style>
+<script>
+(function(){
+  try{
+    var pages = Array.prototype.slice.call(document.querySelectorAll("[data-bat-page]"));
+    if(!pages.length) return;
+    function idOf(p){ return (p.getAttribute("data-bat-page")||p.id||"").trim(); }
+    var ids = pages.map(idOf);
+    var homeEl = document.querySelector("[data-bat-home]");
+    var home = homeEl ? idOf(homeEl) : ids[0];
+    function pageOfEl(el){ while(el && el!==document.body){ if(el.getAttribute && el.getAttribute("data-bat-page")!=null) return idOf(el); el=el.parentNode; } return null; }
+    function show(target, scrollToId){
+      if(ids.indexOf(target)<0) target = home;
+      pages.forEach(function(p){ p.style.display = (idOf(p)===target) ? "block" : "none"; });
+      Array.prototype.slice.call(document.querySelectorAll("a[href^='#'],[data-bat-nav]")).forEach(function(a){
+        var h = a.getAttribute("data-bat-nav") || (a.getAttribute("href")||"").replace(/^#/,"");
+        if(h){ if(h===target) a.setAttribute("aria-current","page"); else a.removeAttribute("aria-current"); }
+      });
+      if(scrollToId){ var e=document.getElementById(scrollToId); if(e&&e.scrollIntoView){ e.scrollIntoView(); return; } }
+      window.scrollTo(0,0);
+    }
+    function resolve(hash){
+      hash=(hash||"").replace(/^#/,"");
+      if(!hash) return { page: home };
+      if(ids.indexOf(hash)>=0) return { page: hash };
+      var el=document.getElementById(hash); if(el){ var pg=pageOfEl(el); if(pg) return { page: pg, scrollTo: hash }; }
+      return { page: home };
+    }
+    function go(hash, push){
+      var r=resolve(hash); show(r.page, r.scrollTo);
+      if(push){ try{ history.replaceState(null,"","#"+(r.scrollTo||r.page)); }catch(e){} }
+    }
+    document.addEventListener("click", function(ev){
+      var a=ev.target;
+      while(a && a!==document.body && !(a.getAttribute && (a.getAttribute("data-bat-nav")!=null || (a.getAttribute("href")||"").charAt(0)==="#"))) a=a.parentNode;
+      if(!a || a===document.body) return;
+      var nav=a.getAttribute("data-bat-nav");
+      var href=a.getAttribute("href")||"";
+      var hash = (nav!=null && nav!=="") ? nav : (href.charAt(0)==="#" ? href.slice(1) : null);
+      if(hash==null || hash==="") return;
+      ev.preventDefault(); go(hash, true);
+    }, false);
+    window.addEventListener("hashchange", function(){ go(location.hash, false); });
+    go(location.hash, true);
+  }catch(e){}
+})();
+</script>`;
+
 const KIT_RE = /\s*<!-- BAT-KIT:START -->[\s\S]*?<!-- BAT-KIT:END -->/g;
 function stripKit(html) { return html ? html.replace(KIT_RE, "").replace(/\n{3,}/g, "\n\n").trim() : html; }
 function injectKit(html, mods, conv, baseUrl) {
   if (!html) return html;
   html = stripKit(html);
-  const wants = mods.includes("boutique") || mods.includes("rdv") || mods.includes("membre") || /data-bat-(auth|members|booking|contact|add|form|file|pay)/i.test(html);
-  if (!wants) return html;
-  const pc = (conv && conv.payment) || {};
-  const payCfg = {
-    mode: (pc.mode === "link" || pc.mode === "api") ? pc.mode : "none",
-    link: pc.mode === "link" ? (pc.link || "") : "",
-    currency: pc.currency || "XOF",
-    apiReady: pc.mode === "api" && !!WAVE_API_KEY
-  };
-  const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',base:' + JSON.stringify((baseUrl || "") + "/api/app") + ',pay:' + JSON.stringify(payCfg) + '};</script>';
-  const block = "\n<!-- BAT-KIT:START -->\n" + cfg + "\n" + INTERACTIVE_KIT + "\n<!-- BAT-KIT:END -->\n";
+  mods = mods || [];
+  const wantsKit = mods.includes("boutique") || mods.includes("rdv") || mods.includes("membre") || /data-bat-(auth|members|booking|contact|add|form|file|pay)/i.test(html);
+  const wantsPages = /data-bat-page\b/i.test(html);
+  if (!wantsKit && !wantsPages) return html;
+  let inner = "";
+  if (wantsKit) {
+    const pc = (conv && conv.payment) || {};
+    const payCfg = {
+      mode: (pc.mode === "link" || pc.mode === "api") ? pc.mode : "none",
+      link: pc.mode === "link" ? (pc.link || "") : "",
+      currency: pc.currency || "XOF",
+      apiReady: pc.mode === "api" && !!WAVE_API_KEY
+    };
+    const cfg = '<script>window.__BAT={app:' + JSON.stringify((conv && conv.id) || "") + ',base:' + JSON.stringify((baseUrl || "") + "/api/app") + ',pay:' + JSON.stringify(payCfg) + '};</script>';
+    inner += cfg + "\n" + INTERACTIVE_KIT + "\n";
+  }
+  if (wantsPages) inner += PAGE_NAV + "\n";
+  const block = "\n<!-- BAT-KIT:START -->\n" + inner + "<!-- BAT-KIT:END -->\n";
   if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, block + "</body>");
   return html + block;
 }
@@ -1265,6 +1340,7 @@ ${modulesContext(mods)}`;
   system += "\n\n=== TON ===\nAdopte un ton professionnel, clair et sobre. N'emploie pas d'émojis dans tes messages.";
   if (isBuild) {
     system += SINGLE_INSTRUCTION;
+    if (conv.multipage) system += MULTIPAGE_NOTE;
     const focus = modulesBuild(mods); if (focus) system += focus;
     // On injecte le CODE RÉEL du site actuel : Claude part de l'existant, pas de sa mémoire.
     // (On retire le kit d'interactivité de sa vue : il est géré par la plateforme.)
@@ -1373,11 +1449,12 @@ async function handleStart(req, res) {
       return sendJson(res, 200, { id, track: "code", codeProject: true, language, projectName: conv.projectName, lessons: [], ...out });
     }
     const mods = normalizeModules(p.modules, p.projectType);
+    const multipage = !!p.multipage;
     const kickoff = `Bonjour ! Je découvre Bâtisseur et je veux créer : ${modulesLabel(mods)}.`;
-    const conv = { id, step: 0, modules: mods, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
-    logConv(conv, "start", "A démarré un projet de site : " + modulesLabel(mods));
+    const conv = { id, step: 0, modules: mods, multipage, userId: user.id, ownerName: user.name, createdAt: new Date().toISOString(), messages: [{ role: "user", content: kickoff, hidden: true }] };
+    logConv(conv, "start", "A démarré un projet de site : " + modulesLabel(mods) + (multipage ? " (plusieurs pages)" : ""));
     const out = await produceCurrent(conv, reqBase(req));
-    sendJson(res, 200, { id, step: 0, modules: mods, ...out });
+    sendJson(res, 200, { id, step: 0, modules: mods, multipage, ...out });
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
@@ -1497,12 +1574,16 @@ async function handleAddModule(req, res) {
     let system = "Tu es l'assistant de construction de Bâtisseur. Tu pars d'un site existant et tu l'enrichis."
       + "\n\n=== CONTEXTE DU PROJET ===\n" + modulesContext(newMods)
       + SINGLE_INSTRUCTION;
+    if (conv.multipage) system += MULTIPAGE_NOTE;
     const focus = modulesBuild(newMods); if (focus) system += focus;
+    const emplacement = conv.multipage
+      ? "Ajoute une NOUVELLE PAGE dédiée (un bloc data-bat-page) et son entrée dans le menu"
+      : "Ajoute une NOUVELLE SECTION dédiée (avec son id) et son entrée dans le menu";
     system += `
 
 === DEMANDE PRÉCISE ===
 La personne vient d'AJOUTER le volet « ${MODULES[mod].label} » à son projet. Intègre ce nouveau volet au site EXISTANT :
-- Ajoute une NOUVELLE SECTION dédiée (avec son id) et son entrée dans le menu, en suivant les consignes de ce volet ci-dessus.
+- ${emplacement}, en suivant les consignes de ce volet ci-dessus.
 - GARDE absolument tout le contenu, le style et les rubriques déjà présents : tu ne supprimes rien et tu ne repars jamais de zéro.
 - Conserve une identité visuelle unique et cohérente avec l'existant.
 Renvoie la page ENTIÈRE à jour.`;
@@ -1545,6 +1626,98 @@ ${current}
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
+// POST /api/page-mode : bascule un projet entre « une seule page » et « plusieurs pages »
+// (toujours un seul fichier). Si un site existe déjà, il est réorganisé sans rien perdre.
+async function handlePageMode(req, res) {
+  if (!API_KEY) return sendJson(res, 500, { error: "Clé API manquante. Renseignez ANTHROPIC_API_KEY dans le fichier .env." });
+  try {
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const conv = await loadConv(p.id);
+    if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+    const user = await currentUser(req);
+    if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    { const g = await accessGate(user, "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
+    if (conv.track === "code" || conv.track === "premium" || conv.codeProject) {
+      return sendJson(res, 400, { error: "Le mode « plusieurs pages » ne concerne que les projets de type site ou application." });
+    }
+    const want = !!p.multipage;
+    if (!!conv.multipage === want) {
+      return sendJson(res, 200, { multipage: want, siteUpdated: false, reply: want ? "Votre site est déjà en plusieurs pages." : "Votre site est déjà sur une seule page." });
+    }
+    conv.multipage = want;
+    logConv(conv, "pages", want ? "Est passé en plusieurs pages" : "Est revenu à une seule page");
+    const mods = convModules(conv);
+    const current = stripKit(await readSite(conv.id));
+    // Pas encore de site : on mémorise simplement le choix.
+    if (!current) {
+      conv.updatedAt = new Date().toISOString(); await saveConv(conv);
+      return sendJson(res, 200, { multipage: want, siteUpdated: false, reply: want
+        ? "Mode « plusieurs pages » activé. Votre site sera organisé en plusieurs pages dès sa construction."
+        : "Mode « une seule page » activé. Votre site sera construit sur une seule page." });
+    }
+    if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
+    // Réorganisation du site EXISTANT (sans rien perdre).
+    let system = "Tu es l'assistant de construction de Bâtisseur. Tu réorganises un site existant sans en perdre le contenu."
+      + "\n\n=== CONTEXTE DU PROJET ===\n" + modulesContext(mods)
+      + SINGLE_INSTRUCTION;
+    if (want) system += MULTIPAGE_NOTE;
+    const focus = modulesBuild(mods); if (focus) system += focus;
+    system += want ? `
+
+=== DEMANDE PRÉCISE ===
+Réorganise le site EXISTANT en PLUSIEURS PAGES (toujours dans un seul fichier index.html), en suivant la structure « plusieurs pages » ci-dessus :
+- Répartis les rubriques actuelles sur des pages logiques (ex. Accueil, À propos / Services, Contact, et une page par volet interactif).
+- Chaque page devient un bloc data-bat-page avec son entrée de menu ; la page d'accueil reçoit data-bat-home.
+- GARDE absolument tout le contenu, les textes, le style et les images réservées : tu ne supprimes rien, tu ne fais que réorganiser.
+Renvoie la page ENTIÈRE à jour.` : `
+
+=== DEMANDE PRÉCISE ===
+Regroupe tout le contenu du site EXISTANT sur UNE SEULE PAGE :
+- Transforme chaque page (bloc data-bat-page) en une SECTION de la même page, avec son id, et un menu à ancres (<a href="#id">).
+- Enlève les attributs data-bat-page et data-bat-home : il n'y a plus qu'une seule page.
+- GARDE absolument tout le contenu, les textes, le style et les images réservées : tu ne supprimes rien, tu ne fais que regrouper.
+Renvoie la page ENTIÈRE à jour.`;
+    system += `
+
+=== ÉTAT ACTUEL DU SITE (index.html) ===
+Voici le code EXACT du site tel qu'il est maintenant. Tu PARS de ce code, tu appliques la réorganisation, et tu renvoies le fichier ENTIER à jour.
+\`\`\`html
+${current}
+\`\`\``;
+    const baseUrl = reqBase(req);
+    conv.messages.push({ role: "user", content: want ? "Réorganise mon site en plusieurs pages, en gardant tout le contenu." : "Regroupe mon site sur une seule page, en gardant tout le contenu.", hidden: true });
+    const reply = await callClaude(system, conv.messages, MODEL, BUILD_TOKENS);
+    const ex = extractSite(reply);
+    let siteUpdated = false; let message = ex.message;
+    if (ex.html && htmlLooksComplete(ex.html)) {
+      const withKit = injectKit(ex.html, mods, conv, baseUrl);
+      if (await writeSite(conv.id, withKit)) { siteUpdated = true; conv.hasSite = true; }
+    } else if (ex.html) {
+      try {
+        const retrySys = system + "\n\nIMPORTANT : ta réponse précédente a été COUPÉE car trop longue. Renvoie MAINTENANT le site ENTIER dans UN SEUL bloc qui se termine bien par </html>, en restant plus COMPACT (CSS concis, pas de répétitions).";
+        const retry = await callClaude(retrySys, conv.messages, MODEL, BUILD_TOKENS);
+        const ex2 = extractSite(retry);
+        if (ex2.html && htmlLooksComplete(ex2.html)) {
+          const withKit2 = injectKit(ex2.html, mods, conv, baseUrl);
+          if (await writeSite(conv.id, withKit2)) { siteUpdated = true; conv.hasSite = true; }
+          if (ex2.message && ex2.message.trim()) message = ex2.message;
+        } else {
+          message = "Le mode est changé, mais le site est un peu trop grand pour tout réécrire d'un coup. Dites « réorganise le site » dans le chat pour que je termine.";
+        }
+      } catch (e) {
+        message = "Le mode est changé. Dites « réorganise le site » dans le chat pour que j'applique la nouvelle structure.";
+      }
+    }
+    if (!message || !message.trim()) message = siteUpdated
+      ? (want ? "J'ai réorganisé votre site en plusieurs pages — regardez l'aperçu." : "J'ai regroupé votre site sur une seule page — regardez l'aperçu.")
+      : "C'est fait.";
+    conv.messages.push({ role: "assistant", content: message });
+    conv.updatedAt = new Date().toISOString();
+    await saveConv(conv);
+    return sendJson(res, 200, { multipage: want, siteUpdated, reply: message });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
 // GET /api/download?id=... : télécharge le site (index.html) en pièce jointe
 async function handleDownload(req, res) {
   const u = new URL(req.url, "http://localhost");
@@ -1572,7 +1745,7 @@ async function handleGetConversation(req, res) {
   const cu = await currentUser(req);
   if (!owns(cu, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
   if (conv.userId && !canView(cu)) { const m = buildBlockMessage(cu); return sendJson(res, m.code, { error: m.error, accessStatus: userStatus(cu) }); }
-  const payload = { id: conv.id, step: conv.step || 0, modules: convModules(conv), hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) };
+  const payload = { id: conv.id, step: conv.step || 0, modules: convModules(conv), multipage: !!conv.multipage, hasSite: await hasSite(conv.id), publishedUrl: conv.publishedUrl || null, pwa: !!conv.pwa, payment: publicPayment(conv), ownerName: conv.ownerName || null, messages: conv.messages.filter((m) => !m.hidden) };
   if (conv.track === "code") { payload.track = "code"; payload.language = normalizeLanguage(conv.language); payload.lesson = conv.lesson || 0; payload.lessons = conv.codeProject ? [] : lessonTitles(conv); payload.codeProject = !!conv.codeProject; if (conv.codeProject) payload.projectName = conv.projectName || null; }
   if (conv.track === "premium") { payload.track = "premium"; payload.projectName = conv.projectName || null; }
   sendJson(res, 200, payload);
@@ -4161,6 +4334,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
   if (req.method === "POST" && req.url === "/api/goto") return handleGoto(req, res);
   if (req.method === "POST" && req.url === "/api/add-module") return handleAddModule(req, res);
+  if (req.method === "POST" && req.url === "/api/page-mode") return handlePageMode(req, res);
   if (req.method === "POST" && req.url === "/api/publish") return handlePublish(req, res);
   if (req.method === "POST" && req.url === "/api/auth/register") return handleRegister(req, res);
   if (req.method === "POST" && req.url === "/api/auth/login") return handleLogin(req, res);

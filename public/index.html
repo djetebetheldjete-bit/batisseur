@@ -375,6 +375,7 @@
             <button class="dlbtn" id="codeBtn" type="button" style="display:none;border-color:var(--accent);color:var(--accent-deep);" title="Comprendre les coulisses : voir le code et ce qui crée chaque partie de votre application">Les coulisses</button>
             <button class="dlbtn" id="exportBtn" type="button" style="display:none;" title="Télécharger ce projet pour le rendre indépendant (son propre serveur)">Exporter</button>
             <button class="dlbtn" id="payBtn" type="button" style="display:none;" title="Configurer le paiement en ligne (Wave)">Paiement</button>
+            <button class="dlbtn" id="pageModeBtn" type="button" style="display:none;" title="Choisir si votre site tient sur une seule page ou s'étale sur plusieurs pages">Passer en plusieurs pages</button>
             <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">Télécharger le site</a>
             <div class="seg" id="devToggle">
               <button data-dev="desktop" class="active" type="button">Ordinateur</button>
@@ -784,6 +785,31 @@
     const newBtn = $("newBtn"), nextBtn = $("nextBtn"), prevBtn = $("prevBtn"), resumedNote = $("resumed"), certBtn = $("certBtn"), examBtn = $("examBtn");
     const addModBtn = $("addModBtn"), addModModal = $("addModModal"), addModChoices = $("addModChoices"), addModGo = $("addModGo");
     let addModSel = null;
+    const pageModeBtn = $("pageModeBtn");
+    function updatePageModeBtn(){
+      if(!convId || track!=="web" || codeProject || track==="premium"){ pageModeBtn.style.display="none"; return; }
+      pageModeBtn.style.display="inline-block";
+      pageModeBtn.textContent = currentMultipage ? "Revenir à une seule page" : "Passer en plusieurs pages";
+      pageModeBtn.title = currentMultipage
+        ? "Regrouper tout le contenu sur une seule page (menu à ancres)"
+        : "Organiser votre site en plusieurs pages (le visiteur passe d'une page à l'autre), toujours dans un seul fichier";
+    }
+    async function togglePageMode(){
+      if(!convId || track!=="web" || codeProject) return;
+      const want = !currentMultipage;
+      pageModeBtn.disabled = true;
+      const typing = bubble("…","ai typing"); setBusy(true);
+      try{
+        const r = await fetch("/api/page-mode",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId, multipage:want})});
+        const data = await r.json(); typing.remove();
+        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur."),"err"); return; }
+        if(typeof data.multipage==="boolean") currentMultipage = data.multipage;
+        updatePageModeBtn();
+        if(data.reply) bubbleRich(""+data.reply,"ai");
+        if(data.siteUpdated) reloadPreview();
+      }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); }
+      finally{ setBusy(false); pageModeBtn.disabled = false; }
+    }
     let quizPassed = false;
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
@@ -941,7 +967,7 @@
     }
 
     const STORAGE_KEY = "batisseur_parcours_id";
-    let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null, currentModules = ["presentation"];
+    let convId = null, step = 0, siteBuilt = false, canPublish = false, publishedUrl = null, currentModules = ["presentation"], currentMultipage = false;
     let codeProject = false, codeProjName = "";   // espace « coder soi-même » (guide + éditeur)
     // Filière de formation : "web" (sites/applis) ou "code" (apprendre à programmer).
     let track = "web", codeLang = "python", lesson = 0, lessons = [];
@@ -1026,7 +1052,7 @@
         row.innerHTML='<span class="mk">★</span><span class="ml"><b>Atelier Premium</b><i>Application avancée</i></span>';
         railInner.appendChild(row);
         stepLabel.childNodes[0].nodeValue="Atelier Premium"; stepSub.textContent="Application avancée";
-        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none"; examBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none";
+        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none"; examBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none"; pageModeBtn.style.display="none";
         return;
       }
       nextBtn.style.display="";
@@ -1036,7 +1062,7 @@
         row.querySelector("b").textContent = codeProjName || "Mon projet";
         railInner.appendChild(row);
         stepLabel.childNodes[0].nodeValue = codeProjName || "Mon projet"; stepSub.textContent="Je code moi-même";
-        nextBtn.disabled=true; nextBtn.style.display="none"; examBtn.style.display="none"; certBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none";
+        nextBtn.disabled=true; nextBtn.style.display="none"; examBtn.style.display="none"; certBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none"; pageModeBtn.style.display="none";
         return;
       }
       if(track === "code"){
@@ -1054,7 +1080,7 @@
         const atEnd = lesson >= total - 1;
         nextBtn.disabled = atEnd;
         nextBtn.textContent = atEnd ? "Programme terminé ✓" : "Leçon suivante →";
-        prevBtn.style.display=""; prevBtn.disabled = (lesson<=0); addModBtn.style.display="none";
+        prevBtn.style.display=""; prevBtn.disabled = (lesson<=0); addModBtn.style.display="none"; pageModeBtn.style.display="none";
         examBtn.style.display = (convId && atEnd) ? "inline-block" : "none";
         examBtn.textContent = quizPassed ? "Examen réussi ✓ — revoir" : "Passer l'examen";
         certBtn.style.display = (convId && atEnd && quizPassed) ? "inline-block" : "none";
@@ -1074,6 +1100,7 @@
       nextBtn.textContent = step >= LAST ? "Parcours terminé ✓" : "Étape suivante →";
       prevBtn.style.display=""; prevBtn.disabled = (step<=0);
       addModBtn.style.display = convId ? "inline-block" : "none";
+      updatePageModeBtn();
       certBtn.style.display = (convId && step >= LAST) ? "inline-block" : "none";
     }
 
@@ -1135,7 +1162,7 @@
     async function startNew(mods){
       codeProject = false; codeProjName = "";
       track = "web"; setMode("web");
-      currentModules = normMods(mods);
+      currentModules = normMods(mods); currentMultipage = false;
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none";
       pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
@@ -1145,7 +1172,7 @@
         const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({modules:currentModules})});
         const data = await r.json(); typing.remove();
         if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); return; }
-        convId=data.id; step=data.step||0; if(data.modules) currentModules=normMods(data.modules); setSavedId(convId); renderRail(); renderTypeBadge();
+        convId=data.id; step=data.step||0; if(data.modules) currentModules=normMods(data.modules); if(typeof data.multipage==="boolean") currentMultipage=data.multipage; setSavedId(convId); renderRail(); renderTypeBadge();
         bubble(data.reply||"","ai");
         if(data.siteUpdated) reloadPreview();
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur. Est-il bien lancé ?","err"); }
@@ -1156,7 +1183,7 @@
     async function startPremium(idea, projName){
       codeProject = false; codeProjName = "";
       setMode("web"); track = "premium";   // setMode remet track à « web » : on le repositionne après
-      currentModules = ["presentation"]; step = 0; siteBuilt = false;
+      currentModules = ["presentation"]; currentMultipage = false; step = 0; siteBuilt = false;
       thread.innerHTML=""; resumedNote.style.display="none";
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
       dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
@@ -1415,7 +1442,7 @@
           return true;
         }
         if(data.track === "premium"){
-          setMode("web"); track="premium"; currentModules=["presentation"];   // track après setMode
+          setMode("web"); track="premium"; currentModules=["presentation"]; currentMultipage=false;   // track après setMode
           (data.messages||[]).forEach(m => { if(m.role==="user") bubble(m.content,"user"); else bubble(stripBlocks(m.content),"ai"); });
           typeBadge.textContent=data.projectName||"Premium"; typeBadge.style.display="inline-flex";
           pwaChk.checked = !!data.pwa;
@@ -1425,7 +1452,7 @@
           return true;
         }
         track="web"; setMode("web");
-        step=data.step||0; currentModules=normMods(data.modules); renderTypeBadge();
+        step=data.step||0; currentModules=normMods(data.modules); currentMultipage = !!data.multipage; renderTypeBadge();
         (data.messages||[]).forEach(m => {
           if(m.role==="user") bubble(m.content,"user");
           else bubble(stripBlocks(m.content),"ai");
@@ -1592,6 +1619,7 @@
     function goPrev(){ const isLesson=(track==="code" && !codeProject); gotoStep(isLesson ? (lesson-1) : (step-1)); }
     prevBtn.addEventListener("click", goPrev);
     addModBtn.addEventListener("click", openAddMod);
+    pageModeBtn.addEventListener("click", togglePageMode);
     addModGo.addEventListener("click", confirmAddMod);
     $("addModCancel").addEventListener("click", closeAddMod);
     addModModal.addEventListener("click",(e)=>{ if(e.target===addModModal) closeAddMod(); });
