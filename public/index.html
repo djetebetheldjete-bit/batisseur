@@ -808,13 +808,14 @@
     }
     async function togglePageMode(){
       if(!convId || track!=="web" || codeProject) return;
+      if(workCapBlock()) return;
       const want = !pageModeIsMulti();
       pageModeBtn.disabled = true;
       const typing = bubble("…","ai typing"); setBusy(true);
       try{
         const r = await fetch("/api/page-mode",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId, multipage:want})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur."),"err"); return; }
+        if(!r.ok){ if(data.workCapped){ applyWorkCap(data); return; } handleAccess(data); bubble(""+(data.error||"Erreur."),"err"); return; }
         noteSiteState(data);
         if(data.reply) bubbleRich(""+data.reply,"ai");
         if(data.siteUpdated) reloadPreview();
@@ -972,12 +973,13 @@
     function closeAddMod(){ addModModal.classList.remove("show"); }
     async function confirmAddMod(){
       if(!convId || !addModSel){ closeAddMod(); return; }
+      if(workCapBlock()){ closeAddMod(); return; }
       const key = addModSel; closeAddMod();
       const typing = bubble("…","ai typing"); setBusy(true); addModBtn.disabled = true;
       try{
         const r = await fetch("/api/add-module",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId, module:key})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur."),"err"); return; }
+        if(!r.ok){ if(data.workCapped){ applyWorkCap(data); return; } handleAccess(data); bubble(""+(data.error||"Erreur."),"err"); return; }
         if(data.modules) currentModules = normMods(data.modules);
         noteSiteState(data);
         renderTypeBadge(); renderRail();
@@ -1015,6 +1017,7 @@
     const clearSavedId = () => { try { localStorage.removeItem(STORAGE_KEY); } catch(e){} };
 
     let buildLocked = false;
+    let workCapLocked = false, workCapResetMin = 0;   // pause « 1 h de travail » (base web)
     function bubble(text, cls){ const d=document.createElement("div"); d.className="msg "+cls; d.textContent=text; thread.appendChild(d); thread.scrollTop=thread.scrollHeight; return d; }
     // Rendu enrichi (cours et réponses du tuteur) : blocs de code ``` ``` et `code` en ligne.
     function escHtmlMsg(s){ const d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
@@ -1064,7 +1067,34 @@
       if(/```\s*choix/i.test(text||"")) return bubbleRich(text,"ai");   // affiche les options en boutons
       return track==="code" ? bubbleRich(text,"ai") : bubble(text,"ai");
     }
-    function setBusy(b){ input.disabled = b || buildLocked; sendBtn.disabled = b || buildLocked; if(!b && !buildLocked) input.focus(); }
+    function setBusy(b){ const lock = b || buildLocked || workCapLocked; input.disabled = lock; sendBtn.disabled = lock; if(!lock) input.focus(); }
+
+    // ---- Pause « 1 h de travail » (création de site web uniquement) ----
+    function workCapMsg(min){
+      min = min||0; const h=Math.floor(min/60), m=min%60;
+      const t = h>0 ? (h+" h"+(m?(" "+m+" min"):"")) : (m+" min");
+      return "⏸️ Tu as fait ta 1 h de travail pour aujourd'hui — fais une pause ! La création de ton site se rouvrira automatiquement dans environ "+t+". Tu peux encore relire ton travail en attendant.";
+    }
+    function isWebBase(){ return track==="web" && !codeProject; }
+    // Applique l'état de pause reçu du serveur. La limite ne concerne que la base web.
+    function applyWorkCap(d){
+      const capped = !!(d && d.workCapped);
+      const resetMin = d ? (d.workResetMin!=null ? d.workResetMin : d.resetInMin) : null;
+      if(!isWebBase()){ if(workCapLocked){ workCapLocked=false; setBusy(false); renderRail(); } return; }
+      if(capped && !workCapLocked){ bubble(workCapMsg(resetMin),"ai"); }   // message une seule fois à la bascule
+      workCapLocked = capped; if(resetMin!=null) workCapResetMin = resetMin;
+      if(workCapLocked){
+        input.disabled=true; sendBtn.disabled=true; nextBtn.disabled=true;
+        if(addModBtn) addModBtn.disabled=true; if(pageModeBtn) pageModeBtn.disabled=true;
+        input.placeholder = "Pause — reprise automatique dans ~"+(resetMin!=null?resetMin:"?")+" min.";
+      } else {
+        if(addModBtn) addModBtn.disabled=false; if(pageModeBtn) pageModeBtn.disabled=false;
+        input.placeholder = "Votre réponse… (ex. « mets le titre en bleu »)";
+        setBusy(false); renderRail();
+      }
+    }
+    // Garde-fou commun avant une action de construction (base web) : vrai = bloqué.
+    function workCapBlock(){ if(workCapLocked && isWebBase()){ bubble(workCapMsg(workCapResetMin),"err"); return true; } return false; }
 
     function renderRail(){
       railInner.innerHTML = "";
@@ -1123,6 +1153,7 @@
       addModBtn.style.display = convId ? "inline-block" : "none";
       updatePageModeBtn();
       certBtn.style.display = (convId && step >= LAST) ? "inline-block" : "none";
+      if(workCapLocked){ nextBtn.disabled = true; addModBtn.disabled = true; pageModeBtn.disabled = true; }
     }
 
     function reloadPreview(){
@@ -1182,6 +1213,7 @@
     }
 
     async function startNew(mods){
+      if(workCapLocked){ bubble(workCapMsg(workCapResetMin),"err"); return; }
       codeProject = false; codeProjName = "";
       track = "web"; setMode("web");
       currentModules = normMods(mods); currentMultipage = false; currentHasPages = false;
@@ -1193,7 +1225,7 @@
       try{
         const r = await fetch("/api/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({modules:currentModules})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); return; }
+        if(!r.ok){ if(data.workCapped){ applyWorkCap(data); return; } handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); return; }
         convId=data.id; step=data.step||0; if(data.modules) currentModules=normMods(data.modules); if(typeof data.multipage==="boolean") currentMultipage=data.multipage; if(typeof data.hasPages==="boolean") currentHasPages=data.hasPages; setSavedId(convId); renderRail(); renderTypeBadge();
         bubble(data.reply||"","ai");
         if(data.siteUpdated) reloadPreview();
@@ -1565,12 +1597,13 @@
     $("clearOutBtn").addEventListener("click", ()=>{ codeOut.dataset.fresh="0"; codeOut.classList.remove("err"); codeOut.textContent="La sortie de votre programme s'affichera ici."; });
 
     async function send(message){
+      if(workCapBlock()) return;
       bubble(message,"user");
       const typing = bubble("…","ai typing"); setBusy(true);
       try{
         const r = await fetch("/api/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId,message})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); }
+        if(!r.ok){ if(data.workCapped){ applyWorkCap(data); } else { handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); } }
         else { aiBubble(data.reply||""); if(data.siteUpdated) reloadPreview(); noteSiteState(data); }
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); }
       finally{ setBusy(false); }
@@ -1594,13 +1627,14 @@
         return;
       }
       if(step >= LAST) return;
+      if(workCapBlock()) return;
       nextBtn.disabled = true;
       bubble("→ Passage à l'étape : " + STEP_LABELS[step+1].label, "step");
       const typing = bubble("…","ai typing"); setBusy(true);
       try{
         const r = await fetch("/api/next",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})});
         const data = await r.json(); typing.remove();
-        if(!r.ok){ handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
+        if(!r.ok){ if(data.workCapped){ applyWorkCap(data); return; } handleAccess(data); bubble(""+(data.error||"Erreur inconnue."),"err"); nextBtn.disabled=false; return; }
         step = data.step; renderRail();
         if(data.reply) aiBubble(data.reply);
         if(data.siteUpdated) reloadPreview();
@@ -2839,6 +2873,7 @@
         if(!r.ok) return;
         const d = await r.json();
         renderWorkBadge(d.todaySeconds, d.goalMin);
+        applyWorkCap(d);
       }catch(e){}
     }
     function heartbeat(){

@@ -1468,6 +1468,8 @@ async function handleStart(req, res) {
       const out = await produceCode(conv);
       return sendJson(res, 200, { id, track: "code", codeProject: true, language, projectName: conv.projectName, lessons: [], ...out });
     }
+    // Pause « 1 h de travail » : bloque la création de site tant que la pause est active.
+    { const w = workCapGuard(user); if (w) return sendJson(res, w.code, w); }
     // Limite : un apprenant qui a DÉJÀ publié un site web ne peut plus en créer un nouveau
     // (il peut continuer à modifier le sien). Ne concerne que les sites/applis web, pas le formateur.
     if (!isAdmin(user)) {
@@ -1500,6 +1502,8 @@ async function handleChat(req, res) {
     { const g = await accessGate(user, conv.track === "code" ? "code" : "project"); if (g) return sendJson(res, g.code, { error: g.error, accessStatus: g.accessStatus, locked: g.locked }); }
     if (conv.track === "premium" && !canPremium(user)) return sendJson(res, 403, { error: "L'atelier Premium est réservé aux apprenants sélectionnés." });
     if (typeof p.message !== "string" || !p.message.trim()) return sendJson(res, 400, { error: "Message vide." });
+    // Pause « 1 h de travail » : uniquement pour la création de site (base web).
+    if (conv.track !== "code" && conv.track !== "premium" && !conv.codeProject) { const w = workCapGuard(user); if (w) return sendJson(res, w.code, w); }
     if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
     conv.messages.push({ role: "user", content: p.message });
     const out = await produceCurrent(conv, reqBase(req));
@@ -1535,6 +1539,7 @@ async function handleNext(req, res) {
     }
     const current = conv.step || 0;
     if (current >= LAST_STEP) return sendJson(res, 200, { step: current, atEnd: true, reply: null, siteUpdated: false });
+    { const w = workCapGuard(user); if (w) return sendJson(res, w.code, w); }   // pause « 1 h de travail »
     if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
     conv.step = current + 1;
     logConv(conv, "step", "Étape " + (conv.step + 1) + (STEPS[conv.step] && STEPS[conv.step].title ? " — " + STEPS[conv.step].title : ""));
@@ -1599,6 +1604,7 @@ async function handleAddModule(req, res) {
       conv.updatedAt = new Date().toISOString(); await saveConv(conv);
       return sendJson(res, 200, { modules: newMods, siteUpdated: false, reply: "Le volet « " + MODULES[mod].short + " » est ajouté à votre projet. Il sera intégré automatiquement dès que votre site sera construit." });
     }
+    { const w = workCapGuard(user); if (w) return sendJson(res, w.code, w); }   // pause « 1 h de travail »
     if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
     // Construction ENRICHIE : on part du site actuel et on y AJOUTE le nouveau volet.
     let system = "Tu es l'assistant de construction de Bâtisseur. Tu pars d'un site existant et tu l'enrichis."
@@ -1694,6 +1700,7 @@ async function handlePageMode(req, res) {
       return sendJson(res, 200, { multipage: want, hasPages: hasPagesNow, siteUpdated: false, reply: want ? "Votre site est déjà en plusieurs pages." : "Votre site est déjà sur une seule page." });
     }
     logConv(conv, "pages", want ? "Est passé en plusieurs pages" : "Est revenu à une seule page");
+    { const w = workCapGuard(user); if (w) return sendJson(res, w.code, w); }   // pause « 1 h de travail »
     if (!(await aiQuotaGuard(user))) return sendJson(res, 429, { error: AI_QUOTA_MSG, aiQuota: true });
     // Réorganisation du site EXISTANT (sans rien perdre).
     let system = "Tu es l'assistant de construction de Bâtisseur. Tu réorganises un site existant sans en perdre le contenu."
@@ -3385,6 +3392,59 @@ async function addActivity(userId, addSeconds) {
   saveActivityLocal(a);
   return u[day];
 }
+// ---- Plafond de travail : 1 h par apprenant, puis pause, réinitialisation auto 10 h après ----
+// Ne concerne QUE la création de site web (base). Le formateur n'est jamais limité.
+const WORKCAP_FILE = path.join(DATA_DIR, "workcap.json");
+function loadWorkcap() { try { return JSON.parse(fs.readFileSync(WORKCAP_FILE, "utf8")); } catch (e) { return {}; } }
+function saveWorkcap(o) { try { fs.writeFileSync(WORKCAP_FILE, JSON.stringify(o, null, 2)); } catch (e) {} }
+const WORK_CAP_SECONDS = parseInt(process.env.WORK_CAP_SECONDS, 10) || 3600;          // 1 h de travail
+const WORK_COOLDOWN_MS = (parseInt(process.env.WORK_COOLDOWN_HOURS, 10) || 10) * 3600 * 1000; // pause de 10 h
+// Applique la règle de réinitialisation (10 h après le blocage) et renvoie l'état à jour.
+function workcapEval(rec) {
+  const now = Date.now();
+  rec = rec && typeof rec === "object" ? { sec: rec.sec || 0, startTs: rec.startTs || 0, cappedTs: rec.cappedTs || 0 } : { sec: 0, startTs: 0, cappedTs: 0 };
+  if (rec.cappedTs && (now - rec.cappedTs >= WORK_COOLDOWN_MS)) rec = { sec: 0, startTs: 0, cappedTs: 0 };
+  const blocked = !!rec.cappedTs;
+  const resetInMs = blocked ? Math.max(0, WORK_COOLDOWN_MS - (now - rec.cappedTs)) : 0;
+  return { rec, blocked, resetInMs };
+}
+// Lecture de l'état (sans ajouter de temps) ; persiste si une réinitialisation vient d'avoir lieu.
+function workcapState(userId) {
+  if (!userId) return { blocked: false, resetInMs: 0, sec: 0 };
+  const all = loadWorkcap();
+  const before = JSON.stringify(all[userId] || null);
+  const { rec, blocked, resetInMs } = workcapEval(all[userId]);
+  if (JSON.stringify(rec) !== before) { if (!rec.sec && !rec.cappedTs) delete all[userId]; else all[userId] = rec; saveWorkcap(all); }
+  return { blocked, resetInMs, sec: rec.sec };
+}
+// Ajoute du temps de travail et bascule en « pause » dès que la 1 h est atteinte.
+function workcapAdd(userId, addSeconds) {
+  if (!userId || !(addSeconds > 0)) return workcapState(userId);
+  const all = loadWorkcap();
+  const { rec } = workcapEval(all[userId]);
+  if (!rec.cappedTs) {
+    if (!rec.startTs) rec.startTs = Date.now();
+    rec.sec = (rec.sec || 0) + addSeconds;
+    if (rec.sec >= WORK_CAP_SECONDS) { rec.sec = WORK_CAP_SECONDS; rec.cappedTs = Date.now(); }
+  }
+  all[userId] = rec; saveWorkcap(all);
+  const blocked = !!rec.cappedTs;
+  return { blocked, resetInMs: blocked ? Math.max(0, WORK_COOLDOWN_MS - (Date.now() - rec.cappedTs)) : 0, sec: rec.sec };
+}
+function workCapMessage(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  const t = h > 0 ? (h + " h" + (m ? (" " + m + " min") : "")) : (m + " min");
+  return "Tu as fait ta 1 h de travail pour aujourd'hui — fais une pause ! La création de ton site se rouvrira automatiquement dans environ " + t + ".";
+}
+// Garde-fou serveur : bloque la création de site (base web) quand la pause est active.
+function workCapGuard(user) {
+  if (!user || isAdmin(user)) return null;
+  const st = workcapState(user.id);
+  if (!st.blocked) return null;
+  const min = Math.max(1, Math.ceil(st.resetInMs / 60000));
+  return { code: 429, error: workCapMessage(min), workCapped: true, resetInMin: min };
+}
+
 // Remise à zéro du décompte du temps (assiduité) — action du formateur.
 async function clearActivity() {
   if (USE_DB) { try { await sb(`/activity?user_id=neq.__none__`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); } catch (e) { console.error("clearActivity:", e.message); } return; }
@@ -3421,12 +3481,12 @@ async function handleActivityPing(req, res) {
   let s = parseInt(p.s, 10); if (isNaN(s)) s = 60;
   s = Math.max(0, Math.min(s, 120));                  // un battement crédite au plus 120 s ; 0 = simple lecture
   const cfg = formationConfig(await getSettings());
-  let today = 0;
+  let today = 0; let cap = { blocked: false, resetInMs: 0 };
   if (!isAdmin(u)) {                                   // le formateur n'est pas suivi
-    if (s > 0) today = await addActivity(u.id, s);
-    else { const day = dayKey(new Date()); const m = await activityForUsers([u.id], [day]); today = (m[u.id] && m[u.id][day]) || 0; }
+    if (s > 0) { today = await addActivity(u.id, s); cap = workcapAdd(u.id, s); }
+    else { const day = dayKey(new Date()); const m = await activityForUsers([u.id], [day]); today = (m[u.id] && m[u.id][day]) || 0; cap = workcapState(u.id); }
   }
-  sendJson(res, 200, { ok: true, todaySeconds: today, goalMin: cfg.dailyGoalMin });
+  sendJson(res, 200, { ok: true, todaySeconds: today, goalMin: cfg.dailyGoalMin, workCapped: cap.blocked, workResetMin: cap.blocked ? Math.max(1, Math.ceil(cap.resetInMs / 60000)) : 0, workCapMin: Math.round(WORK_CAP_SECONDS / 60) });
 }
 
 // ============================================================================
