@@ -2985,7 +2985,7 @@ function formationConfig(s) {
     // Plafond de messages IA par apprenant et par 24 h (protège le coût d'API).
     // Volontairement large : un apprenant normal ne l'atteint jamais. Le formateur
     // n'est pas concerné. Réglable depuis l'Espace formateur.
-    aiDailyLimit: (s && s.aiDailyLimit != null) ? s.aiDailyLimit : (parseInt(process.env.AI_DAILY_LIMIT, 10) || 150),
+    aiDailyLimit: (s && s.aiDailyLimit != null) ? s.aiDailyLimit : (parseInt(process.env.AI_DAILY_LIMIT, 10) || 40),
     // Lien d'invitation de la communauté WhatsApp : envoyé automatiquement aux admis.
     whatsappLink: (s && typeof s.whatsappLink === "string") ? s.whatsappLink : (process.env.WHATSAPP_COMMUNITY_LINK || "")
   };
