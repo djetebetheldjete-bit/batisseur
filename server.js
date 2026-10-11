@@ -54,6 +54,12 @@ const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const MODEL_LIGHT = process.env.ANTHROPIC_MODEL_LIGHT || "claude-haiku-4-5";
 // Modèle PUISSANT pour l'espace « Premium learner » (applications avancées). Opus par défaut.
 const MODEL_PREMIUM = process.env.ANTHROPIC_MODEL_PREMIUM || "claude-opus-5-5";
+// Modèle pour les RETOUCHES d'un site DÉJÀ construit (économie : ~5× moins cher que Sonnet).
+// La 1re construction du site garde MODEL (qualité) ; les modifications suivantes passent sur
+// ce modèle léger. Réglable via ANTHROPIC_MODEL_EDIT ; mettre = ANTHROPIC_MODEL pour revenir à Sonnet.
+const MODEL_EDIT = process.env.ANTHROPIC_MODEL_EDIT || MODEL_LIGHT;
+// Mise en cache du prompt (consignes de construction) : réduit le coût d'entrée. Désactivable (AI_PROMPT_CACHE=0).
+const AI_PROMPT_CACHE = process.env.AI_PROMPT_CACHE !== "0";
 // Plafonds de longueur (max_tokens) pour la génération de code. Une application
 // riche (catalogue + panier + comptes + paiement + tableau de bord) dépasse
 // facilement 8192 jetons : si on reste à 8192, le fichier est COUPÉ en plein
@@ -1326,23 +1332,52 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 // Point d'entrée : choisit le modèle, et si le modèle demandé est inconnu/refusé (ex. modèle
 // rapide indisponible sur le compte), réessaie UNE fois avec le modèle principal. La plateforme
 // ne bloque donc jamais à cause d'un nom de modèle.
+// Transforme le prompt système (chaîne) en blocs avec mise en cache de la partie STATIQUE.
+// La partie dynamique (le code actuel du site) est laissée hors cache : ainsi, quand un
+// apprenant enchaîne plusieurs modifications, les grosses consignes ne sont plus repayées.
+function toSystemBlocks(system) {
+  if (typeof system !== "string" || !system) return system;
+  const markers = ["\n\n=== ÉTAT ACTUEL DU SITE", "\n\n=== ÉTAT ACTUEL DE L'APPLICATION"];
+  let cut = -1;
+  for (const mk of markers) { const i = system.indexOf(mk); if (i >= 0) { cut = i; break; } }
+  if (cut > 500) {
+    return [
+      { type: "text", text: system.slice(0, cut), cache_control: { type: "ephemeral" } },
+      { type: "text", text: system.slice(cut) }
+    ];
+  }
+  if (system.length > 3000) return [{ type: "text", text: system, cache_control: { type: "ephemeral" } }];
+  return system;
+}
+
 async function callClaude(system, messages, model, maxTokens) {
   const useModel = model || MODEL;
   const mt = maxTokens || 8192;
+  const once = (mdl, cache) => callClaudeOnce(system, messages, mdl, mt, cache);
   try {
-    return await callClaudeOnce(system, messages, useModel, mt);
+    return await once(useModel, AI_PROMPT_CACHE);
   } catch (e) {
-    if (e && (e.status === 400 || e.status === 404) && useModel !== MODEL) {
+    const st = e && e.status;
+    // Un 400 peut venir de la mise en cache (API/version) : on réessaie SANS cache.
+    if (st === 400 && AI_PROMPT_CACHE) {
+      try { return await once(useModel, false); }
+      catch (e2) {
+        if (e2 && (e2.status === 400 || e2.status === 404) && useModel !== MODEL) { console.error("Modèle « " + useModel + " » indisponible → bascule sur « " + MODEL + " »."); return await once(MODEL, false); }
+        throw e2;
+      }
+    }
+    if ((st === 400 || st === 404) && useModel !== MODEL) {
       console.error("Modèle « " + useModel + " » indisponible → bascule sur « " + MODEL + " ».");
-      return await callClaudeOnce(system, messages, MODEL, mt);
+      return await once(MODEL, AI_PROMPT_CACHE);
     }
     throw e;
   }
 }
 
-async function callClaudeOnce(system, messages, model, maxTokens) {
+async function callClaudeOnce(system, messages, model, maxTokens, cache) {
   const clean = messages.map((m) => ({ role: m.role, content: m.content }));
-  const body = JSON.stringify({ model: model || MODEL, max_tokens: maxTokens || 8192, system, messages: clean });
+  const sys = cache ? toSystemBlocks(system) : system;
+  const body = JSON.stringify({ model: model || MODEL, max_tokens: maxTokens || 8192, system: sys, messages: clean });
   const n = API_KEYS.length || 1;
   const start = KEY_CURSOR; KEY_CURSOR = (KEY_CURSOR + 1) % n; // avance pour la prochaine requête
   let lastErr = null;
@@ -1393,6 +1428,7 @@ ${modulesContext(mods)}`;
   if (!isBuild && step === 0) system += INTRO_PROPOSAL;
   // Ton professionnel imposé sur toutes les étapes.
   system += "\n\n=== TON ===\nAdopte un ton professionnel, clair et sobre. N'emploie pas d'émojis dans tes messages.";
+  let buildModel = MODEL;   // 1re construction = Sonnet (qualité)
   if (isBuild) {
     system += SINGLE_INSTRUCTION;
     if (conv.multipage) system += MULTIPAGE_NOTE;
@@ -1400,6 +1436,7 @@ ${modulesContext(mods)}`;
     // On injecte le CODE RÉEL du site actuel : Claude part de l'existant, pas de sa mémoire.
     // (On retire le kit d'interactivité de sa vue : il est géré par la plateforme.)
     const current = stripKit(await readSite(conv.id));
+    if (current) buildModel = MODEL_EDIT;   // le site existe déjà = RETOUCHE = modèle économique
     if (current) {
       system += `
 
@@ -1413,7 +1450,7 @@ ${current}
 
   // Construction d'un projet = modèle principal, réponse longue (le site entier) : on prend le temps.
   // Discussion / questions simples = modèle rapide, réponse courte : plus vif.
-  const reply = await callClaude(system, conv.messages, isBuild ? MODEL : MODEL_LIGHT, isBuild ? BUILD_TOKENS : 2048);
+  const reply = await callClaude(system, conv.messages, isBuild ? buildModel : MODEL_LIGHT, isBuild ? BUILD_TOKENS : 2048);
 
   // Extraction blindée : le HTML ne fuite jamais dans le message.
   const ex = extractSite(reply);
@@ -1430,7 +1467,7 @@ ${current}
     // Reprise automatique : la réponse a été coupée. On redemande une version compacte et complète.
     try {
       const retrySys = system + "\n\nIMPORTANT : ta réponse précédente a été COUPÉE car trop longue. Renvoie MAINTENANT le site ENTIER dans UN SEUL bloc qui se termine bien par </html>, en restant plus COMPACT (CSS concis, pas de répétitions).";
-      const retry = await callClaude(retrySys, conv.messages, MODEL, BUILD_TOKENS);
+      const retry = await callClaude(retrySys, conv.messages, buildModel, BUILD_TOKENS);
       const ex2 = extractSite(retry);
       if (ex2.html && htmlLooksComplete(ex2.html)) {
         const withKit2 = injectKit(ex2.html, mods, conv, baseUrl);
@@ -1670,7 +1707,7 @@ ${current}
 \`\`\``;
     const baseUrl = reqBase(req);
     conv.messages.push({ role: "user", content: "Ajoute le volet « " + MODULES[mod].label + " » à mon site, en gardant tout ce qui existe déjà.", hidden: true });
-    const reply = await callClaude(system, conv.messages, MODEL, BUILD_TOKENS);
+    const reply = await callClaude(system, conv.messages, MODEL_EDIT, BUILD_TOKENS);
     const ex = extractSite(reply);
     let siteUpdated = false; let message = ex.message; let builtHtml = null;
     if (ex.html && htmlLooksComplete(ex.html)) {
@@ -1679,7 +1716,7 @@ ${current}
     } else if (ex.html) {
       try {
         const retrySys = system + "\n\nIMPORTANT : ta réponse précédente a été COUPÉE car trop longue. Renvoie MAINTENANT le site ENTIER dans UN SEUL bloc qui se termine bien par </html>, en restant plus COMPACT (CSS concis, pas de répétitions).";
-        const retry = await callClaude(retrySys, conv.messages, MODEL, BUILD_TOKENS);
+        const retry = await callClaude(retrySys, conv.messages, MODEL_EDIT, BUILD_TOKENS);
         const ex2 = extractSite(retry);
         if (ex2.html && htmlLooksComplete(ex2.html)) {
           const withKit2 = injectKit(ex2.html, newMods, conv, baseUrl);
@@ -1770,7 +1807,7 @@ ${current}
 \`\`\``;
     const baseUrl = reqBase(req);
     conv.messages.push({ role: "user", content: want ? "Réorganise mon site en plusieurs pages, en gardant tout le contenu." : "Regroupe mon site sur une seule page, en gardant tout le contenu.", hidden: true });
-    const reply = await callClaude(system, conv.messages, MODEL, BUILD_TOKENS);
+    const reply = await callClaude(system, conv.messages, MODEL_EDIT, BUILD_TOKENS);
     const ex = extractSite(reply);
     let siteUpdated = false; let message = ex.message; let builtHtml = null;
     if (ex.html && htmlLooksComplete(ex.html)) {
@@ -1779,7 +1816,7 @@ ${current}
     } else if (ex.html) {
       try {
         const retrySys = system + "\n\nIMPORTANT : ta réponse précédente a été COUPÉE car trop longue. Renvoie MAINTENANT le site ENTIER dans UN SEUL bloc qui se termine bien par </html>, en restant plus COMPACT (CSS concis, pas de répétitions).";
-        const retry = await callClaude(retrySys, conv.messages, MODEL, BUILD_TOKENS);
+        const retry = await callClaude(retrySys, conv.messages, MODEL_EDIT, BUILD_TOKENS);
         const ex2 = extractSite(retry);
         if (ex2.html && htmlLooksComplete(ex2.html)) {
           const withKit2 = injectKit(ex2.html, mods, conv, baseUrl);
