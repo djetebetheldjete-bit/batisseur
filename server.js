@@ -117,7 +117,7 @@ FORMAT DE SORTIE — LE PLUS IMPORTANT :
 
 CONTRAINTES TECHNIQUES :
 - Style sobre et professionnel : n'ajoute pas d'émojis dans le site, sauf demande explicite de la personne.
-- 100 % HTML + CSS. Tu n'écris TOI-MÊME AUCUN JavaScript. (Pour une boutique ou des rendez-vous, la plateforme ajoute automatiquement un petit script d'interactivité : tu fournis seulement le HTML avec les attributs « data-bat-… » indiqués.) AUCUNE image ni police externe, AUCUN fichier externe.
+- 100 % HTML + CSS. Tu n'écris TOI-MÊME AUCUN JavaScript. (Pour une boutique ou des rendez-vous, la plateforme ajoute automatiquement un petit script d'interactivité : tu fournis seulement le HTML avec les attributs « data-bat-… » indiqués.) AUCUNE image EXTERNE par URL, AUCUNE police externe, AUCUN fichier externe. Pour une vraie photo, utilise une ZONE PHOTO que la personne remplira elle-même (voir « ZONES PHOTO » plus bas).
 - Responsive, impeccable sur mobile. Dans le <style> : html{scroll-behavior:smooth;}.
 
 === STANDARD VISUEL (allure d'entreprise, par défaut) ===
@@ -144,9 +144,14 @@ RUBRIQUES LIBRES :
 - Tu peux à tout moment AJOUTER, RENOMMER, RÉORDONNER ou SUPPRIMER une rubrique sur demande, puis tu renvoies la page entière.
 - PLACEHOLDER : une rubrique dont le contenu n'est pas fourni reçoit un espace réservé clair et élégant (ex. « Vos réalisations apparaîtront ici — dites-moi de les ajouter »). Jamais de section vide ni cassée.
 
-ESPACES MÉDIAS — DEMANDE AVANT DE SUPPOSER :
-- Quand un espace n'est pas clair (zone d'image, galerie, document…), tu DEMANDES d'abord à la personne à quoi il sert : « des photos », « du texte », ou « des documents (PDF / Word / PowerPoint) » — puis tu poses le bon espace réservé.
-- Pour une image : un cadre réservé propre avec une légende. Pour un document : une zone qui annonce le document à venir. Tu n'inventes jamais d'image externe.`;
+ZONES PHOTO (la personne ajoute SES propres images) :
+- Partout où une vraie photo a du sens (produit, réalisation, logo, bannière, portrait, galerie…), place une balise image VIDE sous cette forme EXACTE :
+  <img data-bat-img="idUnique" alt="description courte de la photo">
+  - « idUnique » est un identifiant court, en minuscules, sans accents ni espaces, et DIFFÉRENT pour chaque photo (ex. banniere, produit1, produit2, logo, equipe1…).
+  - N'écris JAMAIS d'attribut src toi-même : la plateforme affiche automatiquement un cadre « Image à ajouter » tant que la personne n'a pas mis sa photo, puis la remplace par sa vraie image. Tu n'inventes jamais d'image ni d'URL.
+  - Soigne la mise en page en CSS pour que l'image remplisse proprement son cadre (par ex. une classe avec object-fit:cover et une hauteur définie). L'attribut alt décrit la photo attendue (il sert aussi de légende à la personne).
+- Pour une galerie, répète plusieurs <img data-bat-img="..."> avec des identifiants différents.
+- Si un espace média n'est pas clair (photo, texte, ou document PDF/Word), demande d'abord à la personne ; pour une photo, pose une zone photo comme ci-dessus ; pour un document, une zone qui annonce le document à venir.`;
 
 // Consigne ajoutée quand le projet est en mode « plusieurs pages ».
 // Le site reste UN SEUL fichier index.html, mais le contenu est réparti en pages
@@ -474,6 +479,39 @@ function injectKit(html, mods, conv, baseUrl) {
   const block = "\n<!-- BAT-KIT:START -->\n" + inner + "<!-- BAT-KIT:END -->\n";
   if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, block + "</body>");
   return html + block;
+}
+
+// --- ZONES PHOTO : la personne ajoute ses propres images -------------------
+// Le modèle n'écrit que des balises <img data-bat-img="slot"> SANS src. Les vraies
+// images (conv.images) ne sont JAMAIS envoyées au modèle : elles sont injectées à
+// l'affichage, à la publication et au téléchargement. Tant qu'aucune image n'est
+// choisie, un cadre « Image à ajouter » propre est affiché.
+const IMG_PLACEHOLDER = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="520"><rect width="100%" height="100%" fill="#eef1f5"/><rect x="286" y="170" width="228" height="150" rx="12" fill="none" stroke="#b4bfcc" stroke-width="5"/><circle cx="338" cy="222" r="20" fill="#b4bfcc"/><path d="M300 312l62-62 44 44 38-32 56 50z" fill="#b4bfcc"/><text x="400" y="392" font-family="system-ui,-apple-system,sans-serif" font-size="24" fill="#8f9aa8" text-anchor="middle">Image à ajouter</text></svg>');
+// Liste les identifiants de zones photo présents dans le site + leur légende (alt).
+function listImageSlots(html) {
+  const out = []; const seen = {};
+  if (!html) return out;
+  const re = /<img\b[^>]*\bdata-bat-img\s*=\s*["']([^"']+)["'][^>]*>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const slot = m[1].trim(); if (!slot || seen[slot]) continue; seen[slot] = true;
+    const alt = (m[0].match(/\balt\s*=\s*["']([^"']*)["']/i) || [])[1] || "";
+    out.push({ slot, label: alt });
+  }
+  return out;
+}
+// Injecte les vraies images (ou le cadre placeholder) dans les balises data-bat-img.
+function injectImages(html, conv) {
+  if (!html) return html;
+  const imgs = (conv && conv.images) || {};
+  return html.replace(/<img\b[^>]*\bdata-bat-img\s*=\s*["']([^"']+)["'][^>]*>/gi, (tag, slot) => {
+    const src = imgs[slot] || IMG_PLACEHOLDER;
+    let t = tag;
+    if (/\bsrc\s*=\s*["'][^"']*["']/i.test(t)) t = t.replace(/\bsrc\s*=\s*["'][^"']*["']/i, 'src="' + src + '"');
+    else t = t.replace(/<img\b/i, '<img src="' + src + '"');
+    if (!/\bloading\s*=/i.test(t)) t = t.replace(/<img\b/i, '<img loading="lazy"');
+    return t;
+  });
 }
 
 // --- BOÎTE À OUTILS « Batisseur » (Atelier Projet) ---------------------------
@@ -1765,6 +1803,47 @@ ${current}
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
+// GET /api/project/images?id= : liste des zones photo du site (+ lesquelles ont une image)
+async function handleProjectImagesList(req, res) {
+  const id = new URL(req.url, "http://localhost").searchParams.get("id");
+  const conv = await loadConv(id);
+  if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+  const user = await currentUser(req);
+  if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+  const html = stripKit(await readSite(conv.id)) || "";
+  const imgs = conv.images || {};
+  const slots = listImageSlots(html).map((s) => ({ slot: s.slot, label: s.label, hasImage: !!imgs[s.slot] }));
+  return sendJson(res, 200, { slots });
+}
+
+const PROJECT_IMG_MAX = 2600000; // ~2,6 Mo de chaîne base64 (~1,9 Mo d'image)
+// POST /api/project/image { id, slot, data } : ajoute une photo (data:image/...) ou la retire (data vide)
+async function handleProjectImageSet(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const conv = await loadConv(p.id);
+    if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+    const user = await currentUser(req);
+    if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    if (conv.userId && !canView(user)) return sendJson(res, 403, { error: "Accès non autorisé pour le moment." });
+    const slot = String(p.slot || "").trim();
+    if (!slot) return sendJson(res, 400, { error: "Zone photo manquante." });
+    const html = stripKit(await readSite(conv.id)) || "";
+    if (!listImageSlots(html).some((s) => s.slot === slot)) return sendJson(res, 400, { error: "Cette zone photo n'existe pas (ou plus) dans le site." });
+    conv.images = conv.images || {};
+    const data = typeof p.data === "string" ? p.data : "";
+    if (!data) { delete conv.images[slot]; }
+    else {
+      if (!/^data:image\/(png|jpe?g|webp|gif)\s*;base64,/i.test(data)) return sendJson(res, 415, { error: "Format d'image non pris en charge (PNG, JPEG, WebP ou GIF)." });
+      if (data.length > PROJECT_IMG_MAX) return sendJson(res, 413, { error: "Image trop lourde. Choisissez une photo un peu plus légère." });
+      conv.images[slot] = data;
+    }
+    conv.updatedAt = new Date().toISOString();
+    await saveConv(conv);
+    return sendJson(res, 200, { ok: true, slot, hasImage: !!conv.images[slot] });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
 // GET /api/download?id=... : télécharge le site (index.html) en pièce jointe
 async function handleDownload(req, res) {
   const u = new URL(req.url, "http://localhost");
@@ -1775,8 +1854,9 @@ async function handleDownload(req, res) {
     if (!owns(cu, conv)) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Ce projet appartient à un autre compte."); }
     if (conv.userId && !canView(cu)) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }); return res.end("Accès non autorisé pour le moment."); }
   }
-  const html = await readSite(id);
+  let html = await readSite(id);
   if (!html) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("Site introuvable — construisez-le d'abord."); }
+  if (conv && conv.track !== "premium") { try { html = injectImages(injectKit(html, convModules(conv), conv, reqBase(req)), conv); } catch (e) {} }
   res.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
     "content-disposition": 'attachment; filename="index.html"'
@@ -1815,7 +1895,7 @@ async function servePreview(req, res) {
   // Rafraîchit le kit avec l'état ACTUEL du projet (paiement, volets) : ainsi une
   // configuration modifiée après la construction (ex. activation du paiement) est
   // reflétée immédiatement, sans reconstruire le site.
-  if (html && conv) { try { html = (conv.track === "premium") ? injectAppKit(html, conv, reqBase(req)) : injectKit(html, convModules(conv), conv, reqBase(req)); } catch (e) {} }
+  if (html && conv) { try { html = (conv.track === "premium") ? injectAppKit(html, conv, reqBase(req)) : injectKit(html, convModules(conv), conv, reqBase(req)); html = injectImages(html, conv); } catch (e) {} }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   if (html) return res.end(html);
   // Filet : le site n'existe pas encore.
@@ -1986,6 +2066,7 @@ async function publishSite(conv, baseUrl) {
   // Rafraîchit le kit avec l'état ACTUEL (paiement, volets) au moment de la publication,
   // avec l'origine de la PLATEFORME (là où vivent /api/app) — pas l'adresse du site publié.
   if (baseUrl && conv) { try { html = (conv.track === "premium") ? injectAppKit(html, conv, baseUrl) : injectKit(html, convModules(conv), conv, baseUrl); } catch (e) {} }
+  if (conv && conv.track !== "premium") { try { html = injectImages(html, conv); } catch (e) {} }
 
   // Jeu de fichiers à déployer. Site simple = index.html seul. Application
   // installable (PWA) = index.html enrichi + manifeste + service worker + icônes.
@@ -3392,14 +3473,14 @@ async function addActivity(userId, addSeconds) {
   saveActivityLocal(a);
   return u[day];
 }
-// ---- Plafond de travail : 1 h par apprenant, puis pause, réinitialisation auto 10 h après ----
+// ---- Plafond de travail : 1 h par apprenant, puis pause, réinitialisation auto 24 h après ----
 // Ne concerne QUE la création de site web (base). Le formateur n'est jamais limité.
 const WORKCAP_FILE = path.join(DATA_DIR, "workcap.json");
 function loadWorkcap() { try { return JSON.parse(fs.readFileSync(WORKCAP_FILE, "utf8")); } catch (e) { return {}; } }
 function saveWorkcap(o) { try { fs.writeFileSync(WORKCAP_FILE, JSON.stringify(o, null, 2)); } catch (e) {} }
 const WORK_CAP_SECONDS = parseInt(process.env.WORK_CAP_SECONDS, 10) || 3600;          // 1 h de travail
-const WORK_COOLDOWN_MS = (parseInt(process.env.WORK_COOLDOWN_HOURS, 10) || 10) * 3600 * 1000; // pause de 10 h
-// Applique la règle de réinitialisation (10 h après le blocage) et renvoie l'état à jour.
+const WORK_COOLDOWN_MS = (parseInt(process.env.WORK_COOLDOWN_HOURS, 10) || 24) * 3600 * 1000; // pause de 24 h
+// Applique la règle de réinitialisation (24 h après le blocage) et renvoie l'état à jour.
 function workcapEval(rec) {
   const now = Date.now();
   rec = rec && typeof rec === "object" ? { sec: rec.sec || 0, startTs: rec.startTs || 0, cappedTs: rec.cappedTs || 0 } : { sec: 0, startTs: 0, cappedTs: 0 };
@@ -4437,6 +4518,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/goto") return handleGoto(req, res);
   if (req.method === "POST" && req.url === "/api/add-module") return handleAddModule(req, res);
   if (req.method === "POST" && req.url === "/api/page-mode") return handlePageMode(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/project/images")) return handleProjectImagesList(req, res);
+  if (req.method === "POST" && req.url === "/api/project/image") return handleProjectImageSet(req, res);
   if (req.method === "POST" && req.url === "/api/publish") return handlePublish(req, res);
   if (req.method === "POST" && req.url === "/api/auth/register") return handleRegister(req, res);
   if (req.method === "POST" && req.url === "/api/auth/login") return handleLogin(req, res);

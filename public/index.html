@@ -370,6 +370,7 @@
             <button class="pubbtn" id="pubBtn" type="button" style="display:none;" title="Mettre votre site en ligne, avec une adresse à partager">Publier en ligne</button>
             <label class="pwachk" id="pwaWrap" style="display:none;" title="Le site pourra être installé comme une application sur le téléphone (icône sur l'écran d'accueil, ouverture en plein écran)."><input type="checkbox" id="pwaChk"> Installable sur téléphone</label>
             <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">Voir en ligne</a>
+            <button class="dlbtn" id="imgBtn" type="button" style="display:none;" title="Ajouter vos propres photos dans les zones image de votre site">🖼 Photos</button>
             <button class="dlbtn" id="dataBtn" type="button" style="display:none;" title="Voir les commandes / rendez-vous reçus">Données</button>
             <button class="dlbtn" id="upgradeBtn" type="button" style="display:none;border-color:var(--warm,#D98A2B);color:var(--warm,#D98A2B);" title="Continuer ce projet dans l'atelier avancé (vrai code, données partagées)">★ Passer en avancé</button>
             <button class="dlbtn" id="codeBtn" type="button" style="display:none;border-color:var(--accent);color:var(--accent-deep);" title="Comprendre les coulisses : voir le code et ce qui crée chaque partie de votre application">Les coulisses</button>
@@ -727,6 +728,16 @@
     </div>
   </div>
 
+  <!-- Ajouter des photos dans les zones image du site -->
+  <div class="modal-bg" id="imgModal">
+    <div class="modal wide">
+      <h3>Vos photos</h3>
+      <p>Ajoutez vos propres images dans les zones photo de votre site. Les photos sont réduites automatiquement et intégrées à votre site (elles restent même une fois le site publié).</p>
+      <div id="imgList"><div class="aempty">Chargement…</div></div>
+      <div class="row" style="margin-top:12px;"><button id="imgClose" type="button">Fermer</button></div>
+    </div>
+  </div>
+
   <!-- Connexion / inscription (Palier 4) -->
   <div class="modal-bg" id="authModal">
     <div class="modal">
@@ -822,6 +833,90 @@
       }catch(e){ typing.remove(); bubble("Impossible de joindre le serveur.","err"); }
       finally{ setBusy(false); pageModeBtn.disabled = false; }
     }
+
+    // ===== Photos : l'apprenant ajoute ses propres images dans les zones du site =====
+    const imgBtn = $("imgBtn"), imgModal = $("imgModal"), imgList = $("imgList");
+    function updateImgBtn(){
+      // Visible pour un projet de site web (base) une fois un site construit.
+      imgBtn.style.display = (convId && track==="web" && !codeProject && siteBuilt) ? "inline-block" : "none";
+    }
+    async function openImages(){
+      if(!convId) return;
+      imgModal.classList.add("show");
+      imgList.innerHTML='<div class="aempty">Chargement…</div>';
+      try{
+        const r = await fetch("/api/project/images?id="+encodeURIComponent(convId));
+        const d = await r.json();
+        if(!r.ok){ imgList.innerHTML='<div class="aempty">'+escHtmlMsg(d.error||"Erreur.")+'</div>'; return; }
+        renderImageSlots(d.slots||[]);
+      }catch(e){ imgList.innerHTML='<div class="aempty">Impossible de joindre le serveur.</div>'; }
+    }
+    function closeImages(){ imgModal.classList.remove("show"); }
+    function renderImageSlots(slots){
+      imgList.innerHTML="";
+      if(!slots.length){
+        imgList.innerHTML='<div class="aempty">Votre site n\'a pas encore de zone photo. Demandez à l\'assistant, par exemple : « ajoute une photo en haut » ou « crée une galerie de 3 photos », puis revenez ici.</div>';
+        return;
+      }
+      slots.forEach(function(s){
+        const row=document.createElement("div");
+        row.style.cssText="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);";
+        const thumb=document.createElement("div");
+        thumb.style.cssText="width:84px;height:60px;border-radius:8px;border:1px solid var(--line);background:#eef1f5;flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:#9aa4b0;font-size:22px;overflow:hidden;";
+        thumb.innerHTML = s.hasImage ? '<span style="font-size:22px">🖼</span>' : '<span style="font-size:24px">＋</span>';
+        const mid=document.createElement("div"); mid.style.cssText="flex:1;min-width:0;";
+        mid.innerHTML='<div style="font-weight:600;">'+escHtmlMsg(s.label||s.slot)+'</div><div style="font-size:.82rem;color:var(--ink-faint);">'+(s.hasImage?"Photo ajoutée ✓":"Aucune photo pour le moment")+'</div>';
+        const actions=document.createElement("div"); actions.style.cssText="display:flex;gap:6px;align-items:center;flex:0 0 auto;";
+        const lbl=document.createElement("label"); lbl.className="dlbtn"; lbl.style.cssText="cursor:pointer;margin:0;"; lbl.textContent = s.hasImage ? "Changer" : "Choisir une photo";
+        const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*"; inp.style.display="none";
+        inp.addEventListener("change", function(){ if(inp.files && inp.files[0]) setImage(s.slot, inp.files[0], row); inp.value=""; });
+        lbl.appendChild(inp); actions.appendChild(lbl);
+        if(s.hasImage){ const del=document.createElement("button"); del.type="button"; del.className="dlbtn"; del.textContent="Retirer"; del.addEventListener("click", function(){ removeImage(s.slot); }); actions.appendChild(del); }
+        row.appendChild(thumb); row.appendChild(mid); row.appendChild(actions);
+        imgList.appendChild(row);
+      });
+    }
+    // Compression : on réduit la photo (max 1280 px) et on l'encode en JPEG léger.
+    function compressImage(file){
+      return new Promise(function(resolve, reject){
+        const fr=new FileReader();
+        fr.onerror=function(){ reject(new Error("lecture")); };
+        fr.onload=function(){
+          const img=new Image();
+          img.onerror=function(){ reject(new Error("image")); };
+          img.onload=function(){
+            const MAX=1280; let w=img.width, h=img.height;
+            if(w>MAX || h>MAX){ if(w>=h){ h=Math.round(h*MAX/w); w=MAX; } else { w=Math.round(w*MAX/h); h=MAX; } }
+            const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+            const cx=cv.getContext("2d"); cx.drawImage(img,0,0,w,h);
+            let out; try{ out=cv.toDataURL("image/jpeg",0.72); }catch(e){ out=fr.result; }
+            resolve(out);
+          };
+          img.src=fr.result;
+        };
+        fr.readAsDataURL(file);
+      });
+    }
+    async function setImage(slot, file, row){
+      if(!/^image\//.test(file.type)){ bubble("Ce fichier n'est pas une image.","err"); return; }
+      try{
+        const data = await compressImage(file);   // réduite à max 1280 px, JPEG léger
+        const r=await fetch("/api/project/image",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId, slot:slot, data:data})});
+        const d=await r.json();
+        if(!r.ok){ bubble(""+(d.error||"Impossible d'ajouter la photo."),"err"); return; }
+        reloadPreview();
+        openImages();   // rafraîchit la liste
+      }catch(e){ bubble("Impossible de traiter cette image. Essayez une autre photo.","err"); }
+    }
+    async function removeImage(slot){
+      try{
+        const r=await fetch("/api/project/image",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId, slot:slot, data:""})});
+        const d=await r.json();
+        if(!r.ok){ bubble(""+(d.error||"Erreur."),"err"); return; }
+        reloadPreview(); openImages();
+      }catch(e){ bubble("Impossible de joindre le serveur.","err"); }
+    }
+
     let quizPassed = false;
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
@@ -1103,7 +1198,7 @@
         row.innerHTML='<span class="mk">★</span><span class="ml"><b>Atelier Premium</b><i>Application avancée</i></span>';
         railInner.appendChild(row);
         stepLabel.childNodes[0].nodeValue="Atelier Premium"; stepSub.textContent="Application avancée";
-        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none"; examBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none"; pageModeBtn.style.display="none";
+        nextBtn.disabled=true; nextBtn.style.display="none"; certBtn.style.display="none"; examBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none"; pageModeBtn.style.display="none"; imgBtn.style.display="none";
         return;
       }
       nextBtn.style.display="";
@@ -1113,7 +1208,7 @@
         row.querySelector("b").textContent = codeProjName || "Mon projet";
         railInner.appendChild(row);
         stepLabel.childNodes[0].nodeValue = codeProjName || "Mon projet"; stepSub.textContent="Je code moi-même";
-        nextBtn.disabled=true; nextBtn.style.display="none"; examBtn.style.display="none"; certBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none"; pageModeBtn.style.display="none";
+        nextBtn.disabled=true; nextBtn.style.display="none"; examBtn.style.display="none"; certBtn.style.display="none"; prevBtn.style.display="none"; addModBtn.style.display="none"; pageModeBtn.style.display="none"; imgBtn.style.display="none";
         return;
       }
       if(track === "code"){
@@ -1131,7 +1226,7 @@
         const atEnd = lesson >= total - 1;
         nextBtn.disabled = atEnd;
         nextBtn.textContent = atEnd ? "Programme terminé ✓" : "Leçon suivante →";
-        prevBtn.style.display=""; prevBtn.disabled = (lesson<=0); addModBtn.style.display="none"; pageModeBtn.style.display="none";
+        prevBtn.style.display=""; prevBtn.disabled = (lesson<=0); addModBtn.style.display="none"; pageModeBtn.style.display="none"; imgBtn.style.display="none";
         examBtn.style.display = (convId && atEnd) ? "inline-block" : "none";
         examBtn.textContent = quizPassed ? "Examen réussi ✓ — revoir" : "Passer l'examen";
         certBtn.style.display = (convId && atEnd && quizPassed) ? "inline-block" : "none";
@@ -1152,6 +1247,7 @@
       prevBtn.style.display=""; prevBtn.disabled = (step<=0);
       addModBtn.style.display = convId ? "inline-block" : "none";
       updatePageModeBtn();
+      updateImgBtn();
       certBtn.style.display = (convId && step >= LAST) ? "inline-block" : "none";
       if(workCapLocked){ nextBtn.disabled = true; addModBtn.disabled = true; pageModeBtn.disabled = true; }
     }
@@ -1177,6 +1273,7 @@
       exportBtn.style.display = (track === "premium") ? "inline-block" : "none";
       // « Les coulisses » : comprendre le code — pour tout projet web/atelier construit.
       { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display = (track !== "code") ? "inline-block" : "none"; }
+      updateImgBtn();
     }
 
     function showPublished(url){
@@ -1677,6 +1774,9 @@
     prevBtn.addEventListener("click", goPrev);
     addModBtn.addEventListener("click", openAddMod);
     pageModeBtn.addEventListener("click", togglePageMode);
+    imgBtn.addEventListener("click", openImages);
+    $("imgClose").addEventListener("click", closeImages);
+    imgModal.addEventListener("click",(e)=>{ if(e.target===imgModal) closeImages(); });
     addModGo.addEventListener("click", confirmAddMod);
     $("addModCancel").addEventListener("click", closeAddMod);
     addModModal.addEventListener("click",(e)=>{ if(e.target===addModModal) closeAddMod(); });
