@@ -703,6 +703,16 @@ Dès ta PREMIÈRE réponse, après un accueil bref et chaleureux, présente SPON
 - et la possibilité d'avoir PLUSIEURS PAGES (Accueil, À propos, Contact…) ou de tout mettre sur une seule page.
 Termine en lui demandant, simplement, ce qu'elle a en tête. Ne décide jamais à sa place : propose, puis écoute. Garde cela court et accueillant.`;
 
+// Consigne commune : inviter à AVANCER dès que l'objectif de l'étape est atteint.
+// But : éviter que la personne reste bloquée (ou tourne en rond) sur une étape, et
+// limiter les allers-retours inutiles (donc le coût). Ajoutée à toutes les étapes
+// SAUF la dernière (« Publier »).
+const NEXT_STEP_NUDGE = `
+
+=== INVITER À PASSER À L'ÉTAPE SUIVANTE ===
+Dès que l'objectif de CETTE étape est atteint — c'est-à-dire que tu as les informations nécessaires et, si c'est une étape de construction, que tu viens de construire ce qu'elle demande — TERMINE ton message en invitant clairement la personne à passer à l'étape suivante, en lui indiquant le bouton « Étape suivante → » (en haut de la discussion). Formule-le simplement et chaleureusement, par exemple : « C'est bon pour cette étape ✓ — cliquez sur « Étape suivante → » quand vous êtes prêt(e). » Ajoute qu'elle peut aussi, si elle préfère, te demander un dernier ajustement avant de continuer.
+Mais n'invite JAMAIS à passer à la suite tant que l'objectif de l'étape n'est pas atteint (informations manquantes, ou construction pas encore faite) : dans ce cas, pose plutôt la question utile ou construis d'abord.`;
+
 // Consigne commune : proposer des CHOIX cliquables quand une décision guidée aide l'apprenant.
 const CHOIX_HELP = `
 
@@ -1428,6 +1438,8 @@ ${modulesContext(mods)}`;
   if (!isBuild && step === 0) system += INTRO_PROPOSAL;
   // Ton professionnel imposé sur toutes les étapes.
   system += "\n\n=== TON ===\nAdopte un ton professionnel, clair et sobre. N'emploie pas d'émojis dans tes messages.";
+  // Inviter à avancer dès que l'objectif de l'étape est atteint (sauf à la dernière étape).
+  if (step < LAST_STEP) system += NEXT_STEP_NUDGE;
   let buildModel = MODEL;   // 1re construction = Sonnet (qualité)
   if (isBuild) {
     system += SINGLE_INSTRUCTION;
