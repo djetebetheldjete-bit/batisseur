@@ -47,11 +47,13 @@ const API_KEYS = (function () {
   return all;
 })();
 const API_KEY = API_KEYS[0]; // compat / test de présence
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5";
 // Modèle allégé pour les étapes de DISCUSSION (par défaut = le même modèle ; mettre p.ex. un Haiku pour réduire le coût).
 // Modèle « léger » : rapide et économique, pour les réponses courtes (questions, cours de codage).
 // Réglable via ANTHROPIC_MODEL_LIGHT. Si indisponible sur le compte, callClaude bascule sur MODEL.
-const MODEL_LIGHT = process.env.ANTHROPIC_MODEL_LIGHT || "claude-haiku-4-5";
+// Haiku 5.5 : ~10× moins cher que Haiku 4.5 en entrée (0,10 $/MTok < 100k) ET cache dès 512 tokens
+// (Haiku 4.5 exigeait 4096 tokens, donc le cache ne s'activait quasiment jamais sur les retouches).
+const MODEL_LIGHT = process.env.ANTHROPIC_MODEL_LIGHT || "claude-haiku-5-5";
 // Modèle PUISSANT pour l'espace « Premium learner » (applications avancées). Opus par défaut.
 const MODEL_PREMIUM = process.env.ANTHROPIC_MODEL_PREMIUM || "claude-opus-5-5";
 // Modèle pour les RETOUCHES d'un site DÉJÀ construit (économie : ~5× moins cher que Sonnet).
