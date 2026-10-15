@@ -249,7 +249,7 @@
   /* --- Suivi & assiduité --- */
   #activityModal .modal{ max-width:680px; }
   .actwrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
-  .actrow{ display:grid; grid-template-columns:minmax(130px,1.5fr) repeat(5,1fr) .95fr; gap:6px; align-items:stretch; margin-bottom:6px; min-width:560px; }
+  .actrow{ display:grid; grid-template-columns:minmax(130px,1.5fr) repeat(7,1fr) .95fr; gap:6px; align-items:stretch; margin-bottom:6px; min-width:720px; }
   .acthead{ font-weight:700; color:var(--ink-soft); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
   .actname{ display:flex; flex-direction:column; justify-content:center; overflow:hidden; }
   .actname b{ font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--ink); }
@@ -370,6 +370,7 @@
             <button class="pubbtn" id="pubBtn" type="button" style="display:none;" title="Mettre votre site en ligne, avec une adresse à partager">Publier en ligne</button>
             <label class="pwachk" id="pwaWrap" style="display:none;" title="Le site pourra être installé comme une application sur le téléphone (icône sur l'écran d'accueil, ouverture en plein écran)."><input type="checkbox" id="pwaChk"> Installable sur téléphone</label>
             <a class="publink" id="pubLink" href="#" target="_blank" rel="noopener" style="display:none;" title="Ouvrir votre site en ligne">Voir en ligne</a>
+            <button class="dlbtn" id="pubCopy" type="button" style="display:none;" title="Copier l'adresse de votre site pour la partager (WhatsApp, etc.)">Copier le lien</button>
             <button class="dlbtn" id="imgBtn" type="button" style="display:none;" title="Ajouter vos propres photos dans les zones image de votre site">🖼 Photos</button>
             <button class="dlbtn" id="dataBtn" type="button" style="display:none;" title="Voir les commandes / rendez-vous reçus">Données</button>
             <button class="dlbtn" id="upgradeBtn" type="button" style="display:none;border-color:var(--warm,#D98A2B);color:var(--warm,#D98A2B);" title="Continuer ce projet dans l'atelier avancé (vrai code, données partagées)">★ Passer en avancé</button>
@@ -476,7 +477,8 @@
       <h3>Espace formateur</h3>
       <p>Inscrivez vos apprenants et attribuez leur session. « Terminé » coupe l'accès à la construction (le projet reste consultable) ; « Actif » le (ré)autorise.</p>
       <div id="adminBody"><div class="aempty">Chargement…</div></div>
-      <div class="row"><button id="adminClose" type="button">Fermer</button><button id="openVisitsBtn" type="button">Visiteurs</button><button id="openActivityBtn" type="button">Suivi &amp; assiduité</button><button id="openResvBtn" class="primary" type="button">Réservations &amp; paiement</button></div>
+      <div class="row"><button id="adminClose" type="button">Fermer</button><button id="adminRefresh" type="button">↻ Actualiser</button><button id="openVisitsBtn" type="button">Visiteurs</button><button id="openActivityBtn" type="button">Suivi &amp; assiduité</button><button id="openResvBtn" class="primary" type="button">Réservations &amp; paiement</button></div>
+      <div id="adminDirtyNote" style="display:none;font-size:.8rem;color:var(--warm,#D98A2B);margin-top:6px;">Des modifications ont été enregistrées. Cliquez « ↻ Actualiser » pour rafraîchir les compteurs et le classement.</div>
     </div>
   </div>
 
@@ -495,13 +497,15 @@
   <div class="modal-bg" id="activityModal">
     <div class="modal wide">
       <h3>Suivi &amp; assiduité</h3>
-      <p>Temps de travail de chaque apprenant, jour par jour (lundi → vendredi). Une case <b>verte ✓</b> = l'objectif du jour est atteint.</p>
+      <p>Temps de travail de chaque apprenant, jour par jour (lundi → dimanche). Une case <b>verte ✓</b> = l'objectif du jour est atteint.</p>
       <div class="card" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px;">
         <b>Objectif quotidien</b>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
           <label style="font-size:12px;color:var(--ink-soft)">Minutes par jour :</label>
           <select id="goalSel" style="width:130px;">
             <option value="30">30 minutes</option>
+            <option value="35">35 minutes</option>
+            <option value="45">45 minutes</option>
             <option value="60">1 heure</option>
             <option value="90">1 h 30</option>
             <option value="120">2 heures</option>
@@ -920,7 +924,7 @@
     let quizPassed = false;
     const railInner = $("railInner"), stepLabel = $("stepLabel"), stepSub = $("stepSub");
     const previewFrame = $("preview"), placeholder = $("placeholder"), liveTag = $("liveTag"), device = $("device"), dlBtn = $("dlBtn");
-    const pubBtn = $("pubBtn"), pubLink = $("pubLink"), pwaChk = $("pwaChk"), pwaWrap = $("pwaWrap");
+    const pubBtn = $("pubBtn"), pubLink = $("pubLink"), pwaChk = $("pwaChk"), pwaWrap = $("pwaWrap"), pubCopy = $("pubCopy");
     const dataBtn = $("dataBtn"), dataModal = $("dataModal"), dataBody = $("dataBody");
     const upgradeBtn = $("upgradeBtn");
     const exportBtn = $("exportBtn"), exportModal = $("exportModal");
@@ -1262,7 +1266,9 @@
       dlBtn.href = "/api/download?id=" + encodeURIComponent(convId);
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
-      if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "Republier" : "Publier en ligne"; pwaWrap.style.display = "inline-flex"; }
+      if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "Republier" : "Publier en ligne"; pwaWrap.style.display = "inline-flex";
+        if(publishedUrl && pubCopy) pubCopy.style.display = "inline-block";
+        if(!publishedUrl && !window.__pubHint){ window.__pubHint = true; try{ bubble("Votre site est prêt. Pour obtenir une adresse à partager (par WhatsApp par exemple), cliquez « Publier en ligne » en haut de l'aperçu — c'est automatique, vous n'avez rien d'autre à faire.","ai"); }catch(e){} } }
       const hasData = (currentModules.indexOf("boutique")>=0 || currentModules.indexOf("rdv")>=0 || currentModules.indexOf("membre")>=0);
       // L'atelier Projet (Premium) a toujours un tableau de bord : données partagées + membres.
       dataBtn.style.display = (hasData || track === "premium") ? "inline-block" : "none";
@@ -1279,6 +1285,7 @@
     function showPublished(url){
       publishedUrl = url;
       pubLink.href = url; pubLink.style.display = "inline-block";
+      if(pubCopy) pubCopy.style.display = "inline-block";
       if(canPublish){ pubBtn.style.display = "inline-block"; pubBtn.textContent = "Republier"; pwaWrap.style.display = "inline-flex"; }
     }
 
@@ -1316,7 +1323,7 @@
       currentModules = normMods(mods); currentMultipage = false; currentHasPages = false;
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none";
-      pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
+      pubBtn.style.display="none"; pubLink.style.display="none"; { var _pc=document.getElementById("pubCopy"); if(_pc) _pc.style.display="none"; } pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       renderRail(); renderTypeBadge();
       const typing = bubble("…","ai typing"); setBusy(true);
       try{
@@ -1337,7 +1344,7 @@
       currentModules = ["presentation"]; currentMultipage = false; step = 0; siteBuilt = false;
       thread.innerHTML=""; resumedNote.style.display="none";
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
+      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; { var _pc=document.getElementById("pubCopy"); if(_pc) _pc.style.display="none"; } pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       typeBadge.textContent="Premium"; typeBadge.style.display="none";
       renderRail();
       const typing = bubble("…","ai typing"); setBusy(true);
@@ -1782,6 +1789,7 @@
     addModModal.addEventListener("click",(e)=>{ if(e.target===addModModal) closeAddMod(); });
     nextBtn.addEventListener("click", goNext);
     pubBtn.addEventListener("click", doPublish);
+    if(pubCopy) pubCopy.addEventListener("click", function(){ if(!publishedUrl) return; try{ navigator.clipboard && navigator.clipboard.writeText(publishedUrl); }catch(e){} const t=pubCopy.textContent; pubCopy.textContent="Copié ✓"; setTimeout(function(){ pubCopy.textContent=t||"Copier le lien"; }, 1200); });
     dataBtn.addEventListener("click", openData);
     upgradeBtn.addEventListener("click", async ()=>{
       if(!convId) return;
@@ -1938,7 +1946,7 @@
       thread.innerHTML=""; resumedNote.style.display="none"; showAccessBanner();
       step=0; siteBuilt=false; renderRail();
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; pwaWrap.style.display="none";
+      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; { var _pc=document.getElementById("pubCopy"); if(_pc) _pc.style.display="none"; } pwaWrap.style.display="none";
       buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
       let msg;
       if(kind==="none") msg="Bienvenue sur Bâtisseur. Pour commencer, réservez votre place depuis la page d'accueil, puis connectez-vous.";
@@ -2063,7 +2071,13 @@
     }
     async function openAdmin(){ adminModal.classList.add("show"); await loadAdmin(); }
     function closeAdmin(){ adminModal.classList.remove("show"); }
+    // « Modifié » : certaines actions (payé, premium, capacité de session…) sont enregistrées
+    // immédiatement MAIS ne rechargent plus tout l'espace formateur, pour ne pas ralentir le formateur.
+    // On signale juste que les compteurs/classement se mettront à jour au prochain « Actualiser ».
+    function markAdminDirty(){ const n=$("adminDirtyNote"); if(n) n.style.display="block"; const b=$("adminRefresh"); if(b){ b.style.borderColor="var(--warm,#D98A2B)"; b.style.color="var(--warm,#D98A2B)"; } }
+    function clearAdminDirty(){ const n=$("adminDirtyNote"); if(n) n.style.display="none"; const b=$("adminRefresh"); if(b){ b.style.borderColor=""; b.style.color=""; } }
     async function loadAdmin(){
+      clearAdminDirty();
       adminBody.innerHTML = '<div class="aempty">Chargement…</div>';
       try{
         const [lr, cr, ar] = await Promise.all([ fetch("/api/admin/learners"), fetch("/api/admin/cohorts"), fetch("/api/admin/ai-stats").catch(()=>null) ]);
@@ -2184,8 +2198,15 @@
         box.appendChild(w); return;
       }
       const intro = document.createElement("div"); intro.style.cssText = "font-size:.82rem;color:var(--ink-faint);margin-bottom:10px;";
-      intro.innerHTML = "Classement <b>de cette session</b>, compté <b>depuis son lancement</b> (il repart à zéro à chaque nouvelle session). Calculé par la plateforme : <b>assiduité</b>, <b>projets</b>, <b>progression</b>. À saisir par toi : <b>projet final</b> /30 et <b>attitude</b> /10. Les <b>2 premiers</b> = Premium.";
+      intro.innerHTML = "Classement <b>de cette session</b>, compté <b>depuis son lancement</b> (il repart à zéro à chaque nouvelle session). Calculé par la plateforme : <b>assiduité</b>, <b>projets</b>, <b>progression</b>. À saisir par toi : <b>projet final</b> /30 et <b>attitude</b> /10. Les <b>2 premiers</b> = Premium.<br>Saisis toutes tes notes tranquillement : chaque note est <b>enregistrée automatiquement</b> sans recharger la page. Clique « Mettre à jour le classement » quand tu veux reclasser selon les nouvelles notes.";
       box.appendChild(intro);
+      // Barre d'action : reclasser MANUELLEMENT (le classement ne se réordonne plus à chaque note saisie).
+      const toolbar = document.createElement("div"); toolbar.style.cssText = "display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;";
+      const reBtn = document.createElement("button"); reBtn.type="button"; reBtn.className="primary"; reBtn.textContent = "↻ Mettre à jour le classement";
+      reBtn.title = "Reclasser les apprenants selon les notes que tu viens de saisir";
+      reBtn.addEventListener("click", function(){ loadPremiumBoard(box, meta.cohortId); });
+      const reMsg = document.createElement("span"); reMsg.style.cssText = "font-size:.8rem;color:var(--ink-faint);"; reMsg.textContent = "Les notes sont enregistrées au fur et à mesure.";
+      toolbar.appendChild(reBtn); toolbar.appendChild(reMsg); box.appendChild(toolbar);
       if(!L || !L.length){ const e=document.createElement("div"); e.style.cssText="color:var(--ink-faint);font-size:.88rem;"; e.textContent="Aucun apprenant inscrit à cette session pour le moment."; box.appendChild(e); return; }
       const maxP = Math.max(1, ...L.map(l=>(l.published||0)*3+(l.projects||0)));
       const maxSecs = Math.max(1, ...L.map(l=>l.activitySeconds||0));
@@ -2197,8 +2218,9 @@
         const head = document.createElement("div"); head.style.cssText = "display:flex;align-items:center;gap:10px;";
         head.innerHTML = '<span style="width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:.82rem;color:#fff;background:'+(top?"var(--warm,#D98A2B)":"var(--accent,#147C8C)")+';">'+(i+1)+'</span>'
           + '<span style="flex:1;font-weight:700;">'+escHtmlMsg(r.l.name||"—")+(top?' <span style="color:var(--warm,#D98A2B);font-size:.78rem;">★ Premium</span>':'')+(r.l.premium?' <span style="color:var(--good);font-size:.74rem;">(accès activé)</span>':'')+'</span>'
-          + '<span style="font-weight:800;color:var(--accent-deep,#0C5866);">'+Math.round(r.s.total)+'<span style="font-size:.7rem;color:var(--ink-faint);font-weight:600;"> /100</span></span>';
+          + '<span class="pbScore" style="font-weight:800;color:var(--accent-deep,#0C5866);">'+Math.round(r.s.total)+'<span style="font-size:.7rem;color:var(--ink-faint);font-weight:600;"> /100</span></span>';
         row.appendChild(head);
+        const scoreEl = head.querySelector(".pbScore");
         const det = document.createElement("div"); det.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:.82rem;color:var(--ink-soft);";
         det.innerHTML = '<span>Assiduité <b>'+Math.round(r.s.aAssid)+'</b>/25</span> · <span>Projets <b>'+Math.round(r.s.aProjets)+'</b>/25</span> · <span>Progr. <b>'+Math.round(r.s.aProg)+'</b>/10</span>'
           + ((r.l.sessionsTotal>0) ? (' · <span>Présences <b>'+(r.l.sessionsPresent||0)+'</b>/'+r.l.sessionsTotal+'</span>') : '');
@@ -2207,15 +2229,21 @@
         const inP = document.createElement("input"); inP.type="number"; inP.min="0"; inP.max="30"; inP.value=(typeof r.l.noteProjet==="number")?r.l.noteProjet:""; inP.placeholder="/30"; inP.title="Qualité du projet final (0 à 30)"; inP.style.cssText="width:58px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;font:inherit;background:var(--surface);";
         const lblA = document.createElement("span"); lblA.textContent = "Attitude"; lblA.style.cssText = "font-size:.78rem;";
         const inA = document.createElement("input"); inA.type="number"; inA.min="0"; inA.max="10"; inA.value=(typeof r.l.noteAttitude==="number")?r.l.noteAttitude:""; inA.placeholder="/10"; inA.title="Attitude (0 à 10)"; inA.style.cssText="width:52px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;font:inherit;background:var(--surface);";
+        const tick = document.createElement("span"); tick.style.cssText="font-size:.8rem;color:var(--good,#2E8B6F);min-width:14px;opacity:0;transition:opacity .2s;"; tick.textContent="✓";
+        // Enregistrement DISCRET : on sauvegarde en arrière-plan et on met à jour le total de CETTE ligne,
+        // SANS recharger ni réordonner tout le classement (ça permet de saisir vite, apprenant après apprenant).
+        // Le reclassement se fait seulement quand le formateur clique « Mettre à jour le classement ».
         function save(){
           const projet = inP.value===""?null:Math.max(0,Math.min(30,parseFloat(inP.value)||0));
           const attitude = inA.value===""?null:Math.max(0,Math.min(10,parseFloat(inA.value)||0));
           r.l.noteProjet = projet; r.l.noteAttitude = attitude;
-          fetch("/api/admin/premium-note",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:r.l.id, projet:projet, attitude:attitude, cohortId: meta.cohortId})}).catch(()=>{});
-          loadPremiumBoard(box, meta.cohortId);
+          const s2 = premiumScore(r.l, maxP, maxSecs);
+          if(scoreEl) scoreEl.innerHTML = Math.round(s2.total)+'<span style="font-size:.7rem;color:var(--ink-faint);font-weight:600;"> /100</span>';
+          fetch("/api/admin/premium-note",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:r.l.id, projet:projet, attitude:attitude, cohortId: meta.cohortId})})
+            .then(function(){ tick.style.opacity="1"; setTimeout(function(){ tick.style.opacity="0"; }, 1200); }).catch(function(){});
         }
         inP.addEventListener("change", save); inA.addEventListener("change", save);
-        wrap.appendChild(lblP); wrap.appendChild(inP); wrap.appendChild(lblA); wrap.appendChild(inA);
+        wrap.appendChild(lblP); wrap.appendChild(inP); wrap.appendChild(lblA); wrap.appendChild(inA); wrap.appendChild(tick);
         det.appendChild(wrap); row.appendChild(det);
         box.appendChild(row);
       });
@@ -2385,12 +2413,12 @@
         paidBtn.title = l.paid ? "A payé (cliquer pour annuler)" : "Marquer comme ayant payé (Wave ou espèces)";
         if(l.paid){ paidBtn.style.borderColor="var(--good,#2E8B6F)"; paidBtn.style.color="#fff"; paidBtn.style.background="var(--good,#2E8B6F)"; }
         else { paidBtn.style.borderColor="#c0392b"; paidBtn.style.color="#c0392b"; }
-        paidBtn.addEventListener("click", function(){ setPaid(l.id, !l.paid); });
+        paidBtn.addEventListener("click", function(){ const next=!l.paid; setPaid(l.id, next).then(function(ok){ if(!ok) return; l.paid=next; paidBtn.textContent = next ? "Payé ✓" : "Non payé"; if(next){ paidBtn.style.borderColor="var(--good,#2E8B6F)"; paidBtn.style.color="#fff"; paidBtn.style.background="var(--good,#2E8B6F)"; } else { paidBtn.style.background=""; paidBtn.style.borderColor="#c0392b"; paidBtn.style.color="#c0392b"; } }); });
         const pbtn = document.createElement("button"); pbtn.type="button"; pbtn.className="dlbtn";
         pbtn.textContent = l.premium ? "Premium ✓" : "Premium";
         pbtn.title = "Autoriser cet apprenant à créer des applications avancées (atelier Premium)";
         if(l.premium){ pbtn.style.borderColor="var(--warm,#D98A2B)"; pbtn.style.color="var(--warm,#D98A2B)"; }
-        pbtn.addEventListener("click", function(){ setPremium(l.id, !l.premium); });
+        pbtn.addEventListener("click", function(){ const next=!l.premium; setPremium(l.id, next).then(function(ok){ if(!ok) return; l.premium=next; pbtn.textContent = next ? "Premium ✓" : "Premium"; if(next){ pbtn.style.borderColor="var(--warm,#D98A2B)"; pbtn.style.color="var(--warm,#D98A2B)"; } else { pbtn.style.borderColor=""; pbtn.style.color=""; } }); });
         const dbtn = document.createElement("button"); dbtn.type="button"; dbtn.className="dlbtn";
         dbtn.textContent = "Supprimer"; dbtn.title = "Supprimer définitivement ce compte et ses projets";
         dbtn.style.borderColor = "#c0392b"; dbtn.style.color = "#c0392b";
@@ -2418,8 +2446,7 @@
       }catch(e){ err.textContent = "Impossible de joindre le serveur."; }
     }
     async function updateCohort(id, closed, capacity){
-      try{ await fetch("/api/admin/cohort/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,closed:closed,capacity:capacity})}); }catch(e){}
-      await loadAdmin();
+      try{ await fetch("/api/admin/cohort/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,closed:closed,capacity:capacity})}); markAdminDirty(); }catch(e){}
     }
     async function saveCohortWa(id, link, el, c){
       try{
@@ -2442,7 +2469,7 @@
       }catch(e){ if(btn){ btn.disabled=false; } alert("Impossible de joindre le serveur."); }
     }
     async function saveLearner(userId, status, cohortId){
-      try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,status:status,cohortId:cohortId})}); if(!r.ok){ await loadAdmin(); } }catch(e){}
+      try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,status:status,cohortId:cohortId})}); if(!r.ok){ await loadAdmin(); } else { markAdminDirty(); } }catch(e){}
     }
     async function deleteLearner(userId){
       try{
@@ -2453,12 +2480,10 @@
       await loadAdmin();
     }
     async function setPremium(userId, premium){
-      try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,premium:premium})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Action impossible."); } }catch(e){}
-      await loadAdmin();
+      try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,premium:premium})}); const d=await r.json().catch(function(){return{};}); if(!r.ok){ alert(d.error||"Action impossible."); return false; } markAdminDirty(); return true; }catch(e){ return false; }
     }
     async function setPaid(userId, paid){
-      try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,paid:paid})}); const d=await r.json(); if(!r.ok){ alert(d.error||"Action impossible."); } }catch(e){}
-      await loadAdmin();
+      try{ const r = await fetch("/api/admin/learner/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:userId,paid:paid})}); const d=await r.json().catch(function(){return{};}); if(!r.ok){ alert(d.error||"Action impossible."); return false; } markAdminDirty(); return true; }catch(e){ return false; }
     }
     async function createLearner(){
       const name = $("acName").value.trim(), email = $("acEmail").value.trim(), cohortId = $("acCohortSel").value, pass = $("acPass").value;
@@ -2617,6 +2642,7 @@
     adminBtn.addEventListener("click", openAdmin);
     { const pb=document.getElementById("progBtn"); if(pb) pb.addEventListener("click", function(){ window.open("/mon-programme","_blank","noopener"); }); }
     $("adminClose").addEventListener("click", closeAdmin);
+    { const b=$("adminRefresh"); if(b) b.addEventListener("click", function(){ loadAdmin(); }); }
     adminModal.addEventListener("click",(e)=>{ if(e.target===adminModal) closeAdmin(); });
 
     // ===== Réservations & paiement (formateur) =====
@@ -2784,7 +2810,7 @@
         const r = await fetch("/api/formation/activity");
         const d = await r.json();
         if(!r.ok){ activityBody.innerHTML = '<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; }
-        const gs = $("goalSel"); if(gs) gs.value = String(d.goalMin||60);
+        const gs = $("goalSel"); if(gs) gs.value = String(d.goalMin||35);
         renderActivity(d);
         try{ const rs=await fetch("/api/formation/settings"); const ds=await rs.json(); if(rs.ok&&ds.settings&&$("aiLimInput")) $("aiLimInput").value=String(ds.settings.aiDailyLimit||150); }catch(e){}
       }catch(e){ activityBody.innerHTML = '<div class="aempty">Impossible de joindre le serveur.</div>'; }
@@ -2798,8 +2824,18 @@
         msg.style.color="var(--good,#2E8B6F)"; msg.textContent="Enregistré ✓";
       }catch(e){ msg.style.color="var(--bad,#c0392b)"; msg.textContent="Serveur injoignable."; }
     }
+    // Le formateur publie (ou republie) le site d'un apprenant à sa place.
+    async function adminPublishSite(convId, btn){
+      const prev = btn.textContent; btn.disabled = true; btn.textContent = "Publication…";
+      try{
+        const r = await fetch("/api/admin/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({convId:convId})});
+        const d = await r.json().catch(function(){return{};});
+        if(!r.ok){ btn.disabled=false; btn.textContent=prev; alert(d.error||"Publication impossible."); return; }
+        await loadActivity();   // recharge pour afficher le lien tout juste publié
+      }catch(e){ btn.disabled=false; btn.textContent=prev; alert("Impossible de joindre le serveur."); }
+    }
     function renderActivity(d){
-      const week = d.week||[]; const goalSec = (d.goalMin||60)*60; const DOW=["Lun","Mar","Mer","Jeu","Ven"];
+      const week = d.week||[]; const goalSec = (d.goalMin||35)*60; const DOW=["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
       if(!d.learners || !d.learners.length){ activityBody.innerHTML='<div class="aempty">Aucun apprenant pour le moment.</div>'; return; }
       const wrap=document.createElement("div"); wrap.className="actwrap";
       const head=document.createElement("div"); head.className="actrow acthead";
@@ -2818,9 +2854,36 @@
           c.innerHTML = sec>0 ? (fmtDur(sec)+(met?' ✓':'')) : '—';
           row.appendChild(c);
         });
-        const wk=document.createElement("div"); wk.className="actcell wk"; wk.innerHTML='<b>'+l.daysMetThisWeek+'/5</b><span>'+fmtDur(l.weekTotal)+'</span>';
+        const wk=document.createElement("div"); wk.className="actcell wk"; wk.innerHTML='<b>'+l.daysMetThisWeek+'/7</b><span>'+fmtDur(l.weekTotal)+'</span>';
         row.appendChild(wk);
         wrap.appendChild(row);
+        // Sites de l'apprenant : lien public (si en ligne) + bouton pour publier/republier à sa place.
+        const sites = l.sites || [];
+        if(sites.length){
+          const sb = document.createElement("div");
+          sb.style.cssText = "margin:-2px 0 8px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);font-size:.84rem;display:flex;flex-direction:column;gap:6px;min-width:560px;";
+          sites.forEach(function(st){
+            const line = document.createElement("div"); line.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
+            const nm = document.createElement("span"); nm.style.cssText = "font-weight:600;color:var(--ink);"; nm.textContent = st.name || "Site"; line.appendChild(nm);
+            if(st.url){
+              const a = document.createElement("a"); a.href = st.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = String(st.url).replace(/^https?:\/\//,""); a.style.cssText = "color:var(--accent-deep,#0C5866);text-decoration:underline;word-break:break-all;"; line.appendChild(a);
+              const cp = document.createElement("button"); cp.type = "button"; cp.className = "dlbtn"; cp.textContent = "Copier le lien";
+              cp.addEventListener("click", function(){ try{ navigator.clipboard && navigator.clipboard.writeText(st.url); }catch(e){} cp.textContent = "Copié ✓"; setTimeout(function(){ cp.textContent = "Copier le lien"; }, 1200); });
+              line.appendChild(cp);
+            } else {
+              const no = document.createElement("span"); no.style.cssText = "color:var(--ink-faint);"; no.textContent = "— pas encore en ligne"; line.appendChild(no);
+            }
+            if(d.canPublish && st.hasSite){
+              const pb = document.createElement("button"); pb.type = "button"; pb.className = "dlbtn"; pb.textContent = st.url ? "Republier" : "Publier à sa place";
+              pb.title = st.url ? "Remettre ce site en ligne avec la dernière version" : "Mettre ce site en ligne à la place de l'apprenant";
+              pb.style.borderColor = "var(--accent)"; pb.style.color = "var(--accent-deep)";
+              pb.addEventListener("click", function(){ adminPublishSite(st.id, pb); });
+              line.appendChild(pb);
+            }
+            sb.appendChild(line);
+          });
+          wrap.appendChild(sb);
+        }
         // Détail « ce qu'il a fait chaque jour » (repliable en cliquant sur le nom)
         const jr=(l.journal||[]);
         const det=document.createElement("div"); det.style.cssText="display:none;margin:-2px 0 8px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);font-size:.86rem;min-width:560px;";
@@ -2838,7 +2901,7 @@
       activityBody.innerHTML=""; activityBody.appendChild(wrap); activityBody.appendChild(hint);
     }
     async function saveGoal(){
-      const g=parseInt($("goalSel").value,10)||60; const msg=$("goalMsg"); msg.textContent="";
+      const g=parseInt($("goalSel").value,10)||35; const msg=$("goalMsg"); msg.textContent="";
       try{
         const r=await fetch("/api/formation/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({dailyGoalMin:g})});
         const d=await r.json(); if(!r.ok){ msg.style.color="var(--bad,#c0392b)"; msg.textContent=d.error||"Erreur"; return; }
@@ -2959,7 +3022,7 @@
     function renderWorkBadge(todaySec, goalMin){
       if(!workBadge) return;
       if(!me || me.isAdmin){ workBadge.style.display = "none"; return; }
-      const m = Math.floor((todaySec||0)/60), g = goalMin || 60;
+      const m = Math.floor((todaySec||0)/60), g = goalMin || 35;
       workBadge.style.display = "inline-flex";
       workBadge.textContent = "Aujourd'hui : " + m + " / " + g + " min" + (m>=g ? " ✓" : "");
       workBadge.style.borderColor = (m>=g) ? "#2E8B6F" : "var(--nav-line)";

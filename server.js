@@ -2188,6 +2188,21 @@ async function handlePublish(req, res) {
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Publication impossible." }); }
 }
 
+// POST /api/admin/publish { convId } — le FORMATEUR publie (ou republie) le site d'un apprenant à sa place.
+// Utile quand un apprenant n'arrive pas à publier lui-même. Réservé au formateur.
+async function handleAdminPublish(req, res) {
+  try {
+    const u = await currentUser(req);
+    if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+    const body = await readBody(req); let p = {}; try { p = JSON.parse(body || "{}"); } catch (e) {}
+    const conv = await loadConv(p.convId || p.id);
+    if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+    const out = await publishSite(conv, reqBase(req));
+    out.pwa = !!conv.pwa; out.convId = conv.id;
+    sendJson(res, 200, out);
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Publication impossible." }); }
+}
+
 // GET /api/config : ce que le client a besoin de savoir (ex. si la publication est dispo).
 function handleConfig(req, res) { sendJson(res, 200, { canPublish: !!NETLIFY_TOKEN, accounts: true, waveApi: !!WAVE_API_KEY }); }
 
@@ -2208,6 +2223,7 @@ async function handleRegister(req, res) {
     if (p.cohortId) {
       const c = await getCohort(p.cohortId);
       if (!c || c.closed) return sendJson(res, 400, { error: "Cette session n'est plus disponible. Choisissez-en une autre." });
+      if (cohortDateReached(c)) return sendJson(res, 400, { error: "Les réservations de cette session sont closes (la session a démarré). Choisissez une session à venir." });
       const counts = await cohortCounts();
       if ((counts[c.id] || 0) >= (c.capacity || 0)) return sendJson(res, 409, { error: "Cette session est complète. Choisissez-en une autre." });
       cohort = c.label; cohortId = c.id;
@@ -2559,11 +2575,20 @@ async function cohortCounts() {
   users.forEach((u) => { const cid = u.cohort_id, st = u.status || "active"; if (cid && (st === "pending" || st === "active")) m[cid] = (m[cid] || 0) + 1; });
   return m;
 }
+// La réservation d'une session s'arrête AUTOMATIQUEMENT dès que sa date de début est atteinte
+// (aujourd'hui >= date de début). La Côte d'Ivoire est à l'heure UTC, donc on compare les dates AAAA-MM-JJ.
+function cohortDateReached(c) {
+  if (!c || !c.startDate) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return String(c.startDate).slice(0, 10) <= today;
+}
+// Une session est réservable si elle n'est pas fermée à la main ET que sa date n'est pas encore arrivée.
+function reservationOpen(c) { return !!c && !c.closed && !cohortDateReached(c); }
 
 // GET /api/cohorts : sessions OUVERTES avec places restantes (public, pour l'inscription)
 async function handleCohorts(req, res) {
   const list = await listCohorts(); const counts = await cohortCounts();
-  const open = list.filter((c) => !c.closed).map((c) => {
+  const open = list.filter(reservationOpen).map((c) => {
     const enrolled = counts[c.id] || 0; const remaining = Math.max(0, (c.capacity || 0) - enrolled);
     return { id: c.id, label: c.label, startDate: c.startDate, capacity: c.capacity, remaining: remaining, full: remaining <= 0 };
   });
@@ -3031,7 +3056,7 @@ function formationConfig(s) {
     price: (s && s.price != null) ? s.price : (parseInt(process.env.FORMATION_PRICE, 10) || 5000),
     currency: (s && s.currency) || "FCFA",
     open: s ? (s.open !== false) : true,
-    dailyGoalMin: (s && s.dailyGoalMin != null) ? s.dailyGoalMin : (parseInt(process.env.DAILY_GOAL_MIN, 10) || 60),
+    dailyGoalMin: (s && s.dailyGoalMin != null) ? s.dailyGoalMin : (parseInt(process.env.DAILY_GOAL_MIN, 10) || 35),
     proofRequired: (s && typeof s.proofRequired === "boolean") ? s.proofRequired : true,
     // Plafond de messages IA par apprenant et par 24 h (protège le coût d'API).
     // Volontairement large : un apprenant normal ne l'atteint jamais. Le formateur
@@ -3218,7 +3243,7 @@ async function handleFormationSessions(req, res) {
   const cfg = formationConfig(await getSettings());
   if (!cfg.open) return sendJson(res, 200, { open: false, sessions: [] });
   const list = await listCohorts(); const admitted = await admittedCounts();
-  const sessions = list.filter((c) => !c.closed).map((c) => {
+  const sessions = list.filter(reservationOpen).map((c) => {
     const seats = Math.max(0, (c.capacity || 0) - (admitted[c.id] || 0));
     return { id: c.id, label: c.label, startDate: c.startDate, dateFr: frDate(c.startDate), capacity: c.capacity || 0, remaining: seats, full: seats <= 0, price: cohortPrice(c, cfg), currency: cfg.currency };
   });
@@ -3233,6 +3258,7 @@ async function handleReserve(req, res) {
     if (!cfg.open) return sendJson(res, 403, { error: "Les réservations sont fermées pour le moment." });
     const cohort = await getCohort(p.cohortId);
     if (!cohort || cohort.closed) return sendJson(res, 404, { error: "Session introuvable ou fermée." });
+    if (cohortDateReached(cohort)) return sendJson(res, 400, { error: "Les réservations de cette session sont closes (la session a démarré). Choisissez une session à venir." });
     const name = String(p.name || "").trim().slice(0, 80);
     const email = normEmail(p.email);
     const whatsapp = String(p.whatsapp || "").replace(/[^0-9+ ]/g, "").trim().slice(0, 25);
@@ -3503,8 +3529,8 @@ function weekdaysThisWeek() {
   const toMonday = (dow === 0 ? -6 : 1 - dow);
   const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + toMonday));
   const days = [];
-  for (let i = 0; i < 5; i++) days.push(dayKey(new Date(monday.getTime() + i * 86400000)));
-  return days;                                        // [lun, mar, mer, jeu, ven]
+  for (let i = 0; i < 7; i++) days.push(dayKey(new Date(monday.getTime() + i * 86400000)));
+  return days;                                        // [lun, mar, mer, jeu, ven, sam, dim]
 }
 async function addActivity(userId, addSeconds) {
   if (!userId || !(addSeconds > 0)) return 0;
@@ -3740,7 +3766,7 @@ function progressSummary(list) {
   return { projects: list.length, published, text: head + (list.length > 1 ? " · " + list.length + " projets" : ""), frac: frac(best) };
 }
 
-// GET /api/formation/activity : assiduité de la semaine (lun–ven) + avancement par apprenant (formateur)
+// GET /api/formation/activity : assiduité de la semaine (lun–dim) + avancement par apprenant (formateur)
 async function handleFormationActivity(req, res) {
   const u = await currentUser(req);
   if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
@@ -3764,10 +3790,14 @@ async function handleFormationActivity(req, res) {
     const evByDay = {};
     (byUser[x.id] || []).forEach((c) => { (Array.isArray(c.log) ? c.log : []).forEach((ev) => { const d = ev.d || String(ev.at || "").slice(0, 10); if (!d) return; (evByDay[d] || (evByDay[d] = [])).push({ t: ev.t, x: ev.x, at: ev.at, project: c.projectName || null }); }); });
     const journal = Object.keys(evByDay).sort().reverse().slice(0, 14).map((d) => ({ d, seconds: a[d] || 0, events: evByDay[d].sort((p, q) => String(p.at).localeCompare(String(q.at))) }));
-    return { id: x.id, name: x.name, email: x.email, cohort: x.cohort || null, status: x.status || "active", today: todaySec, metToday: todaySec >= goalSec, days, daysMetThisWeek: daysMet, weekTotal, journal, progress: progressSummary(byUser[x.id] || []) };
+    // Sites de l'apprenant : lien publié si en ligne, et possibilité de publier/republier à sa place.
+    const sites = (byUser[x.id] || []).filter((c) => c && (c.publishedUrl || c.hasSite) && c.track !== "code").map((c) => ({
+      id: c.id, name: c.projectName || convTitle(c) || "Site", url: c.publishedUrl || null, hasSite: !!(c.hasSite || c.publishedUrl), track: c.track || "web"
+    }));
+    return { id: x.id, name: x.name, email: x.email, cohort: x.cohort || null, status: x.status || "active", today: todaySec, metToday: todaySec >= goalSec, days, daysMetThisWeek: daysMet, weekTotal, journal, sites, progress: progressSummary(byUser[x.id] || []) };
   });
   learners.sort((A, B) => (A.metToday - B.metToday) || (B.today - A.today));
-  sendJson(res, 200, { goalMin: cfg.dailyGoalMin, week, today, learners });
+  sendJson(res, 200, { goalMin: cfg.dailyGoalMin, week, today, canPublish: !!NETLIFY_TOKEN, learners });
 }
 
 // ============================================================
@@ -4572,6 +4602,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/project/images")) return handleProjectImagesList(req, res);
   if (req.method === "POST" && req.url === "/api/project/image") return handleProjectImageSet(req, res);
   if (req.method === "POST" && req.url === "/api/publish") return handlePublish(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/publish") return handleAdminPublish(req, res);
   if (req.method === "POST" && req.url === "/api/auth/register") return handleRegister(req, res);
   if (req.method === "POST" && req.url === "/api/auth/login") return handleLogin(req, res);
   if (req.method === "POST" && req.url === "/api/auth/logout") return handleLogout(req, res);
