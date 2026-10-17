@@ -520,6 +520,21 @@
           <span id="aiLimMsg" style="font-size:12px;color:var(--good,#2E8B6F);"></span>
         </div>
         <div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Protège le coût d'API. 150 convient largement : un apprenant normal ne l'atteint jamais. Vous n'êtes jamais limité(e).</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
+          <label style="font-size:12px;color:var(--ink-soft)">Plafond de travail (avant pause) :</label>
+          <select id="capSel" style="width:170px;">
+            <option value="60">1 heure (défaut)</option>
+            <option value="90">1 h 30</option>
+            <option value="120">2 heures</option>
+            <option value="180">3 heures</option>
+            <option value="240">4 heures</option>
+            <option value="0">Illimité (pas de pause)</option>
+          </select>
+          <button id="capSave" class="primary" type="button">Enregistrer</button>
+          <button id="capReset" type="button" style="color:#c0392b;border-color:#e4b9b9;" title="Lève immédiatement toutes les pauses en cours">↺ Lever les pauses</button>
+          <span id="capMsg" style="font-size:12px;color:var(--good,#2E8B6F);"></span>
+        </div>
+        <div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Au bout de ce temps de travail, l'apprenant est invité à faire une pause. Augmentez-le les jours de formation (ou « Illimité »). « Lever les pauses » débloque tout de suite ceux qui sont déjà en pause.</div>
       </div>
       <div id="activityBody"><div class="aempty">Chargement…</div></div>
       <div class="row" style="margin-top:12px;"><button id="activityClose" type="button">Fermer</button><button id="activityRefresh" type="button">Actualiser</button></div>
@@ -1172,7 +1187,7 @@
     function workCapMsg(min){
       min = min||0; const h=Math.floor(min/60), m=min%60;
       const t = h>0 ? (h+" h"+(m?(" "+m+" min"):"")) : (m+" min");
-      return "⏸️ Tu as fait ta 1 h de travail pour aujourd'hui — fais une pause ! La création de ton site se rouvrira automatiquement dans environ "+t+". Tu peux encore relire ton travail en attendant.";
+      return "⏸️ Tu as fait ton temps de travail pour aujourd'hui — fais une pause ! La création de ton site se rouvrira automatiquement dans environ "+t+". Tu peux encore relire ton travail en attendant.";
     }
     function isWebBase(){ return track==="web" && !codeProject; }
     // Applique l'état de pause reçu du serveur. La limite ne concerne que la base web.
@@ -2812,8 +2827,26 @@
         if(!r.ok){ activityBody.innerHTML = '<div class="aempty">'+(d.error||"Erreur")+'</div>'; return; }
         const gs = $("goalSel"); if(gs) gs.value = String(d.goalMin||35);
         renderActivity(d);
-        try{ const rs=await fetch("/api/formation/settings"); const ds=await rs.json(); if(rs.ok&&ds.settings&&$("aiLimInput")) $("aiLimInput").value=String(ds.settings.aiDailyLimit||150); }catch(e){}
+        try{ const rs=await fetch("/api/formation/settings"); const ds=await rs.json(); if(rs.ok&&ds.settings){ if($("aiLimInput")) $("aiLimInput").value=String(ds.settings.aiDailyLimit||150); if($("capSel")&&ds.settings.workCapMin!=null) $("capSel").value=String(ds.settings.workCapMin); } }catch(e){}
       }catch(e){ activityBody.innerHTML = '<div class="aempty">Impossible de joindre le serveur.</div>'; }
+    }
+    async function saveCap(){
+      const v=parseInt($("capSel").value,10); const msg=$("capMsg"); msg.textContent="";
+      try{
+        const r=await fetch("/api/formation/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({workCapMin:v})});
+        const d=await r.json(); if(!r.ok){ msg.style.color="var(--bad,#c0392b)"; msg.textContent=d.error||"Erreur"; return; }
+        msg.style.color="var(--good,#2E8B6F)"; msg.textContent=(v===0?"Illimité enregistré ✓":"Plafond enregistré ✓");
+      }catch(e){ msg.style.color="var(--bad,#c0392b)"; msg.textContent="Serveur injoignable."; }
+    }
+    async function resetWorkcap(btn){
+      const msg=$("capMsg"); msg.textContent="";
+      if(!btn.dataset.armed){ btn.dataset.armed="1"; const t=btn.textContent; btn.textContent="Confirmer ?"; setTimeout(function(){ btn.dataset.armed=""; btn.textContent=t; },4000); return; }
+      btn.dataset.armed=""; btn.textContent="↺ Lever les pauses"; btn.disabled=true;
+      try{
+        const r=await fetch("/api/admin/workcap/reset",{method:"POST"});
+        if(!r.ok){ msg.style.color="var(--bad,#c0392b)"; msg.textContent="Erreur"; } else { msg.style.color="var(--good,#2E8B6F)"; msg.textContent="Pauses levées ✓"; }
+      }catch(e){ msg.style.color="var(--bad,#c0392b)"; msg.textContent="Serveur injoignable."; }
+      btn.disabled=false;
     }
     async function saveAiLim(){
       const v=parseInt($("aiLimInput").value,10); const msg=$("aiLimMsg"); msg.textContent="";
@@ -2917,6 +2950,8 @@
     $("activityRefresh").addEventListener("click", loadActivity);
     $("goalSave").addEventListener("click", saveGoal);
     { const b=$("aiLimSave"); if(b) b.addEventListener("click", saveAiLim); }
+    { const b=$("capSave"); if(b) b.addEventListener("click", saveCap); }
+    { const b=$("capReset"); if(b) b.addEventListener("click", function(){ resetWorkcap(b); }); }
 
     // ===== Examen de programmation (QCM) =====
     const quizModal = $("quizModal"), quizBody = $("quizBody");

@@ -3058,6 +3058,8 @@ function formationConfig(s) {
     open: s ? (s.open !== false) : true,
     dailyGoalMin: (s && s.dailyGoalMin != null) ? s.dailyGoalMin : (parseInt(process.env.DAILY_GOAL_MIN, 10) || 35),
     proofRequired: (s && typeof s.proofRequired === "boolean") ? s.proofRequired : true,
+    // Plafond de travail (minutes) avant la pause. 60 = 1 h (défaut). 0 = illimité (pas de pause).
+    workCapMin: (s && s.workCapMin != null) ? s.workCapMin : (parseInt(process.env.WORK_CAP_MINUTES, 10) || 60),
     // Plafond de messages IA par apprenant et par 24 h (protège le coût d'API).
     // Volontairement large : un apprenant normal ne l'atteint jamais. Le formateur
     // n'est pas concerné. Réglable depuis l'Espace formateur.
@@ -3505,6 +3507,7 @@ async function handleFormationSettings(req, res) {
   if (p.dailyGoalMin !== undefined) { const n = parseInt(p.dailyGoalMin, 10); if (!(n >= 5 && n <= 600)) return sendJson(res, 400, { error: "Objectif quotidien : entre 5 et 600 minutes." }); fields.dailyGoalMin = n; }
   if (typeof p.proofRequired === "boolean") fields.proofRequired = p.proofRequired;
   if (p.aiDailyLimit !== undefined) { const n = parseInt(p.aiDailyLimit, 10); if (!(n >= 20 && n <= 2000)) return sendJson(res, 400, { error: "Plafond IA par apprenant : entre 20 et 2000 messages par jour." }); fields.aiDailyLimit = n; }
+  if (p.workCapMin !== undefined) { const n = parseInt(p.workCapMin, 10); if (!(n === 0 || (n >= 15 && n <= 600))) return sendJson(res, 400, { error: "Plafond de travail : 0 (illimité) ou entre 15 et 600 minutes." }); fields.workCapMin = n; }
   if (typeof p.whatsappLink === "string") { const l = p.whatsappLink.trim(); if (l && !/^https:\/\/(chat\.whatsapp\.com|wa\.me|whatsapp\.com)\//i.test(l)) return sendJson(res, 400, { error: "Collez un lien d'invitation WhatsApp valide (il commence par https://chat.whatsapp.com/…)." }); fields.whatsappLink = l; }
   const next = await setSettings(fields);
   _aiLimCache.at = 0; // forcer la prise en compte immédiate du nouveau plafond
@@ -3576,23 +3579,30 @@ function workcapState(userId) {
   return { blocked, resetInMs, sec: rec.sec };
 }
 // Ajoute du temps de travail et bascule en « pause » dès que la 1 h est atteinte.
-function workcapAdd(userId, addSeconds) {
+function workcapAdd(userId, addSeconds, capSeconds) {
+  const CAP = (capSeconds != null ? capSeconds : WORK_CAP_SECONDS);
   if (!userId || !(addSeconds > 0)) return workcapState(userId);
+  if (!(CAP > 0)) {                                   // 0 = illimité : jamais de pause
+    const a0 = loadWorkcap(); if (a0[userId]) { delete a0[userId]; saveWorkcap(a0); }
+    return { blocked: false, resetInMs: 0, sec: 0 };
+  }
   const all = loadWorkcap();
   const { rec } = workcapEval(all[userId]);
   if (!rec.cappedTs) {
     if (!rec.startTs) rec.startTs = Date.now();
     rec.sec = (rec.sec || 0) + addSeconds;
-    if (rec.sec >= WORK_CAP_SECONDS) { rec.sec = WORK_CAP_SECONDS; rec.cappedTs = Date.now(); }
+    if (rec.sec >= CAP) { rec.sec = CAP; rec.cappedTs = Date.now(); }
   }
   all[userId] = rec; saveWorkcap(all);
   const blocked = !!rec.cappedTs;
   return { blocked, resetInMs: blocked ? Math.max(0, WORK_COOLDOWN_MS - (Date.now() - rec.cappedTs)) : 0, sec: rec.sec };
 }
+// Remise à zéro de toutes les pauses « temps de travail » — action du formateur.
+function clearWorkcap() { try { saveWorkcap({}); } catch (e) {} }
 function workCapMessage(min) {
   const h = Math.floor(min / 60), m = min % 60;
   const t = h > 0 ? (h + " h" + (m ? (" " + m + " min") : "")) : (m + " min");
-  return "Tu as fait ta 1 h de travail pour aujourd'hui — fais une pause ! La création de ton site se rouvrira automatiquement dans environ " + t + ".";
+  return "Tu as fait ton temps de travail pour aujourd'hui — fais une pause ! La création de ton site se rouvrira automatiquement dans environ " + t + ".";
 }
 // Garde-fou serveur : bloque la création de site (base web) quand la pause est active.
 function workCapGuard(user) {
@@ -3612,6 +3622,13 @@ async function handleActivityReset(req, res) {
   const u = await currentUser(req);
   if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
   await clearActivity();
+  sendJson(res, 200, { ok: true });
+}
+// POST /api/admin/workcap/reset — lève toutes les pauses « temps de travail » (réservé formateur).
+async function handleWorkcapReset(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé au formateur." });
+  clearWorkcap();
   sendJson(res, 200, { ok: true });
 }
 async function activityForUsers(userIds, dayKeys) {
@@ -3641,10 +3658,10 @@ async function handleActivityPing(req, res) {
   const cfg = formationConfig(await getSettings());
   let today = 0; let cap = { blocked: false, resetInMs: 0 };
   if (!isAdmin(u)) {                                   // le formateur n'est pas suivi
-    if (s > 0) { today = await addActivity(u.id, s); cap = workcapAdd(u.id, s); }
+    if (s > 0) { today = await addActivity(u.id, s); cap = workcapAdd(u.id, s, (cfg.workCapMin || 0) * 60); }
     else { const day = dayKey(new Date()); const m = await activityForUsers([u.id], [day]); today = (m[u.id] && m[u.id][day]) || 0; cap = workcapState(u.id); }
   }
-  sendJson(res, 200, { ok: true, todaySeconds: today, goalMin: cfg.dailyGoalMin, workCapped: cap.blocked, workResetMin: cap.blocked ? Math.max(1, Math.ceil(cap.resetInMs / 60000)) : 0, workCapMin: Math.round(WORK_CAP_SECONDS / 60) });
+  sendJson(res, 200, { ok: true, todaySeconds: today, goalMin: cfg.dailyGoalMin, workCapped: cap.blocked, workResetMin: cap.blocked ? Math.max(1, Math.ceil(cap.resetInMs / 60000)) : 0, workCapMin: cfg.workCapMin });
 }
 
 // ============================================================================
@@ -4667,6 +4684,7 @@ const server = http.createServer((req, res) => {
   if ((req.method === "GET" || req.method === "POST") && req.url.startsWith("/api/formation/settings")) return handleFormationSettings(req, res);
   if (req.method === "POST" && req.url === "/api/activity/ping") return handleActivityPing(req, res);
   if (req.method === "POST" && req.url === "/api/admin/activity/reset") return handleActivityReset(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/workcap/reset") return handleWorkcapReset(req, res);
   if (req.method === "POST" && req.url === "/api/attendance/open") return handleAttOpen(req, res);
   if (req.method === "POST" && req.url === "/api/attendance/close") return handleAttClose(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/attendance/status")) return handleAttStatus(req, res);
