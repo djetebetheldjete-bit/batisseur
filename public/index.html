@@ -379,6 +379,7 @@
             <button class="dlbtn" id="payBtn" type="button" style="display:none;" title="Configurer le paiement en ligne (Wave)">Paiement</button>
             <button class="dlbtn" id="pageModeBtn" type="button" style="display:none;" title="Choisir si votre site tient sur une seule page ou s'étale sur plusieurs pages">Passer en plusieurs pages</button>
             <a class="dlbtn" id="dlBtn" href="#" style="display:none;" title="Télécharger votre site pour le mettre en ligne">Télécharger le site</a>
+            <button class="dlbtn" id="hostBtn" type="button" style="display:none;border-color:var(--accent);color:var(--accent-deep);" title="Héberger ce site sur TON propre compte Netlify ou GitHub (gratuit)">🌐 Héberger (mon compte)</button>
             <div class="seg" id="devToggle">
               <button data-dev="desktop" class="active" type="button">Ordinateur</button>
               <button data-dev="mobile" type="button">Mobile</button>
@@ -453,6 +454,41 @@
   </div>
 
   <!-- Configuration du paiement en ligne (Wave) -->
+  <div class="modal-bg" id="hostModal">
+    <div class="modal wide">
+      <h3>Héberger sur ton propre compte</h3>
+      <p>Tu peux mettre ton site en ligne sur <b>ton propre compte</b> (gratuit), chez Netlify ou GitHub — tu en es seul propriétaire. C'est simple : <b>télécharge ton site</b>, puis suis l'une des deux méthodes.</p>
+      <a class="pubbtn" id="hostDl" href="#" download="index.html" style="display:inline-block;text-decoration:none;margin:4px 0 14px;">⬇ Télécharger mon site (index.html)</a>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:240px;border:1px solid var(--line);border-radius:12px;padding:14px;">
+          <b style="color:var(--accent-deep,#0C5866);">Option 1 — Netlify (le plus simple)</b>
+          <ol style="margin:8px 0 0 18px;padding:0;font-size:.92rem;line-height:1.6;">
+            <li>Télécharge ton site (bouton ci-dessus).</li>
+            <li>Ouvre <b>Netlify Drop</b> et connecte-toi (compte gratuit).</li>
+            <li><b>Glisse le fichier index.html</b> dans la zone.</li>
+            <li>C'est en ligne ! Tu obtiens une adresse à toi, à partager.</li>
+          </ol>
+          <a class="dlbtn" href="https://app.netlify.com/drop" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;text-decoration:none;">Ouvrir Netlify Drop →</a>
+        </div>
+        <div style="flex:1;min-width:240px;border:1px solid var(--line);border-radius:12px;padding:14px;">
+          <b style="color:var(--accent-deep,#0C5866);">Option 2 — GitHub Pages</b>
+          <ol style="margin:8px 0 0 18px;padding:0;font-size:.92rem;line-height:1.6;">
+            <li>Crée un compte GitHub (gratuit).</li>
+            <li>Crée un <b>nouveau dépôt public</b>.</li>
+            <li><b>Add file → Upload</b> : dépose ton <code>index.html</code>.</li>
+            <li><b>Settings → Pages</b> : branche <code>main</code>, puis <b>Save</b>.</li>
+            <li>Ton site sera en ligne à <code>ton-nom.github.io/ton-depot</code>.</li>
+          </ol>
+          <a class="dlbtn" href="https://github.com/new" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;text-decoration:none;">Créer un dépôt GitHub →</a>
+        </div>
+      </div>
+      <div class="submeta" style="font-size:.86rem;color:var(--ink-faint,#6b7a90);margin-top:12px;">
+        Astuce : si tu veux juste une adresse tout de suite sans créer de compte, utilise plutôt le bouton <b>« Publier en ligne »</b> (c'est automatique). Ce module-ci sert à héberger ton site sur <b>ton</b> compte Netlify ou GitHub.
+      </div>
+      <div class="row" style="margin-top:14px;"><button id="hostClose" type="button">Fermer</button></div>
+    </div>
+  </div>
+
   <div class="modal-bg" id="payModal">
     <div class="modal">
       <h3>Paiement en ligne</h3>
@@ -943,6 +979,7 @@
     const dataBtn = $("dataBtn"), dataModal = $("dataModal"), dataBody = $("dataBody");
     const upgradeBtn = $("upgradeBtn");
     const exportBtn = $("exportBtn"), exportModal = $("exportModal");
+    const hostBtn = $("hostBtn"), hostModal = $("hostModal");
     const payBtn = $("payBtn"), payModal = $("payModal"), payLink = $("payLink"), payErr = $("payErr"), payApiOpt = $("payApiOpt"), payApiNote = $("payApiNote");
     let waveApi = false, paymentCfg = { mode:"none", link:"", currency:"XOF" };
     const typeBadge = $("typeBadge"), typeModal = $("typeModal"), typeChoices = $("typeChoices");
@@ -1281,6 +1318,7 @@
       dlBtn.href = "/api/download?id=" + encodeURIComponent(convId);
       dlBtn.setAttribute("download", "index.html");
       dlBtn.style.display = "inline-block";
+      hostBtn.style.display = "inline-block";
       if(canPublish && !buildLocked){ pubBtn.style.display = "inline-block"; pubBtn.textContent = publishedUrl ? "Republier" : "Publier en ligne"; pwaWrap.style.display = "inline-flex";
         if(publishedUrl && pubCopy) pubCopy.style.display = "inline-block";
         if(!publishedUrl && !window.__pubHint){ window.__pubHint = true; try{ bubble("Votre site est prêt. Pour obtenir une adresse à partager (par WhatsApp par exemple), cliquez « Publier en ligne » en haut de l'aperçu — c'est automatique, vous n'avez rien d'autre à faire.","ai"); }catch(e){} } }
@@ -1337,7 +1375,7 @@
       track = "web"; setMode("web");
       currentModules = normMods(mods); currentMultipage = false; currentHasPages = false;
       thread.innerHTML=""; resumedNote.style.display="none"; step=0; siteBuilt=false;
-      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none";
+      previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none"; dlBtn.style.display="none"; hostBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none";
       pubBtn.style.display="none"; pubLink.style.display="none"; { var _pc=document.getElementById("pubCopy"); if(_pc) _pc.style.display="none"; } pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       renderRail(); renderTypeBadge();
       const typing = bubble("…","ai typing"); setBusy(true);
@@ -1359,7 +1397,7 @@
       currentModules = ["presentation"]; currentMultipage = false; step = 0; siteBuilt = false;
       thread.innerHTML=""; resumedNote.style.display="none";
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; { var _pc=document.getElementById("pubCopy"); if(_pc) _pc.style.display="none"; } pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
+      dlBtn.style.display="none"; hostBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; { var _pc=document.getElementById("pubCopy"); if(_pc) _pc.style.display="none"; } pwaWrap.style.display="none"; pwaChk.checked=false; publishedUrl=null;
       typeBadge.textContent="Premium"; typeBadge.style.display="none";
       renderRail();
       const typing = bubble("…","ai typing"); setBusy(true);
@@ -1821,6 +1859,10 @@
     exportBtn.addEventListener("click", ()=>{ if(!convId) return; $("expApp").setAttribute("href","/api/project/export?id="+encodeURIComponent(convId)); $("expApp").setAttribute("download","index.html"); exportModal.classList.add("show"); });
     $("exportClose").addEventListener("click", ()=> exportModal.classList.remove("show"));
     exportModal.addEventListener("click",(e)=>{ if(e.target===exportModal) exportModal.classList.remove("show"); });
+    function openHost(){ if(!convId) return; var a=$("hostDl"); a.setAttribute("href","/api/download?id="+encodeURIComponent(convId)); a.setAttribute("download","index.html"); hostModal.classList.add("show"); }
+    hostBtn.addEventListener("click", openHost);
+    $("hostClose").addEventListener("click", ()=> hostModal.classList.remove("show"));
+    hostModal.addEventListener("click",(e)=>{ if(e.target===hostModal) hostModal.classList.remove("show"); });
     $("dataClose").addEventListener("click", closeData);
     dataModal.addEventListener("click",(e)=>{ if(e.target===dataModal) closeData(); });
 
@@ -1961,7 +2003,7 @@
       thread.innerHTML=""; resumedNote.style.display="none"; showAccessBanner();
       step=0; siteBuilt=false; renderRail();
       previewFrame.style.display="none"; previewFrame.removeAttribute("src"); placeholder.style.display="flex"; liveTag.style.display="none";
-      dlBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; { var _pc=document.getElementById("pubCopy"); if(_pc) _pc.style.display="none"; } pwaWrap.style.display="none";
+      dlBtn.style.display="none"; hostBtn.style.display="none"; dataBtn.style.display="none"; upgradeBtn.style.display="none"; exportBtn.style.display="none"; { const cb=document.getElementById("codeBtn"); if(cb) cb.style.display="none"; } payBtn.style.display="none"; pubBtn.style.display="none"; pubLink.style.display="none"; { var _pc=document.getElementById("pubCopy"); if(_pc) _pc.style.display="none"; } pwaWrap.style.display="none";
       buildLocked=true; input.disabled=true; sendBtn.disabled=true; nextBtn.style.display="none";
       let msg;
       if(kind==="none") msg="Bienvenue sur Bâtisseur. Pour commencer, réservez votre place depuis la page d'accueil, puis connectez-vous.";
@@ -2299,6 +2341,32 @@
           clearTimeout(t0); armed=false; b.disabled=true; b.textContent="Remise à zéro…";
           try{ await fetch("/api/admin/activity/reset",{method:"POST"}); }catch(e){}
           b.textContent="✓ Temps remis à zéro"; setTimeout(function(){ b.disabled=false; b.textContent="↺ Réinitialiser l'assiduité"; },1500);
+        });
+      })();
+
+      // --- Attestations de réussite (téléchargement groupé des apprenants ayant publié) ---
+      const ch = document.createElement("div"); ch.className = "asection"; ch.textContent = "Attestations de réussite"; adminBody.appendChild(ch);
+      const cbox = document.createElement("div"); cbox.style.cssText = "border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px;background:var(--surface);";
+      cbox.innerHTML = '<div style="font-size:.9rem;color:var(--ink-soft);margin-bottom:10px;">Réunit sur une seule page imprimable les attestations de tous les apprenants ayant <b>publié</b> leur projet. Ouvrez, puis « Imprimer / Enregistrer tout en PDF » (orientation paysage) : vous obtenez un seul PDF, une attestation par page.</div>'
+        + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
+        + '<label style="font-size:.85rem;color:var(--ink-faint);">Session&nbsp;: <select id="certCohortSel" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;"><option value="">Toutes</option></select></label>'
+        + '<label style="font-size:.85rem;color:var(--ink-faint);">Parcours&nbsp;: <select id="certTrackSel" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;"><option value="">Tous</option><option value="web">Site web</option><option value="code">Programmation</option><option value="premium">Premium</option></select></label>'
+        + '<button class="dlbtn" id="certDlBtn" type="button" title="Ouvre toutes les attestations des apprenants ayant publié, à enregistrer en un seul PDF">⬇ Télécharger les attestations</button>'
+        + '</div>';
+      adminBody.appendChild(cbox);
+      (function(){
+        var sel = document.getElementById("certCohortSel");
+        // Peuple la liste des sessions (le libellé de session = user.cohort côté serveur).
+        fetch("/api/admin/cohorts").then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+          if(!d || !d.cohorts) return;
+          d.cohorts.forEach(function(c){ if(!c || !c.label) return; var o=document.createElement("option"); o.value=c.label; o.textContent=c.label; sel.appendChild(o); });
+        }).catch(function(){});
+        var btn = document.getElementById("certDlBtn");
+        btn.addEventListener("click", function(){
+          var q=[]; var c=sel.value; var t=document.getElementById("certTrackSel").value;
+          if(c) q.push("cohort="+encodeURIComponent(c));
+          if(t) q.push("track="+encodeURIComponent(t));
+          window.open("/api/admin/certificates"+(q.length?("?"+q.join("&")):""), "_blank");
         });
       })();
 

@@ -4044,6 +4044,159 @@ async function handleCertificate(req, res) {
   res.end(html);
 }
 
+// GET /api/admin/certificates  (réservé formateur)
+// Rassemble en UNE seule page imprimable les attestations de TOUS les apprenants
+// qui ont PUBLIÉ leur projet, pour les enregistrer/imprimer toutes en PDF d'un coup.
+// Filtres optionnels : ?cohort=<libellé> (une session) et ?track=web|code|premium.
+async function handleAdminCertificates(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) { res.writeHead(403, { "content-type": "text/html; charset=utf-8" }); return res.end("Réservé à l'administrateur."); }
+  const uq = new URL(req.url, "http://localhost");
+  const cohortFilter = (uq.searchParams.get("cohort") || "").trim().toLowerCase();
+  const trackFilter = (uq.searchParams.get("track") || "").trim().toLowerCase();
+
+  const proto = String(req.headers["x-forwarded-proto"] || "http").split(",")[0];
+  const verifyUrl = `${proto}://${req.headers.host}/verifier`;
+  const titleByTrack = { web: "Parcours de création de site web", code: "Parcours de programmation", premium: "Atelier d'applications avancées" };
+  const descByTrack = {
+    web: "a suivi et complété le parcours Bâtisseur, et a créé son propre site web en dialoguant avec l'assistant — de l'idée jusqu'à la mise en ligne.",
+    code: "a suivi et complété le parcours de programmation Bâtisseur (algorithmique et Python), et a réussi l'examen de validation des connaissances.",
+    premium: "a conçu et réalisé une application avancée dans l'atelier Premium de Bâtisseur."
+  };
+
+  // Projets PUBLIÉS uniquement.
+  let pub = (await allConvs()).filter((c) => c && c.publishedUrl);
+  // Un cache des comptes apprenants pour éviter de relire la base à chaque projet.
+  const ownerCache = {};
+  async function ownerOf(id) {
+    if (!id) return null;
+    if (ownerCache[id] !== undefined) return ownerCache[id];
+    let o = null; try { o = await getUserById(id); } catch (e) { o = null; }
+    ownerCache[id] = o; return o;
+  }
+
+  const sheets = [];
+  const skipped = [];
+  let count = 0;
+  // Tri : par session puis par nom, pour une sortie lisible.
+  const rows = [];
+  for (const conv of pub) {
+    const track = (conv.track === "code") ? "code" : (conv.track === "premium" ? "premium" : "web");
+    if (trackFilter && track !== trackFilter) continue;
+    const owner = await ownerOf(conv.userId);
+    const cohort = (owner && owner.cohort) ? owner.cohort : null;
+    if (cohortFilter && String(cohort || "").toLowerCase() !== cohortFilter) continue;
+    let name = (conv.ownerName || (owner && owner.name) || "").trim().slice(0, 80);
+    if (!name) name = "Apprenant(e)";
+    rows.push({ conv, track, owner, cohort, name });
+  }
+  rows.sort((a, b) => (String(a.cohort || "").localeCompare(String(b.cohort || ""))) || a.name.localeCompare(b.name));
+
+  for (const r of rows) {
+    const { conv, track, cohort, name } = r;
+    // Piste programmation : l'attestation n'est délivrée qu'après réussite de l'examen.
+    let quizMention = "";
+    if (track === "code") {
+      const qr = QUIZ ? await getQuizResult(conv.userId, QUIZ.QUIZ_PROGRAMMATION.id) : null;
+      if (!qr || !qr.passed) { skipped.push(name + (cohort ? " (" + cohort + ")" : "") + " — examen de programmation non réussi"); continue; }
+      quizMention = `Examen de programmation réussi : ${qr.score}/${qr.total}`;
+    }
+    const num = "BÂT-" + String(conv.id).replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase();
+    const key = normalizeNum(num);
+    const existing = await getCertificate(key);
+    const issuedAt = (existing && existing.issuedAt) || new Date().toISOString();
+    const issued = new Date(issuedAt);
+    const dateStr = `${issued.getDate()} ${MOIS[issued.getMonth()]} ${issued.getFullYear()}`;
+    // On enregistre au registre (idempotent) pour que le n° reste vérifiable.
+    try { await saveCertificate({ key, number: num, name, cohort, projectId: conv.id, userId: conv.userId || null, url: conv.publishedUrl || null, date: dateStr, issuedAt }); } catch (e) {}
+    const online = conv.publishedUrl ? `<div class="online">Projet en ligne : <span>${escapeHtml(conv.publishedUrl)}</span></div>` : "";
+    sheets.push(`<div class="sheet"><div class="frame"></div><div class="inner">
+      <div class="brand"><span class="logo">B</span><b>Bâtisseur</b></div>
+      <div class="kicker">Certificat de réussite</div>
+      <h1>${escapeHtml(titleByTrack[track])}</h1>
+      <div class="sub">Ce certificat atteste que</div>
+      <div class="name">${escapeHtml(name)}</div>
+      <div class="desc">${descByTrack[track]}</div>
+      ${quizMention ? `<div class="online">${escapeHtml(quizMention)}</div>` : online}
+      <div class="meta">
+        <div class="col">Délivré le<b>${dateStr}</b></div>
+        <img class="medal" src="/batisseur-medaille.svg" alt="Médaille Bâtisseur">
+        <div class="col">Certificat n°<b>${num}</b></div>
+      </div>
+      <div class="sigcol"><div class="signline"></div><div class="lab">Le formateur <span class="opt">(signature facultative)</span></div></div>
+      ${cohort ? `<div class="verify" style="margin-top:6px">Session : <b>${escapeHtml(cohort)}</b></div>` : ""}
+      <div class="verify">Authenticité vérifiable sur <b>${escapeHtml(verifyUrl)}</b> — indiquez le n° <b>${escapeHtml(num)}</b></div>
+    </div></div>`);
+    count++;
+  }
+
+  const emptyMsg = `<div class="empty"><h2>Aucune attestation à imprimer</h2><p>Aucun apprenant n'a encore publié de projet${cohortFilter ? " pour cette session" : ""}${trackFilter ? " sur ce parcours" : ""}. L'attestation groupée ne concerne que les projets publiés.</p></div>`;
+  const skipNote = skipped.length ? `<div class="skip">Non incluses (${skipped.length}) : ${escapeHtml(skipped.join(" · "))}</div>` : "";
+
+  const html = `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attestations à imprimer — Bâtisseur</title>
+<style>
+  @page{ size:A4 landscape; margin:0; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",Arial,sans-serif; background:#eef1f6; color:#0E1B2E; }
+  .bar{ position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:14px; flex-wrap:wrap; background:#0E1B2E; color:#fff; padding:12px 18px; }
+  .bar b{ font-size:15px; }
+  .bar .count{ background:#147C8C; border-radius:999px; padding:3px 11px; font-size:13px; }
+  .bar button{ background:#147C8C; color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; margin-left:auto; }
+  .bar button:hover{ filter:brightness(1.08); }
+  .bar .hint{ flex-basis:100%; font-size:12px; color:#b9c6d8; }
+  .skip{ background:#fff5e6; color:#8a5a12; border:1px solid #f0d9ad; padding:8px 18px; font-size:12.5px; }
+  .empty{ max-width:640px; margin:60px auto; background:#fff; border-radius:14px; padding:28px; text-align:center; box-shadow:0 10px 30px rgba(14,27,46,.12); }
+  .empty h2{ margin:0 0 8px; }
+  .wrap{ display:flex; flex-direction:column; align-items:center; gap:22px; padding:22px; }
+  .sheet{ width:1040px; max-width:100%; aspect-ratio:1.414/1; background:#fff; position:relative; box-shadow:0 12px 44px rgba(14,27,46,.16); }
+  .frame{ position:absolute; inset:22px; border:2px solid #147C8C; }
+  .frame:before{ content:""; position:absolute; inset:8px; border:1px solid #D98A2B; }
+  .inner{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:4.5% 9%; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .logo{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#147C8C,#D98A2B); color:#06121c; font-weight:800; font-size:20px; display:flex; align-items:center; justify-content:center; }
+  .brand b{ font-family:Georgia,serif; font-size:20px; color:#0E1B2E; }
+  .kicker{ letter-spacing:.34em; text-transform:uppercase; color:#147C8C; font-size:12px; font-weight:700; margin:16px 0 4px; }
+  h1{ font-family:Georgia,serif; font-size:40px; color:#0E1B2E; margin:0; }
+  .sub{ color:#4a5a70; font-size:15px; margin-top:12px; }
+  .name{ font-family:Georgia,serif; font-size:37px; color:#0C5866; margin:12px auto 4px; border-bottom:2px solid #D8DFE9; padding:0 30px 9px; }
+  .desc{ color:#1c2b3f; font-size:15.5px; max-width:66ch; margin:13px auto 0; line-height:1.5; }
+  .online{ margin-top:10px; font-size:13px; color:#4a5a70; }
+  .online span{ color:#0C5866; }
+  .meta{ display:flex; align-items:center; justify-content:center; gap:56px; margin-top:16px; color:#6B7A90; font-size:12.5px; }
+  .meta .col{ text-align:center; }
+  .meta b{ display:block; color:#0E1B2E; font-size:15px; font-family:Georgia,serif; margin-top:3px; }
+  .medal{ width:112px; height:auto; }
+  .sigcol{ text-align:center; margin-top:6px; }
+  .signline{ width:170px; border-top:1px solid #8394a8; margin:0 auto 5px; height:20px; }
+  .sigcol .lab{ font-size:12px; color:#6B7A90; }
+  .sigcol .opt{ font-size:9.5px; color:#a7b2c1; }
+  .verify{ margin-top:12px; font-size:11px; color:#8394a8; }
+  .verify b{ color:#0C5866; font-weight:700; }
+  @media print{
+    body{ background:#fff; }
+    .bar,.skip{ display:none !important; }
+    .wrap{ padding:0; gap:0; }
+    .sheet{ box-shadow:none; width:100%; height:100vh; page-break-after:always; break-after:page; }
+    .sheet:last-child{ page-break-after:auto; break-after:auto; }
+  }
+</style></head>
+<body>
+  <div class="bar">
+    <b>Attestations des apprenants ayant publié</b>
+    <span class="count">${count} attestation${count > 1 ? "s" : ""}</span>
+    ${cohortFilter ? `<span class="count" style="background:#D98A2B">Session filtrée</span>` : ""}
+    <button onclick="window.print()">Imprimer / Enregistrer tout en PDF</button>
+    <div class="hint">Astuce : dans la fenêtre d'impression, choisissez « Enregistrer au format PDF » et « Paysage » — vous obtenez un seul PDF avec toutes les attestations (une par page).</div>
+  </div>
+  ${skipNote}
+  ${count ? `<div class="wrap">${sheets.join("\n")}</div>` : emptyMsg}
+</body></html>`;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
+}
+
 // GET /api/verify?num=... : vérification publique d'un certificat
 async function handleVerifyApi(req, res) {
   const u = new URL(req.url, "http://localhost");
@@ -4667,6 +4820,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/submissions/delete") return handleSubmissionDelete(req, res);
   if (req.method === "POST" && req.url === "/api/submissions/status") return handleSubmissionStatus(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/config")) return handleConfig(req, res);
+  if (req.method === "GET" && req.url.startsWith("/api/admin/certificates")) return handleAdminCertificates(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/certificate")) return handleCertificate(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/verify")) return handleVerifyApi(req, res);
   if (req.method === "GET" && req.url.startsWith("/verifier")) return handleVerifyPage(req, res);
