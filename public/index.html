@@ -2389,6 +2389,14 @@
       adminBody.appendChild(gen);
       gen.querySelector("#cgGo").addEventListener("click", generateCohorts);
 
+      // Reporter TOUT le calendrier d'un coup (ex. +1 semaine). Les sessions À PARTIR de la date
+      // choisie se décalent ; les sessions antérieures (anciens) ne bougent pas ; les inscrits suivent.
+      const shiftBox = document.createElement("div"); shiftBox.className = "acreate";
+      shiftBox.innerHTML = '<span style="font-size:.82rem;color:var(--ink-soft,#4a5a70);align-self:center;">Reporter le calendrier à partir du</span><input id="shFrom" type="date" style="max-width:150px"><span style="font-size:.82rem;color:var(--ink-soft,#4a5a70);align-self:center;">de</span><input id="shWeeks" type="number" min="1" value="1" style="max-width:66px" title="Nombre de semaines de report"><span style="font-size:.82rem;color:var(--ink-soft,#4a5a70);align-self:center;">semaine(s)</span><button id="shGo" type="button">Décaler tout</button><div class="acerr" id="shErr"></div>';
+      adminBody.appendChild(shiftBox);
+      (function(){ var first = (adminCohorts||[]).slice().sort(function(a,b){ return String(a.startDate||"").localeCompare(String(b.startDate||"")); })[0]; if(first && first.startDate){ shiftBox.querySelector("#shFrom").value = first.startDate; } })();
+      shiftBox.querySelector("#shGo").addEventListener("click", shiftCalendar);
+
       const slist = document.createElement("div"); slist.className = "llist";
       if(!adminCohorts.length){ slist.innerHTML = '<div class="aempty">Aucune session. Générez-les à partir de la date de début.</div>'; }
       else adminCohorts.forEach(function(c){
@@ -2541,6 +2549,25 @@
       }
       syncChips(); paintList();
       adminBody.appendChild(list);
+    }
+    async function shiftCalendar(){
+      const from = document.getElementById("shFrom").value;
+      const weeks = parseInt(document.getElementById("shWeeks").value,10)||0;
+      const err = document.getElementById("shErr"); err.style.color=""; err.textContent="";
+      if(!from){ err.textContent="Choisissez la date de départ."; return; }
+      if(weeks===0){ err.textContent="Indiquez un nombre de semaines (au moins 1)."; return; }
+      const btn = document.getElementById("shGo");
+      // Confirmation en 2 temps (le report touche plusieurs sessions).
+      if(btn.dataset.armed!=="1"){ btn.dataset.armed="1"; const old=btn.textContent; btn.textContent="Confirmer le report ?"; setTimeout(function(){ if(btn.dataset.armed==="1"){ btn.dataset.armed=""; btn.textContent=old; } },4000); return; }
+      btn.dataset.armed=""; btn.disabled=true; btn.textContent="Report…";
+      try{
+        const r = await fetch("/api/admin/cohort/shift",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fromDate:from, days:weeks*7})});
+        const d = await r.json().catch(function(){return{};});
+        btn.disabled=false; btn.textContent="Décaler tout";
+        if(!r.ok){ err.textContent=d.error||"Erreur"; return; }
+        err.style.color="var(--good,#2E8B6F)"; err.textContent=(d.shifted||0)+" session(s) décalée(s) de "+weeks+" semaine(s).";
+        await loadAdmin();
+      }catch(e){ btn.disabled=false; btn.textContent="Décaler tout"; err.textContent="Impossible de joindre le serveur."; }
     }
     async function generateCohorts(){
       const date = $("cgDate").value, interval = $("cgInt").value, count = $("cgCount").value, cap = $("cgCap").value;

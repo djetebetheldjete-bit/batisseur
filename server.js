@@ -2671,6 +2671,36 @@ async function handleAdminCohortUpdate(req, res) {
   sendJson(res, 200, { ok: true, cohort: { id: c.id, label: c.label, startDate: c.startDate } });
 }
 
+// POST /api/admin/cohort/shift  { fromDate, days }
+// Reporte EN BLOC le calendrier : toutes les sessions dont la date de début est >= fromDate
+// sont décalées de `days` jours (ex. +7 pour avancer d'une semaine). L'écart entre sessions
+// est donc conservé. Les sessions antérieures (ex. les « anciens ») ne bougent pas, et les
+// apprenants suivent leur session (le lien cohort_id ne change pas).
+async function handleAdminCohortShift(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const from = String(p.fromDate || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || isNaN(new Date(from + "T00:00:00Z").getTime())) return sendJson(res, 400, { error: "Date de départ invalide (AAAA-MM-JJ)." });
+  const days = parseInt(p.days, 10);
+  if (!Number.isFinite(days) || days === 0 || Math.abs(days) > 365) return sendJson(res, 400, { error: "Décalage invalide (en jours, non nul, 365 max)." });
+  const list = (await listCohorts()).filter((c) => c && c.startDate && String(c.startDate).slice(0, 10) >= from);
+  if (!list.length) return sendJson(res, 200, { shifted: 0, sessions: [] });
+  const users = await adminListUsers();
+  const out = [];
+  for (const c of list) {
+    const niso = new Date(new Date(c.startDate + "T00:00:00Z").getTime() + days * 86400000).toISOString().slice(0, 10);
+    const fields = { startDate: niso };
+    if (/^session du /i.test(String(c.label || ""))) fields.label = "Session du " + frDate(niso);
+    const updated = await updateCohortRec(c.id, fields);
+    if (updated && fields.label !== undefined) {
+      for (const usr of users) { if (usr.cohort_id === c.id && usr.cohort !== updated.label) { try { await updateUser(usr.id, { cohort: updated.label }); } catch (e) {} } }
+    }
+    out.push({ id: c.id, startDate: niso, label: updated ? updated.label : null });
+  }
+  out.sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
+  sendJson(res, 200, { shifted: out.length, sessions: out });
+}
+
 // POST /api/admin/cohort/launch  { id, launched? } : ouvre (ou referme) la CRÉATION DE PROJET pour la session.
 // Le lancement ne change pas les comptes : ceux qui ont payé (actifs) accèdent déjà au site ;
 // le lancement leur ouvre la construction de leur projet. { launched:false } reverrouille.
@@ -4811,6 +4841,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/admin/cohorts")) return handleAdminCohorts(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/generate") return handleAdminCohortGenerate(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/update") return handleAdminCohortUpdate(req, res);
+  if (req.method === "POST" && req.url === "/api/admin/cohort/shift") return handleAdminCohortShift(req, res);
   if (req.method === "POST" && req.url === "/api/admin/cohort/launch") return handleAdminCohortLaunch(req, res);
   if (req.method === "GET" && (req.url === "/api/admin/visits.pdf" || req.url.startsWith("/api/admin/visits.pdf?"))) return handleAdminVisitsPdf(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/admin/visits")) return handleAdminVisits(req, res);
