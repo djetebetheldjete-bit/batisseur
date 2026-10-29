@@ -1927,6 +1927,7 @@
     // ===== Comptes & espace membre (Palier 4) =====
     let me = null, authMode = "login";
     let adminLearnerFilter = "all";   // filtre de la liste des apprenants (espace formateur)
+    let adminLearnerCohortFilter = "all";   // filtre par SESSION (sépare chaque promotion)
     const loginOpenBtn = $("loginOpenBtn"), acctName = $("acctName"), acctAv = $("acctAv"), acctLabel = $("acctLabel");
     const espaceBtn = $("espaceBtn"), logoutBtn = $("logoutBtn"), adminBtn = $("adminBtn");
     const adminModal = $("adminModal"), adminBody = $("adminBody");
@@ -2404,10 +2405,13 @@
         sel.addEventListener("change", save);
         cap.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); cap.blur(); } });
         cap.addEventListener("blur", function(){ if((parseInt(cap.value,10)||0) !== c.capacity) save(); });
+        // Date de début MODIFIABLE : décaler une session (ex. du 24 au 31). Les inscrits suivent automatiquement.
+        const dateIn = document.createElement("input"); dateIn.type = "date"; dateIn.value = c.startDate || ""; dateIn.className = "lcohort"; dateIn.style.width = "150px"; dateIn.title = "Date de début — modifiable : si vous décalez la session, tous les inscrits de cette session suivent automatiquement.";
+        dateIn.addEventListener("change", function(){ if(dateIn.value && dateIn.value !== c.startDate){ saveCohortDate(c.id, dateIn.value, dateIn, c); } });
         row.appendChild(info);
         if(c.enrolled >= c.capacity){ const badge = document.createElement("span"); badge.className = "tag"; badge.textContent = "Complète"; badge.style.color = "var(--bad)"; badge.style.borderColor = "color-mix(in srgb, var(--bad) 45%, var(--line))"; row.appendChild(badge); }
         if(c.launched){ const lb = document.createElement("span"); lb.className = "tag"; lb.textContent = "Lancée ✓"; lb.style.color = "var(--good,#2E8B6F)"; lb.style.borderColor = "color-mix(in srgb, var(--good,#2E8B6F) 45%, var(--line))"; row.appendChild(lb); }
-        row.appendChild(cap); row.appendChild(sel);
+        row.appendChild(dateIn); row.appendChild(cap); row.appendChild(sel);
         const wa = document.createElement("input"); wa.type = "url"; wa.value = c.whatsappLink || ""; wa.placeholder = "Lien WhatsApp de la session"; wa.className = "lcohort"; wa.style.cssText = "flex:1;min-width:170px;"; wa.title = "Lien d'invitation WhatsApp envoyé automatiquement aux admis de CETTE session";
         wa.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); wa.blur(); } });
         wa.addEventListener("blur", function(){ var v = wa.value.trim(); if(v !== (c.whatsappLink||"")) saveCohortWa(c.id, v, wa, c); });
@@ -2468,10 +2472,30 @@
       }
       adminBody.appendChild(filters);
 
+      // --- Filtre par SESSION : sépare nettement chaque promotion (le 10 et le 31 ne se mélangent plus) ---
+      var byCohort = {}; (d.learners||[]).forEach(function(l){ var k = l.cohortId || "__none__"; byCohort[k] = (byCohort[k]||0)+1; });
+      const sessionBar = document.createElement("div");
+      sessionBar.style.cssText = "display:flex;align-items:center;gap:8px;margin:4px 0 2px;flex-wrap:wrap;";
+      const sessionLbl = document.createElement("label"); sessionLbl.textContent = "Session :"; sessionLbl.style.cssText = "font-size:.85rem;font-weight:600;color:var(--ink-soft,#4a5a70);";
+      const sessionSel = document.createElement("select"); sessionSel.className = "lstatus"; sessionSel.style.cssText = "min-width:210px;";
+      function addSessOpt(val, label){ var o = document.createElement("option"); o.value = val; o.textContent = label; if(val===adminLearnerCohortFilter) o.selected = true; sessionSel.appendChild(o); }
+      addSessOpt("all", "Toutes les sessions (" + (d.learners||[]).length + ")");
+      (adminCohorts||[]).slice().sort(function(a,b){ return String(b.startDate||"").localeCompare(String(a.startDate||"")); }).forEach(function(c){ addSessOpt(c.id, c.label + " (" + (byCohort[c.id]||0) + ")"); });
+      if(byCohort["__none__"]) addSessOpt("__none__", "Sans session (" + byCohort["__none__"] + ")");
+      // Si la session filtrée n'existe plus (ex. après rechargement), on revient à « Toutes ».
+      if(adminLearnerCohortFilter!=="all" && adminLearnerCohortFilter!=="__none__" && !(adminCohorts||[]).some(function(c){return c.id===adminLearnerCohortFilter;})){ adminLearnerCohortFilter="all"; sessionSel.value="all"; }
+      sessionSel.addEventListener("change", function(){ adminLearnerCohortFilter = sessionSel.value; paintList(); });
+      sessionBar.appendChild(sessionLbl); sessionBar.appendChild(sessionSel);
+      adminBody.appendChild(sessionBar);
+
       const list = document.createElement("div"); list.className = "llist";
       function paintList(){
         list.innerHTML = "";
-        const rows = (d.learners||[]).filter(function(l){ return adminLearnerFilter==="all" || learnerState(l).key===adminLearnerFilter; });
+        const rows = (d.learners||[]).filter(function(l){
+          const okStatus = adminLearnerFilter==="all" || learnerState(l).key===adminLearnerFilter;
+          const okCohort = adminLearnerCohortFilter==="all" || (adminLearnerCohortFilter==="__none__" ? !l.cohortId : l.cohortId===adminLearnerCohortFilter);
+          return okStatus && okCohort;
+        });
         if(!d.learners || !d.learners.length){ list.innerHTML = '<div class="aempty">Aucun apprenant inscrit pour le moment.</div>'; return; }
         if(!rows.length){ list.innerHTML = '<div class="aempty">Aucun apprenant dans cette catégorie.</div>'; return; }
         rows.forEach(function(l){
@@ -2530,6 +2554,16 @@
     }
     async function updateCohort(id, closed, capacity){
       try{ await fetch("/api/admin/cohort/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,closed:closed,capacity:capacity})}); markAdminDirty(); }catch(e){}
+    }
+    async function saveCohortDate(id, startDate, el, c){
+      try{
+        const r = await fetch("/api/admin/cohort/update",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:id,startDate:startDate})});
+        const d = await r.json().catch(function(){return{};});
+        if(!r.ok){ if(el){ el.style.borderColor="#c0392b"; el.title=d.error||"Date invalide"; el.value=(c&&c.startDate)||""; } return; }
+        if(c){ c.startDate=startDate; if(d.cohort&&d.cohort.label) c.label=d.cohort.label; }
+        if(el){ el.style.borderColor="var(--good,#2E8B6F)"; }
+        await loadAdmin();   // recharge : nouveau libellé, nouvel ordre, et le filtre par session reste cohérent
+      }catch(e){ if(el){ el.style.borderColor="#c0392b"; } }
     }
     async function saveCohortWa(id, link, el, c){
       try{

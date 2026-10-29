@@ -2639,16 +2639,36 @@ async function handleAdminCohortUpdate(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
   let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
   if (!p.id) return sendJson(res, 400, { error: "Session manquante." });
+  const existing = await getCohort(p.id);
+  if (!existing) return sendJson(res, 404, { error: "Session introuvable." });
   const fields = {};
   if (typeof p.closed === "boolean") fields.closed = p.closed;
   if (p.capacity !== undefined) { const c = parseInt(p.capacity, 10); if (c >= 1) fields.capacity = c; }
   if (p.price !== undefined) { const pr = parseInt(p.price, 10); fields.price = (pr > 0) ? pr : null; }
   if (typeof p.label === "string" && p.label.trim()) fields.label = p.label.trim().slice(0, 120);
+  // Décalage d'une session (ex. du 24 au 31) : on change SA date. Les inscrits et les
+  // réservations pointent sur l'identifiant de la session (cohort_id), pas sur la date :
+  // ils suivent donc automatiquement. Le libellé « Session du … » est régénéré pour
+  // coller à la nouvelle date (sauf libellé personnalisé).
+  if (typeof p.startDate === "string" && p.startDate.trim()) {
+    const nd = p.startDate.trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nd) || isNaN(new Date(nd + "T00:00:00Z").getTime())) return sendJson(res, 400, { error: "Date invalide (format attendu : AAAA-MM-JJ)." });
+    fields.startDate = nd;
+    if (fields.label === undefined && /^session du /i.test(String(existing.label || ""))) fields.label = "Session du " + frDate(nd);
+  }
   if (typeof p.whatsappLink === "string") { const l = p.whatsappLink.trim(); if (l && !/^https:\/\/(chat\.whatsapp\.com|wa\.me|whatsapp\.com)\//i.test(l)) return sendJson(res, 400, { error: "Lien WhatsApp invalide (il commence par https://chat.whatsapp.com/…)." }); fields.whatsappLink = l; }
   if (!Object.keys(fields).length) return sendJson(res, 400, { error: "Rien à modifier." });
   const c = await updateCohortRec(p.id, fields);
   if (!c) return sendJson(res, 404, { error: "Session introuvable." });
-  sendJson(res, 200, { ok: true });
+  // Si le libellé de la session a changé (décalage de date ou renommage), on met à jour
+  // le libellé mémorisé sur chaque apprenant rattaché (le lien cohort_id, lui, ne bouge pas).
+  if (fields.label !== undefined) {
+    try {
+      const users = await adminListUsers();
+      for (const usr of users) { if (usr.cohort_id === p.id && usr.cohort !== c.label) { try { await updateUser(usr.id, { cohort: c.label }); } catch (e) {} } }
+    } catch (e) {}
+  }
+  sendJson(res, 200, { ok: true, cohort: { id: c.id, label: c.label, startDate: c.startDate } });
 }
 
 // POST /api/admin/cohort/launch  { id, launched? } : ouvre (ou referme) la CRÉATION DE PROJET pour la session.
