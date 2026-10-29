@@ -157,6 +157,8 @@
   .astat{flex:1;min-width:84px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface-2);}
   .astat b{display:block;font-family:var(--f-display),sans-serif;font-size:1.25rem;}
   .astat span{font-family:var(--f-mono),monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);}
+  .astat-main{border-color:var(--accent,#147C8C);background:color-mix(in srgb,var(--accent,#147C8C) 10%,var(--surface-2));}
+  .astat-main b{color:var(--accent-deep,#0C5866);}
   .acreate{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px dashed var(--line);border-radius:10px;padding:10px;margin-bottom:12px;}
   .acreate input{flex:1;min-width:110px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-family:inherit;font-size:.84rem;}
   .acreate button{border:none;background:var(--accent);color:#fff;font-family:var(--f-display),sans-serif;font-weight:600;border-radius:8px;padding:9px 14px;cursor:pointer;font-size:.84rem;}
@@ -2312,12 +2314,61 @@
       const cPaidWait   = L.filter(x=> x.status==="pending" && x.paid).length;
       const cUnpaidWait = L.filter(x=> x.status==="pending" && !x.paid).length;
       adminBody.innerHTML = "";
-      const stats = document.createElement("div"); stats.className = "astats";
-      [["Apprenants",s.total],["Payés",s.paid||0],["Actifs",s.active],["En attente · payés",cPaidWait],["En attente · non payés",cUnpaidWait],["Terminés",s.finished]].forEach(([lab,val])=>{
-        const c = document.createElement("div"); c.className = "astat"; c.innerHTML = '<b></b><span></span>';
-        c.querySelector("b").textContent = val; c.querySelector("span").textContent = lab; stats.appendChild(c);
-      });
-      adminBody.appendChild(stats);
+      // --- Sélecteur de SESSION : pilote LES CHIFFRES ET LA LISTE (on ne mélange plus anciens et nouveaux) ---
+      var byCohortTop = {}; L.forEach(function(x){ var k = x.cohortId || "__none__"; byCohortTop[k] = (byCohortTop[k]||0)+1; });
+      if(adminLearnerCohortFilter!=="all" && adminLearnerCohortFilter!=="__none__" && !(adminCohorts||[]).some(function(c){return c.id===adminLearnerCohortFilter;})) adminLearnerCohortFilter="all";
+      const sessionSelectors = [];
+      function applySession(val){
+        adminLearnerCohortFilter = val;
+        sessionSelectors.forEach(function(sx){ if(sx.value!==val) sx.value = val; });
+        renderTiles();
+        if(typeof refreshChips==="function") refreshChips();
+        if(typeof paintList==="function") paintList();
+      }
+      const sessTop = document.createElement("div"); sessTop.style.cssText = "display:flex;align-items:center;gap:8px;margin:2px 0 10px;flex-wrap:wrap;";
+      const sessTopLbl = document.createElement("label"); sessTopLbl.textContent = "Session :"; sessTopLbl.style.cssText = "font-size:.85rem;font-weight:600;color:var(--ink-soft,#4a5a70);";
+      const sessTopSel = document.createElement("select"); sessTopSel.className = "lstatus"; sessTopSel.style.cssText = "min-width:230px;";
+      (function(){ function o(v,t){ var e=document.createElement("option"); e.value=v; e.textContent=t; if(v===adminLearnerCohortFilter)e.selected=true; sessTopSel.appendChild(e); }
+        o("all","Toutes les sessions ("+L.length+")");
+        (adminCohorts||[]).slice().sort(function(a,b){ return String(b.startDate||"").localeCompare(String(a.startDate||"")); }).forEach(function(c){ o(c.id, c.label+" ("+(byCohortTop[c.id]||0)+")"); });
+        if(byCohortTop["__none__"]) o("__none__","Sans session ("+byCohortTop["__none__"]+")");
+      })();
+      sessionSelectors.push(sessTopSel);
+      sessTopSel.addEventListener("change", function(){ applySession(sessTopSel.value); });
+      sessTop.appendChild(sessTopLbl); sessTop.appendChild(sessTopSel);
+      adminBody.appendChild(sessTop);
+
+      // Un apprenant de Bâtisseur = PAYÉ et CONFIRMÉ (statut « actif »). Les comptes non payés ou
+      // « en attente » ne comptent PAS comme apprenants ; le total de tous les inscrits est montré à part.
+      function learnersInView(){
+        if(adminLearnerCohortFilter==="all") return L;
+        if(adminLearnerCohortFilter==="__none__") return L.filter(function(x){ return !x.cohortId; });
+        return L.filter(function(x){ return x.cohortId===adminLearnerCohortFilter; });
+      }
+      function statsFor(a){ return {
+        apprenants: a.filter(function(x){ return x.paid && x.status==="active"; }).length,
+        total: a.length,
+        paid: a.filter(function(x){ return x.paid; }).length,
+        actifs: a.filter(function(x){ return x.status==="active"; }).length,
+        paidWait: a.filter(function(x){ return x.status==="pending" && x.paid; }).length,
+        unpaidWait: a.filter(function(x){ return x.status==="pending" && !x.paid; }).length,
+        finished: a.filter(function(x){ return x.status==="finished"; }).length
+      }; }
+      const statsEl = document.createElement("div"); statsEl.className = "astats"; adminBody.appendChild(statsEl);
+      function renderTiles(){
+        const v = statsFor(learnersInView());
+        const scope = adminLearnerCohortFilter==="all" ? "toutes sessions" : (adminLearnerCohortFilter==="__none__" ? "sans session" : "cette session");
+        statsEl.innerHTML = "";
+        [["Apprenants",v.apprenants,"payés + confirmés · "+scope,true],
+         ["Payés",v.paid,"",false],
+         ["Actifs",v.actifs,"",false],
+         ["En attente · payés",v.paidWait,"",false],
+         ["En attente · non payés",v.unpaidWait,"",false],
+         ["Terminés",v.finished,"",false],
+         ["Total inscrits",v.total,"tous les inscrits, payés ou non",false]
+        ].forEach(function(t){ var c=document.createElement("div"); c.className="astat"+(t[3]?" astat-main":""); c.innerHTML='<b></b><span></span>'; c.querySelector("b").textContent=t[1]; c.querySelector("span").textContent=t[0]; c.title=t[2]||t[0]; statsEl.appendChild(c); });
+      }
+      renderTiles();
 
       // --- Activité IA (suivi des coûts) & sauvegarde ---
       const aih = document.createElement("div"); aih.className = "asection"; aih.textContent = "Activité IA & sauvegarde"; adminBody.appendChild(aih);
@@ -2453,21 +2504,18 @@
       // --- Filtres : voir d'un coup d'œil qui a payé / qui attend ---
       const filters = document.createElement("div"); filters.className = "lfilters";
       filters.style.cssText = "display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 4px;";
-      const chipDefs = [
-        ["all", "Tous", (d.learners||[]).length],
-        ["unpaidPending", "Non payés en attente", cUnpaidWait],
-        ["paidPending", "Payés en attente", cPaidWait],
-        ["active", "Actifs", s.active||0],
-        ["finished", "Terminés", s.finished||0]
-      ];
+      // Compteurs des pastilles calculés sur la SESSION choisie (pas de mélange anciens/nouveaux).
+      const chipDefs = [["all","Tous"],["unpaidPending","Non payés en attente"],["paidPending","Payés en attente"],["active","Actifs"],["finished","Terminés"]];
+      function chipCount(key){ const v = learnersInView(); return key==="all" ? v.length : v.filter(function(l){ return learnerState(l).key===key; }).length; }
       const chipEls = {};
       chipDefs.forEach(function(cd){
-        const b = document.createElement("button"); b.type="button"; b.dataset.k=cd[0];
-        b.textContent = cd[1] + " (" + cd[2] + ")";
+        const b = document.createElement("button"); b.type="button"; b.dataset.k=cd[0]; b.dataset.lab=cd[1];
         b.style.cssText = "border:1px solid var(--line);background:var(--surface2,#f4f7fb);color:var(--ink);border-radius:100px;padding:6px 13px;font:inherit;font-size:.82rem;cursor:pointer;white-space:nowrap;";
         b.addEventListener("click", function(){ adminLearnerFilter = cd[0]; syncChips(); paintList(); });
         chipEls[cd[0]] = b; filters.appendChild(b);
       });
+      function refreshChips(){ Object.keys(chipEls).forEach(function(k){ chipEls[k].textContent = chipEls[k].dataset.lab + " (" + chipCount(k) + ")"; }); }
+      refreshChips();
       function syncChips(){
         Object.keys(chipEls).forEach(function(k){
           const on = (k === adminLearnerFilter);
@@ -2492,7 +2540,8 @@
       if(byCohort["__none__"]) addSessOpt("__none__", "Sans session (" + byCohort["__none__"] + ")");
       // Si la session filtrée n'existe plus (ex. après rechargement), on revient à « Toutes ».
       if(adminLearnerCohortFilter!=="all" && adminLearnerCohortFilter!=="__none__" && !(adminCohorts||[]).some(function(c){return c.id===adminLearnerCohortFilter;})){ adminLearnerCohortFilter="all"; sessionSel.value="all"; }
-      sessionSel.addEventListener("change", function(){ adminLearnerCohortFilter = sessionSel.value; paintList(); });
+      sessionSelectors.push(sessionSel);
+      sessionSel.addEventListener("change", function(){ applySession(sessionSel.value); });
       sessionBar.appendChild(sessionLbl); sessionBar.appendChild(sessionSel);
       adminBody.appendChild(sessionBar);
 
