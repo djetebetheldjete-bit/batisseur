@@ -2614,6 +2614,111 @@ async function cohortActiveCounts() {
   return m;
 }
 
+// ============================================================
+// RETOURS DES APPRENANTS (feedback après chaque session)
+// ------------------------------------------------------------
+// Conception centrée utilisateur : on recueille l'avis des apprenants pour
+// améliorer la formation, séance après séance. Stockage sans dépendance :
+// dans les réglages (clé « feedbacks »), donc aucun changement de schéma.
+// Chaque entrée : { id, at, cohortId, cohortLabel, rating(1-5), liked, improve, name }.
+const FEEDBACK_MAX = 400;          // on garde les 400 derniers avis
+function clip(s, n) { return String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice(0, n); }
+
+// POST /api/feedback  { rating, liked, improve, name?, cohortId? }  — public (un apprenant)
+async function handleFeedbackSubmit(req, res) {
+  let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+  const rating = parseInt(p.rating, 10);
+  if (!(rating >= 1 && rating <= 5)) return sendJson(res, 400, { error: "Merci de donner une note de 1 à 5." });
+  // petit garde-fou anti-spam : 5 avis max / 10 min par adresse
+  const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "anon";
+  if (!rateOk("fb:" + ip, 5, 10 * 60 * 1000)) return sendJson(res, 429, { error: "Trop d'envois. Réessayez dans un moment." });
+  let cohortId = null, cohortLabel = null;
+  try {
+    let c = p.cohortId ? await getCohort(p.cohortId) : await currentSessionCohort();
+    if (c) { cohortId = c.id; cohortLabel = c.label || null; }
+  } catch (e) {}
+  const entry = {
+    id: crypto.randomUUID(), at: new Date().toISOString(),
+    cohortId, cohortLabel, rating,
+    liked: clip(p.liked, 600), improve: clip(p.improve, 600), name: clip(p.name, 80)
+  };
+  const s = await getSettings();
+  const list = Array.isArray(s.feedbacks) ? s.feedbacks.slice() : [];
+  list.unshift(entry);
+  if (list.length > FEEDBACK_MAX) list.length = FEEDBACK_MAX;
+  await setSettings({ feedbacks: list });
+  sendJson(res, 200, { ok: true });
+}
+
+// GET /api/admin/feedback — liste + moyennes (admin)
+async function handleAdminFeedback(req, res) {
+  const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+  const s = await getSettings();
+  const list = Array.isArray(s.feedbacks) ? s.feedbacks : [];
+  const count = list.length;
+  const avg = count ? Math.round((list.reduce((a, f) => a + (f.rating || 0), 0) / count) * 10) / 10 : 0;
+  const byCohort = {};
+  list.forEach((f) => { const k = f.cohortLabel || "—"; (byCohort[k] = byCohort[k] || { n: 0, sum: 0 }); byCohort[k].n++; byCohort[k].sum += (f.rating || 0); });
+  const sessions = Object.keys(byCohort).map((k) => ({ label: k, count: byCohort[k].n, avg: Math.round((byCohort[k].sum / byCohort[k].n) * 10) / 10 }));
+  sendJson(res, 200, { count, avg, sessions, feedbacks: list });
+}
+
+// GET /avis — page admin simple qui liste les retours (rendu serveur, sans toucher l'app)
+async function handleFeedbackAdminPage(req, res) {
+  const u = await currentUser(req);
+  if (!isAdmin(u)) { res.writeHead(302, { Location: "/" }); return res.end(); }
+  const s = await getSettings();
+  const list = Array.isArray(s.feedbacks) ? s.feedbacks : [];
+  const count = list.length;
+  const avg = count ? Math.round((list.reduce((a, f) => a + (f.rating || 0), 0) / count) * 10) / 10 : 0;
+  const stars = (n) => "★★★★★☆☆☆☆☆".slice(5 - n, 10 - n);
+  const rows = list.map((f) => {
+    const d = (() => { try { return new Date(f.at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }); } catch (e) { return ""; } })();
+    return `<tr>
+      <td class="c-date">${escapeHtml(d)}</td>
+      <td class="c-sess">${escapeHtml(f.cohortLabel || "—")}</td>
+      <td class="c-rate"><span class="stars">${stars(f.rating || 0)}</span></td>
+      <td>${f.liked ? escapeHtml(f.liked) : "<span class=muted>—</span>"}</td>
+      <td>${f.improve ? escapeHtml(f.improve) : "<span class=muted>—</span>"}</td>
+      <td class="c-name">${f.name ? escapeHtml(f.name) : "<span class=muted>anonyme</span>"}</td>
+    </tr>`;
+  }).join("");
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Retours des apprenants — Bâtisseur</title>
+<style>
+  :root{--teal:#147C8C;--deep:#0C5866;--gold:#D98A2B;--ink:#0f2b36;--grey:#52636e;--line:#e2ebee}
+  *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#f4f8f9}
+  .wrap{max-width:1100px;margin:0 auto;padding:26px 16px 60px}
+  .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .logo{width:42px;height:42px;border-radius:11px;background:linear-gradient(140deg,#1b879b,#0c5866);display:grid;place-items:center;color:#fff;font-weight:800;font-size:22px}
+  h1{font-size:22px;margin:0;color:var(--deep)}
+  a.back{margin-left:auto;color:var(--teal);text-decoration:none;font-weight:600;font-size:14px}
+  .cards{display:flex;gap:14px;margin:20px 0;flex-wrap:wrap}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 20px;min-width:150px}
+  .card .k{font-size:12px;letter-spacing:.06em;color:var(--grey);text-transform:uppercase;font-weight:700}
+  .card .v{font-size:30px;font-weight:800;color:var(--teal);margin-top:4px}
+  .card .v small{font-size:15px;color:var(--grey);font-weight:600}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:14px}
+  th{background:var(--teal);color:#fff;text-align:left;padding:10px 12px;font-size:12.5px;letter-spacing:.03em}
+  td{padding:10px 12px;border-top:1px solid var(--line);vertical-align:top;line-height:1.4}
+  .c-date,.c-sess,.c-name{white-space:nowrap;color:var(--grey)} .c-rate{white-space:nowrap}
+  .stars{color:var(--gold);letter-spacing:2px;font-size:15px}
+  .muted{color:#9fb0b8} .sess-sum{margin:6px 0 0;color:var(--grey);font-size:13px}
+  .empty{background:#fff;border:1px dashed var(--line);border-radius:14px;padding:40px;text-align:center;color:var(--grey)}
+</style></head><body><div class="wrap">
+  <div class="top"><div class="logo">B</div><h1>Retours des apprenants</h1><a class="back" href="/">← Retour</a></div>
+  <div class="cards">
+    <div class="card"><div class="k">Avis reçus</div><div class="v">${count}</div></div>
+    <div class="card"><div class="k">Note moyenne</div><div class="v">${avg || "–"}<small> / 5</small></div></div>
+  </div>
+  ${count ? `<table><thead><tr><th>Date</th><th>Session</th><th>Note</th><th>Ce qui a plu</th><th>À améliorer</th><th>Nom</th></tr></thead><tbody>${rows}</tbody></table>`
+          : `<div class="empty">Aucun retour pour l'instant. Partagez le lien <b>/feedback</b> aux apprenants à la fin d'une séance.</div>`}
+  <p class="sess-sum">Lien à partager aux apprenants : <b>batisseur.onrender.com/feedback</b></p>
+</div></body></html>`;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
+}
+
 // POST /api/admin/cohort/generate  { startDate, intervalDays, count, capacity }
 async function handleAdminCohortGenerate(req, res) {
   const u = await currentUser(req); if (!isAdmin(u)) return sendJson(res, 403, { error: "Réservé à l'administrateur." });
@@ -4907,6 +5012,10 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && (req.url === "/accueil" || req.url.startsWith("/accueil?"))) return serveStatic(Object.assign(req, { url: "/accueil.html" }), res);
   if (req.method === "GET" && (req.url === "/reset" || req.url.startsWith("/reset?"))) return serveStatic(Object.assign(req, { url: "/reset.html" }), res);
   if (req.method === "GET" && (req.url === "/mon-programme" || req.url.startsWith("/mon-programme?"))) return handleLearnerChrono(req, res);
+  if (req.method === "POST" && req.url === "/api/feedback") return handleFeedbackSubmit(req, res);
+  if (req.method === "GET" && req.url === "/api/admin/feedback") return handleAdminFeedback(req, res);
+  if (req.method === "GET" && (req.url === "/feedback" || req.url.startsWith("/feedback?"))) return serveStatic(Object.assign(req, { url: "/feedback.html" }), res);
+  if (req.method === "GET" && (req.url === "/avis" || req.url.startsWith("/avis?"))) return handleFeedbackAdminPage(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/download")) return handleDownload(req, res);
   if (req.method === "GET" && req.url.startsWith("/api/conversation")) return handleGetConversation(req, res);
   if (req.method === "GET" && req.url.startsWith("/preview/")) return servePreview(req, res);

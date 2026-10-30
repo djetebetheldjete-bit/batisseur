@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Votre avis — Bâtisseur</title>
+<style>
+  :root{--teal:#147C8C;--deep:#0C5866;--cyan:#86d9e6;--gold:#D98A2B;--ink:#0f2b36;--grey:#55666f;--line:#e2ebee}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);
+    background:radial-gradient(900px 500px at 15% -5%,#15485d 0%,#0d2a39 45%,#0a1c28 100%);min-height:100vh;
+    display:flex;align-items:flex-start;justify-content:center;padding:28px 16px 60px}
+  .card{width:100%;max-width:540px;background:#fff;border-radius:20px;box-shadow:0 20px 50px rgba(0,0,0,.28);overflow:hidden}
+  .hd{display:flex;align-items:center;gap:12px;padding:22px 24px 6px}
+  .logo{width:46px;height:46px;border-radius:12px;background:linear-gradient(140deg,#1b879b,#0c5866);display:grid;place-items:center;color:#fff;font-weight:800;font-size:24px}
+  .hd .n{font-weight:800;font-size:18px;letter-spacing:.04em;color:var(--deep);line-height:1}
+  .hd .s{font-size:11px;letter-spacing:.22em;color:#8098a2;font-weight:700;margin-top:4px}
+  .body{padding:8px 24px 26px}
+  h1{font-size:22px;margin:14px 0 4px;color:var(--deep)}
+  .lead{color:var(--grey);font-size:14.5px;line-height:1.5;margin:0 0 18px}
+  label{display:block;font-weight:700;font-size:14px;color:var(--ink);margin:16px 0 7px}
+  select,textarea,input{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px 13px;font-size:15px;font-family:inherit;color:var(--ink);background:#fbfdfe}
+  select:focus,textarea:focus,input:focus{outline:none;border-color:var(--teal)}
+  textarea{min-height:78px;resize:vertical}
+  .stars{display:flex;gap:8px;margin-top:4px}
+  .star{font-size:38px;line-height:1;color:#d7e1e6;cursor:pointer;transition:transform .08s,color .1s;user-select:none}
+  .star:hover{transform:scale(1.08)}
+  .star.on{color:var(--gold)}
+  .rate-lab{font-size:13px;color:var(--grey);margin-top:6px;min-height:18px}
+  .btn{width:100%;margin-top:22px;border:none;border-radius:13px;padding:15px;font-size:16px;font-weight:800;color:#fff;
+    background:linear-gradient(135deg,#17869a,#0c5866);cursor:pointer;letter-spacing:.01em}
+  .btn:disabled{opacity:.55;cursor:default}
+  .msg{margin-top:14px;font-size:14px;border-radius:12px;padding:12px 14px;display:none}
+  .msg.ok{display:block;background:#e9f6ef;color:#1b7a4b;border:1px solid #bfe6d0}
+  .msg.err{display:block;background:#fdecea;color:#b4231a;border:1px solid #f3c6c1}
+  .done{text-align:center;padding:30px 10px}
+  .done .big{font-size:52px}
+  .done h2{color:var(--deep);margin:10px 0 6px}
+  .done p{color:var(--grey);font-size:15px;line-height:1.5;margin:0}
+  .opt{font-weight:600;font-size:12px;color:#9fb0b8}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="hd">
+      <div class="logo">B</div>
+      <div><div class="n">BÂTISSEUR</div><div class="s">VOTRE AVIS COMPTE</div></div>
+    </div>
+    <div class="body" id="main">
+      <h1>Comment s'est passée la séance ?</h1>
+      <p class="lead">Vos retours nous aident à améliorer la formation. Ça prend moins d'une minute.</p>
+
+      <label>Votre session <span class="opt">(facultatif)</span></label>
+      <select id="cohort"><option value="">— Choisir ma session —</option></select>
+
+      <label>Votre note globale</label>
+      <div class="stars" id="stars">
+        <span class="star" data-v="1">★</span><span class="star" data-v="2">★</span>
+        <span class="star" data-v="3">★</span><span class="star" data-v="4">★</span>
+        <span class="star" data-v="5">★</span>
+      </div>
+      <div class="rate-lab" id="rateLab"></div>
+
+      <label>Ce qui vous a plu</label>
+      <textarea id="liked" placeholder="Ex. les exemples concrets, l'accompagnement…"></textarea>
+
+      <label>Ce qu'on pourrait améliorer</label>
+      <textarea id="improve" placeholder="Ex. plus de temps sur la pratique…"></textarea>
+
+      <label>Votre nom <span class="opt">(facultatif)</span></label>
+      <input id="name" type="text" placeholder="Laissez vide pour rester anonyme" maxlength="80">
+
+      <button class="btn" id="send">Envoyer mon avis</button>
+      <div class="msg" id="msg"></div>
+    </div>
+  </div>
+
+<script>
+  var rating = 0;
+  var LAB = ["", "Très insatisfait", "Insatisfait", "Correct", "Satisfait", "Très satisfait"];
+  var stars = Array.prototype.slice.call(document.querySelectorAll(".star"));
+  function paint(n){ stars.forEach(function(s){ s.classList.toggle("on", parseInt(s.dataset.v,10) <= n); }); document.getElementById("rateLab").textContent = n ? LAB[n] : ""; }
+  stars.forEach(function(s){
+    s.addEventListener("click", function(){ rating = parseInt(s.dataset.v,10); paint(rating); });
+    s.addEventListener("mouseenter", function(){ paint(parseInt(s.dataset.v,10)); });
+  });
+  document.getElementById("stars").addEventListener("mouseleave", function(){ paint(rating); });
+
+  // Charger les sessions ouvertes
+  fetch("/api/cohorts").then(function(r){ return r.json(); }).then(function(d){
+    var sel = document.getElementById("cohort");
+    (d.cohorts || []).forEach(function(c){
+      var o = document.createElement("option"); o.value = c.id; o.textContent = c.label || c.startDate; sel.appendChild(o);
+    });
+  }).catch(function(){});
+
+  function show(cls, txt){ var m = document.getElementById("msg"); m.className = "msg " + cls; m.textContent = txt; }
+
+  document.getElementById("send").addEventListener("click", function(){
+    if (!rating){ show("err", "Merci de donner une note de 1 à 5 étoiles."); return; }
+    var btn = this; btn.disabled = true; btn.textContent = "Envoi…";
+    fetch("/api/feedback", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rating: rating,
+        cohortId: document.getElementById("cohort").value || null,
+        liked: document.getElementById("liked").value,
+        improve: document.getElementById("improve").value,
+        name: document.getElementById("name").value
+      })
+    }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+      .then(function(res){
+        if (!res.ok){ show("err", (res.j && res.j.error) || "Une erreur est survenue."); btn.disabled = false; btn.textContent = "Envoyer mon avis"; return; }
+        document.getElementById("main").innerHTML =
+          '<div class="done"><div class="big">🙏</div><h2>Merci pour votre retour !</h2>'
+          + '<p>Votre avis nous aide à rendre Bâtisseur meilleur, séance après séance.</p></div>';
+      }).catch(function(){ show("err", "Connexion impossible. Réessayez."); btn.disabled = false; btn.textContent = "Envoyer mon avis"; });
+  });
+</script>
+</body>
+</html>
