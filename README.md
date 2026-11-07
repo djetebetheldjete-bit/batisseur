@@ -1,4 +1,11 @@
-# Bâtisseur — parcours complet (v1.6)
+# Bâtisseur — parcours complet (v1.7)
+
+> **Nouveau modèle — le parcours « Créer un site » suit désormais ce modèle**
+> Le parcours « Créer un site » ne construit plus le site dans Bâtisseur : il sert à **définir et structurer** le projet, puis la construction et la publication se font avec **Claude Code**.
+> - Les étapes du parcours web sont recompilées en **3 étapes de définition** : *Cadrage du projet*, *Définir les fondations*, *Réunir les contenus* (les anciennes étapes `build` — « Créer la base », « Ajouter les rubriques »… « Publier » — sont retirées ; l'IA n'écrit plus de code).
+> - Le panneau de droite devient **« Finaliser »** : (1) génération automatique du **prompt complet** (MD/HTML), (2) **point de contrôle qualité**, (3) **construction & publication avec Claude Code** via le dépôt GitHub de Bâtisseur, (4) **recoller le lien publié**, + une **fiche projet traçable**. Le certificat se débloque une fois le lien enregistré.
+> - L'ancien **constructeur interne** (aperçu du site + publication Netlify) est **retiré du parcours web** (le code reste présent pour les autres parcours — code/premium — inchangés).
+> - Deux routes API (`POST /api/project/prompt`, `POST /api/project/published-link`), variable d'env **`BATISSEUR_GITHUB`** (facultative) pour afficher le lien du dépôt. La page autonome `/finaliser` reste également disponible.
 
 > **Nouveau modèle — Finaliser et publier le projet (page `/finaliser`)**
 > Une fois le projet défini et structuré dans l'atelier, l'apprenant ouvre **`/finaliser`** pour :

@@ -297,6 +297,27 @@
   .quizresult.ko{ background:color-mix(in srgb,var(--warm) 14%,transparent); border:1px solid var(--warm); }
   .quizresult .big{ font-size:26px; font-weight:800; color:var(--ink); }
   .quizresult .msg{ font-size:13.5px; color:var(--ink-soft); margin-top:4px; }
+  /* ===== Volet Finaliser (nouveau modèle) ===== */
+  #finalisePanel .fcard{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px; margin:12px 0; }
+  #finalisePanel h3{ font-size:1rem; margin:0 0 6px; display:flex; align-items:center; gap:8px; }
+  #finalisePanel .fn{ width:22px; height:22px; border-radius:50%; background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent-deep); font-size:.78rem; font-weight:800; display:grid; place-items:center; flex:0 0 auto; }
+  #finalisePanel .fmut{ color:var(--ink-soft); font-size:.9rem; margin:4px 0 8px; }
+  #finalisePanel .fnote{ font-size:.85rem; color:var(--ink-soft); margin:6px 0 0; }
+  #finalisePanel .frow{ display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+  #finalisePanel .fbtn{ border:none; border-radius:9px; padding:9px 14px; font-size:.92rem; font-weight:600; cursor:pointer; }
+  #finalisePanel .fprim{ background:var(--accent); color:#fff; }
+  #finalisePanel .fgh{ background:transparent; border:1px solid var(--line); color:var(--ink); }
+  #finalisePanel .fwarm{ background:var(--warm,#D98A2B); color:#231202; }
+  #finalisePanel .fbtn:disabled{ opacity:.5; cursor:not-allowed; }
+  #finalisePanel .fchk{ display:flex; align-items:flex-start; gap:9px; margin:7px 0; font-size:.92rem; }
+  #finalisePanel .fchk input{ margin-top:3px; width:17px; height:17px; flex:0 0 auto; }
+  #finalisePanel .ffiche{ display:grid; gap:7px; }
+  #finalisePanel .fstep{ display:flex; align-items:center; gap:10px; padding:9px 11px; border:1px solid var(--line); border-radius:10px; background:var(--surface-3); }
+  #finalisePanel .fstep .fdot{ width:20px; height:20px; border-radius:50%; border:2px solid var(--line); flex:0 0 auto; display:grid; place-items:center; font-size:.72rem; color:var(--ink-soft); }
+  #finalisePanel .fstep.done .fdot{ background:var(--good,#2E8B6F); border-color:var(--good,#2E8B6F); color:#fff; }
+  #finalisePanel .fstep .fs{ margin-left:auto; font-size:.82rem; color:var(--ink-soft); }
+  #finalisePanel .ok{ color:var(--good,#2E8B6F); font-weight:700; }
+  #finalisePanel .err{ color:#C0492F; font-weight:600; }
 </style>
 </head>
 <body>
@@ -400,6 +421,50 @@
               <p>Votre site apparaîtra ici dès l'étape « Créer la base ». Répondez à la discussion : dès que l'assistant a l'essentiel, il le construit — puis vous modifiez tout ce que vous voulez au fil du chat.</p>
             </div>
             <iframe id="preview" title="Aperçu du site" sandbox="allow-same-origin allow-scripts allow-popups allow-top-navigation-by-user-activation" style="display:none;"></iframe>
+          </div>
+          <!-- NOUVEAU MODÈLE : volet Finaliser (génération du prompt → Claude Code → lien publié) -->
+          <div id="finalisePanel" style="display:none;overflow:auto;height:100%;padding:16px 16px 40px;">
+            <div style="max-width:720px;margin:0 auto;">
+              <div style="font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent-deep);background:color-mix(in srgb,var(--accent) 14%,transparent);border-radius:999px;padding:3px 9px;display:inline-block;">Nouveau modèle</div>
+              <h2 style="font-size:1.25rem;margin:8px 0 4px;">Finaliser et publier votre projet</h2>
+              <p style="color:var(--ink-soft);margin:0 0 12px;font-size:.95rem;">Une fois votre projet défini et structuré, générez son prompt complet, confiez-le à Claude Code pour la construction et la publication, puis recollez le lien du site en ligne.</p>
+
+              <div class="fcard"><h3><span class="fn">1</span> Générer le prompt complet</h3>
+                <p class="fmut">Bâtisseur rassemble votre projet (plan, contenus) en un document, de l'initialisation à la réalisation.</p>
+                <div class="frow">
+                  <button class="fbtn fprim" id="fp_gen" type="button">Générer le prompt</button>
+                  <button class="fbtn fgh" id="fp_md" type="button" disabled>Télécharger .md</button>
+                  <button class="fbtn fgh" id="fp_html" type="button" disabled>Télécharger .html</button>
+                  <button class="fbtn fgh" id="fp_copy" type="button" disabled>Copier</button>
+                </div>
+                <p id="fp_msg" class="fnote"></p>
+                <textarea id="fp_out" readonly spellcheck="false" style="display:none;width:100%;min-height:150px;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-3);color:var(--ink);font-family:var(--f-mono),monospace;font-size:.78rem;white-space:pre;"></textarea>
+              </div>
+
+              <div class="fcard"><h3><span class="fn">2</span> Point de contrôle qualité</h3>
+                <label class="fchk"><input type="checkbox" class="fqc"> L'objectif du site est clair en une phrase.</label>
+                <label class="fchk"><input type="checkbox" class="fqc"> Les rubriques et le contenu principal sont présents.</label>
+                <label class="fchk"><input type="checkbox" class="fqc"> Au moins un moyen de contact réel est indiqué.</label>
+                <label class="fchk"><input type="checkbox" class="fqc"> Aucune donnée n'a été inventée.</label>
+                <label class="fchk"><input type="checkbox" class="fqc"> Le site s'affichera correctement sur téléphone.</label>
+              </div>
+
+              <div class="fcard"><h3><span class="fn">3</span> Construire et publier avec Claude Code</h3>
+                <p class="fmut">Confiez le prompt téléchargé à Claude Code. La construction et la publication se font via le dépôt GitHub de Bâtisseur (chaque apprenant utilise son propre compte GitHub).</p>
+                <p class="fnote" id="fp_gh"></p>
+              </div>
+
+              <div class="fcard"><h3><span class="fn">4</span> Recoller le lien du site publié</h3>
+                <p class="fmut">Collez l'adresse du site en ligne : elle est enregistrée pour votre certificat.</p>
+                <input type="url" id="fp_url" placeholder="https://…" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-3);color:var(--ink);font-size:1rem;">
+                <div class="frow"><button class="fbtn fwarm" id="fp_save" type="button">Enregistrer le lien</button></div>
+                <p id="fp_link_msg" class="fnote"></p>
+              </div>
+
+              <div class="fcard"><h3>Fiche projet</h3>
+                <div id="fp_fiche" class="ffiche"></div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="code-stage" id="codeStage">
@@ -836,16 +901,13 @@
   </div>
 
   <script>
+    // NOUVEAU MODÈLE : le parcours « créer un site » DÉFINIT et STRUCTURE le projet.
+    // La construction et la publication se font ensuite dans le volet « Finaliser »
+    // (génération du prompt → Claude Code → lien publié → certificat).
     const STEP_LABELS = [
-      { label: "Comprendre le projet", sub: "Orientation" },
-      { label: "Définir les fondations", sub: "Étape 1" },
-      { label: "Réunir les éléments", sub: "Étape 2" },
-      { label: "Prendre en main l'assistant", sub: "Étape 3" },
-      { label: "Créer la base", sub: "Étape 4" },
-      { label: "Ajouter les rubriques", sub: "Étape 5" },
-      { label: "Mettre en place le contact", sub: "Étape 6" },
-      { label: "Soigner l'apparence", sub: "Étape 7" },
-      { label: "Publier", sub: "Étape 8" }
+      { label: "Cadrage du projet", sub: "Étape 1" },
+      { label: "Définir les fondations", sub: "Étape 2" },
+      { label: "Réunir les contenus", sub: "Étape 3" }
     ];
     const LAST = STEP_LABELS.length - 1;
 
@@ -3269,6 +3331,96 @@
       activityPing(0);   // affiche le temps déjà cumulé aujourd'hui, sans rien créditer
       await startFlow();
     })();
+  </script>
+  <script>
+  // ===== NOUVEAU MODÈLE — volet Finaliser (parcours « créer un site ») =====
+  (function(){
+    "use strict";
+    var F = { text:"", gen:false, base:"prompt-projet", gh:null };
+    function $id(i){ return document.getElementById(i); }
+    function isWeb(){ try{ return track==="web" && !codeProject; }catch(e){ return false; } }
+    function esc(s){ var d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
+
+    function renderFiche(){
+      var el = $id("fp_fiche"); if(!el) return;
+      var pub = (typeof publishedUrl!=="undefined" && publishedUrl) ? publishedUrl : null;
+      var steps = [
+        { t:"Définition du projet", done: !!convId, s: convId ? "fait" : "" },
+        { t:"Prompt généré (MD / HTML)", done: F.gen, s: F.gen ? "prêt" : "à générer" },
+        { t:"Construit & publié (Claude Code · GitHub)", done: !!pub, s: pub ? "fait" : "en cours" },
+        { t:"Lien du site publié", done: !!pub, s: pub ? "enregistré" : "à coller" },
+        { t:"Certificat", done: !!pub, s: pub ? "éligible" : "" }
+      ];
+      el.innerHTML = steps.map(function(x){
+        return '<div class="fstep'+(x.done?' done':'')+'"><div class="fdot">'+(x.done?'✓':'')+'</div><div style="font-weight:600">'+esc(x.t)+'</div><div class="fs">'+esc(x.s)+'</div></div>';
+      }).join("");
+    }
+
+    var armed = false;
+    function setup(){
+      if(!isWeb()){ return; }
+      var fp = $id("finalisePanel"); if(!fp) return;
+      var tabPrev = document.querySelector('#tabs button[data-tab="preview"]');
+      if(tabPrev && tabPrev.textContent!=="Finaliser") tabPrev.textContent = "Finaliser";
+      var pvTitle = $id("pvTitle"); if(pvTitle && pvTitle.firstChild) pvTitle.firstChild.nodeValue = "Finaliser ";
+      var dev = $id("device"); if(dev) dev.style.display="none";
+      var tools = $id("siteTools"); if(tools) tools.style.display="none";
+      if(fp.style.display!=="block") fp.style.display="block";
+      // certificat réservé au moment où le lien publié est enregistré
+      try{ var cb=$id("certBtn"); if(cb){ var pub=(typeof publishedUrl!=="undefined"&&publishedUrl); if(!pub) cb.style.display="none"; } }catch(e){}
+      renderFiche();
+      if(armed) return; armed = true;
+      wire();
+    }
+
+    function dl(name, text, mime){
+      var b=new Blob([text],{type:mime}); var a=document.createElement("a");
+      a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },200);
+    }
+    function htmlWrap(md,t){ return "<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\"><title>"+esc(t)+"</title></head><body><pre style=\"white-space:pre-wrap;font-family:ui-monospace,Consolas,monospace;max-width:820px;margin:24px auto;padding:0 16px;line-height:1.5\">"+esc(md)+"</pre></body></html>"; }
+
+    function wire(){
+      var gen=$id("fp_gen"), md=$id("fp_md"), html=$id("fp_html"), copy=$id("fp_copy"),
+          out=$id("fp_out"), msg=$id("fp_msg"), gh=$id("fp_gh"),
+          url=$id("fp_url"), save=$id("fp_save"), lmsg=$id("fp_link_msg");
+      if(gen) gen.addEventListener("click", function(){
+        if(!convId){ msg.innerHTML='<span class="err">Aucun projet actif.</span>'; return; }
+        msg.textContent="Génération…";
+        fetch("/api/project/prompt",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId})})
+          .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+          .then(function(res){
+            if(!res.ok){ msg.innerHTML='<span class="err">'+esc((res.j&&res.j.error)||"Échec.")+'</span>'; return; }
+            F.text=res.j.markdown||""; F.gen=true; F.base=res.j.filenameBase||"prompt-projet";
+            out.value=F.text; out.style.display="block";
+            md.disabled=html.disabled=copy.disabled=false;
+            msg.innerHTML='<span class="ok">Prompt prêt.</span> '+(res.j.hasSite?"":"");
+            gh.innerHTML = res.j.github ? ('Dépôt GitHub : <a href="'+esc(res.j.github)+'" target="_blank" rel="noopener">'+esc(res.j.github)+'</a>') : 'Le lien du dépôt GitHub de Bâtisseur sera communiqué par le formateur.';
+            renderFiche();
+          })
+          .catch(function(){ msg.innerHTML='<span class="err">Erreur réseau.</span>'; });
+      });
+      if(md) md.addEventListener("click", function(){ if(F.text) dl(F.base+".md",F.text,"text/markdown;charset=utf-8"); });
+      if(html) html.addEventListener("click", function(){ if(F.text) dl(F.base+".html",htmlWrap(F.text,F.base),"text/html;charset=utf-8"); });
+      if(copy) copy.addEventListener("click", function(){ if(!F.text) return; out.select(); try{ document.execCommand("copy"); }catch(e){} msg.innerHTML='<span class="ok">Copié.</span>'; });
+      if(save) save.addEventListener("click", function(){
+        if(!convId) return; var v=(url.value||"").trim(); lmsg.textContent="Enregistrement…";
+        fetch("/api/project/published-link",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:convId,url:v})})
+          .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+          .then(function(res){
+            if(!res.ok){ lmsg.innerHTML='<span class="err">'+esc((res.j&&res.j.error)||"Échec.")+'</span>'; return; }
+            try{ publishedUrl = res.j.publishedUrl || null; }catch(e){}
+            lmsg.innerHTML = res.j.publishedUrl ? '<span class="ok">Lien enregistré. Votre certificat est débloqué.</span>' : "Lien retiré.";
+            try{ if(res.j.publishedUrl){ var cb=$id("certBtn"); if(cb && convId) cb.style.display="inline-block"; } }catch(e){}
+            renderFiche();
+          })
+          .catch(function(){ lmsg.innerHTML='<span class="err">Erreur réseau.</span>'; });
+      });
+    }
+
+    setInterval(setup, 800);
+    if(document.readyState!=="loading") setup(); else document.addEventListener("DOMContentLoaded", setup);
+  })();
   </script>
 </body>
 </html>

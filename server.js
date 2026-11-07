@@ -89,16 +89,14 @@ const USE_DB = !!(SUPABASE_URL && SUPABASE_KEY);
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
 // --- Les étapes (build:true = étape qui produit / modifie le site) ---
+// NOUVEAU MODÈLE : le parcours « créer un site » sert à DÉFINIR et STRUCTURER le projet
+// (aucune construction dans Bâtisseur). La construction et la publication se font ensuite
+// avec Claude Code (volet « Finaliser » du SPA). Les anciennes étapes de construction
+// (build:true : « Créer la base », « Ajouter les rubriques »… « Publier ») ont été retirées.
 const STEPS = [
-  { key: "diagnostic", label: "Comprendre le projet",      promptFile: "diagnostic.txt", kickoff: "Bonjour ! Je découvre Bâtisseur et je veux créer un projet." },
+  { key: "diagnostic", label: "Cadrage du projet",         promptFile: "diagnostic.txt", kickoff: "Bonjour ! Je découvre Bâtisseur et je veux créer un projet." },
   { key: "clarifier",  label: "Définir les fondations",    promptFile: "clarifier.txt",  kickoff: "On passe à la clarification de mon site." },
-  { key: "rassembler", label: "Réunir les éléments",       promptFile: "rassembler.txt", kickoff: "On passe à rassembler les contenus de mon site." },
-  { key: "bienparler", label: "Prendre en main l'assistant", promptFile: "module-03.txt", kickoff: "On passe à : bien te demander les choses, avant de construire." },
-  { key: "accueil",    label: "Créer la base",             promptFile: "module-04.txt",  kickoff: "On passe à la construction de la page d'accueil de mon site.", build: true },
-  { key: "pagescles",  label: "Ajouter les rubriques",     promptFile: "module-05.txt",  kickoff: "On passe à l'ajout des rubriques (À propos, Réalisations…).", build: true },
-  { key: "contact",    label: "Mettre en place le contact", promptFile: "module-06.txt", kickoff: "On passe à la mise en place du contact.", build: true },
-  { key: "beaumobile", label: "Soigner l'apparence",       promptFile: "module-07.txt",  kickoff: "On passe à rendre le site beau et impeccable sur mobile.", build: true },
-  { key: "miseenligne",label: "Publier",                   promptFile: "module-08.txt",  kickoff: "On passe à la mise en ligne de mon site.", build: true }
+  { key: "rassembler", label: "Réunir les contenus",       promptFile: "rassembler.txt", kickoff: "On passe à rassembler les contenus de mon site." }
 ];
 const LAST_STEP = STEPS.length - 1;
 
@@ -5145,7 +5143,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  Bâtisseur — parcours complet (v1.6) en marche.`);
+  console.log(`\n  Bâtisseur — parcours complet (v1.7) en marche.`);
   console.log(`  Ouvrez  http://localhost:${PORT}`);
   console.log(`  Étapes : ${STEPS.map((s) => s.label).join("  →  ")}`);
   console.log(`  Modèles : construction ${MODEL} · questions & cours ${MODEL_LIGHT} · premium ${MODEL_PREMIUM}`);

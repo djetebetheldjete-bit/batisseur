@@ -1,6 +1,6 @@
 {
   "name": "batisseur-parcours",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "description": "Bâtisseur — parcours complet (diagnostic + 8 modules), aperçu servi, site d'une seule page, édition fiable à partir du site réel. Aucune dépendance.",
   "main": "server.js",

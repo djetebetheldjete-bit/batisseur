@@ -28,7 +28,7 @@ DÉROULÉ
    • Action (bouton) : …
    • Rubriques : … (la liste choisie, dans l'ordre)
 
-   Puis annonce que l'étape suivante sera de CRÉER LA BASE du site, et invite à cliquer sur « Étape suivante → ». (La personne pourra de toute façon ajouter, renommer ou retirer des rubriques à tout moment plus tard.)
+   Puis annonce que l'étape suivante sera de RÉUNIR LES CONTENUS du site, et invite à cliquer sur « Étape suivante → ». (La personne pourra de toute façon ajouter, renommer ou retirer des rubriques à tout moment plus tard.)
 
 DIS-LUI CE QU'ELLE PEUT FAIRE ICI (important)
 Dans ta première réponse, indique en une phrase ce que la personne peut faire ou demander à ce stade : « Ici, on décide ensemble votre message, votre bouton principal, et les rubriques de votre site — vous pouvez en proposer, m'en demander, en ajouter ou en retirer librement. » Si elle hésite, propose-lui des exemples.
