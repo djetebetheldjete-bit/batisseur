@@ -5143,7 +5143,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  Bâtisseur — parcours complet (v1.7) en marche.`);
+  console.log(`\n  Bâtisseur — parcours complet (v1.8) en marche.`);
   console.log(`  Ouvrez  http://localhost:${PORT}`);
   console.log(`  Étapes : ${STEPS.map((s) => s.label).join("  →  ")}`);
   console.log(`  Modèles : construction ${MODEL} · questions & cours ${MODEL_LIGHT} · premium ${MODEL_PREMIUM}`);

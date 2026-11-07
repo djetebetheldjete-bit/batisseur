@@ -373,6 +373,7 @@
             <button class="certbtn" id="addModBtn" type="button" style="display:none;background:var(--surface);color:var(--accent-deep);border:1px solid var(--accent);" title="Ajouter une fonctionnalité (boutique, rendez-vous, espace membre) à ce projet, sans rien perdre">+ Ajouter un volet</button>
             <button class="certbtn" id="examBtn" type="button" style="display:none;background:#0C5866;color:#fff;">Passer l'examen</button>
             <button class="certbtn" id="certBtn" type="button" style="display:none;">Mon attestation</button>
+            <button class="certbtn" id="rateBtn" type="button" style="display:none;background:var(--warm,#D98A2B);color:#231202;border:none;" title="Donner une note à votre formation">★ Noter la formation</button>
             <button class="nextbtn" id="prevBtn" type="button" style="display:none;background:var(--surface);color:var(--ink);border:1px solid var(--line);" title="Revenir à l'étape précédente">← Précédent</button>
             <button class="nextbtn" id="nextBtn" type="button" disabled>Étape suivante →</button>
           </div>
@@ -580,7 +581,7 @@
       <h3>Espace formateur</h3>
       <p>Inscrivez vos apprenants et attribuez leur session. « Terminé » coupe l'accès à la construction (le projet reste consultable) ; « Actif » le (ré)autorise.</p>
       <div id="adminBody"><div class="aempty">Chargement…</div></div>
-      <div class="row"><button id="adminClose" type="button">Fermer</button><button id="adminRefresh" type="button">↻ Actualiser</button><button id="openVisitsBtn" type="button">Visiteurs</button><button id="openActivityBtn" type="button">Suivi &amp; assiduité</button><button id="openResvBtn" class="primary" type="button">Réservations &amp; paiement</button></div>
+      <div class="row"><button id="adminClose" type="button">Fermer</button><button id="adminRefresh" type="button">↻ Actualiser</button><button id="openVisitsBtn" type="button">Visiteurs</button><button id="openActivityBtn" type="button">Suivi &amp; assiduité</button><button id="openAvisBtn" type="button">★ Avis des apprenants</button><button id="openResvBtn" class="primary" type="button">Réservations &amp; paiement</button></div>
       <div id="adminDirtyNote" style="display:none;font-size:.8rem;color:var(--warm,#D98A2B);margin-top:6px;">Des modifications ont été enregistrées. Cliquez « ↻ Actualiser » pour rafraîchir les compteurs et le classement.</div>
     </div>
   </div>
@@ -3420,6 +3421,38 @@
 
     setInterval(setup, 800);
     if(document.readyState!=="loading") setup(); else document.addEventListener("DOMContentLoaded", setup);
+  })();
+
+  // ===== Notation de la formation (apprenant) + accès aux avis (formateur) =====
+  (function(){
+    function $id(i){ return document.getElementById(i); }
+    // Formateur : ouvrir la page des avis depuis l'Espace formateur, avec la note moyenne.
+    var avis = $id("openAvisBtn");
+    function loadAvisSummary(){
+      if(!avis) return;
+      fetch("/api/admin/feedback").then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+        if(!d) return;
+        avis.textContent = d.count ? ("★ Avis — " + (d.avg || "–") + "/5 (" + d.count + ")") : "★ Avis des apprenants";
+      }).catch(function(){});
+    }
+    if(avis){
+      avis.addEventListener("click", function(){ window.open("/avis", "_blank", "noopener"); });
+      var ab = $id("adminBtn"); if(ab) ab.addEventListener("click", loadAvisSummary);
+      var ar = $id("adminRefresh"); if(ar) ar.addEventListener("click", loadAvisSummary);
+      loadAvisSummary();
+    }
+    // Apprenant : proposer de noter la formation quand le parcours est terminé
+    // (le bouton « Mon attestation » est visible = l'apprenant a fini).
+    var rate = $id("rateBtn"), cert = $id("certBtn");
+    if(rate){
+      rate.addEventListener("click", function(){ window.open("/feedback", "_blank", "noopener"); });
+      setInterval(function(){
+        try{
+          var show = cert && cert.style.display && cert.style.display!=="none";
+          rate.style.display = show ? "inline-block" : "none";
+        }catch(e){}
+      }, 800);
+    }
   })();
   </script>
 </body>

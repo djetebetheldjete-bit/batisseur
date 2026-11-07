@@ -1,4 +1,9 @@
-# Bâtisseur — parcours complet (v1.7)
+# Bâtisseur — parcours complet (v1.8)
+
+> **Notation de la formation par les apprenants (v1.8)**
+> - **Apprenant** : à la **fin de son parcours** (quand « Mon attestation » apparaît), un bouton **« ★ Noter la formation »** l'invite à donner une note de 1 à 5 + commentaires (page `/feedback`, rattachée à sa session).
+> - **Formateur** : dans l'**Espace formateur**, un bouton **« ★ Avis des apprenants »** affiche la **note moyenne** et ouvre la page des retours (`/avis` : moyenne globale, moyenne par session, détail des avis). Le bouton montre directement la moyenne, ex. « ★ Avis — 4,6/5 (7) ».
+> - La brique d'avis (soumission + stockage par session + consultation admin) existait déjà ; v1.8 l'**intègre dans le parcours** (invitation automatique en fin de formation) et dans l'**Espace formateur**.
 
 > **Nouveau modèle — le parcours « Créer un site » suit désormais ce modèle**
 > Le parcours « Créer un site » ne construit plus le site dans Bâtisseur : il sert à **définir et structurer** le projet, puis la construction et la publication se font avec **Claude Code**.
