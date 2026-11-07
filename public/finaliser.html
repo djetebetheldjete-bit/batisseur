@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bâtisseur — Finaliser et publier mon projet</title>
+<meta name="robots" content="noindex">
+<style>
+  :root{ --ink:#0E1B2E; --ink-soft:#4a5a70; --line:#d8dfe9; --surface:#ffffff; --surface-2:#f4f7fb; --bg:#eef1f6; --accent:#147C8C; --accent-deep:#0C5866; --warm:#D98A2B; --good:#2E8B6F; }
+  @media(prefers-color-scheme:dark){ :root{ --ink:#E9EFF6; --ink-soft:#AFBED2; --line:#223449; --surface:#101E30; --surface-2:#15263B; --bg:#0A121D; } }
+  *{box-sizing:border-box}
+  body{ margin:0; font-family:system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; }
+  a{ color:var(--accent-deep); }
+  .wrap{ max-width:900px; margin:0 auto; padding:0 18px 60px; }
+  header.nav{ display:flex; align-items:center; gap:10px; padding:16px 0; }
+  .logo{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#147C8C,#0C5866); color:#fff; font-weight:800; display:grid; place-items:center; }
+  .nav .sp{ margin-left:auto; display:flex; gap:8px; }
+  .btn{ display:inline-block; border:none; border-radius:10px; padding:10px 16px; font-size:1rem; font-weight:600; cursor:pointer; text-decoration:none; }
+  .btn.primary{ background:var(--accent); color:#fff; }
+  .btn.ghost{ background:transparent; border:1px solid var(--line); color:var(--ink); }
+  .btn.warm{ background:var(--warm); color:#231202; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+  h1{ font-size:1.7rem; margin:10px 0 6px; }
+  .lead{ color:var(--ink-soft); margin:0 0 18px; }
+  .pill{ display:inline-block; font-size:.72rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--accent-deep); background:color-mix(in srgb,var(--accent) 14%,transparent); border-radius:999px; padding:3px 9px; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px; margin:14px 0; }
+  .card h2{ font-size:1.15rem; margin:0 0 4px; display:flex; align-items:center; gap:9px; }
+  .card .num{ width:26px; height:26px; border-radius:50%; background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent-deep); font-size:.85rem; font-weight:800; display:grid; place-items:center; flex:0 0 auto; }
+  .muted{ color:var(--ink-soft); font-size:.95rem; }
+  select,input[type=url]{ width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); color:var(--ink); font-size:1rem; }
+  textarea{ width:100%; min-height:200px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); color:var(--ink); font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.85rem; line-height:1.45; white-space:pre; }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .row .btn{ margin-top:8px; }
+  .check{ display:flex; align-items:flex-start; gap:10px; margin:8px 0; }
+  .check input{ margin-top:4px; width:18px; height:18px; flex:0 0 auto; }
+  .note{ font-size:.9rem; color:var(--ink-soft); }
+  .ok{ color:var(--good); font-weight:700; }
+  .err{ color:#C0492F; font-weight:600; }
+  code{ background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:1px 6px; font-size:.9em; }
+  /* Fiche traçable */
+  .fiche{ display:grid; grid-template-columns:1fr; gap:8px; }
+  .fstep{ display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:11px; background:var(--surface-2); }
+  .fstep .dot{ width:22px; height:22px; border-radius:50%; border:2px solid var(--line); flex:0 0 auto; display:grid; place-items:center; font-size:.8rem; color:var(--ink-soft); }
+  .fstep.done .dot{ background:var(--good); border-color:var(--good); color:#fff; }
+  .fstep .t{ font-weight:600; }
+  .fstep .s{ margin-left:auto; font-size:.85rem; color:var(--ink-soft); text-align:right; }
+  .hidden{ display:none; }
+  .steps-intro{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:6px 0 2px; }
+  @media(max-width:680px){ .steps-intro{ grid-template-columns:1fr 1fr; } }
+  .steps-intro div{ background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:.82rem; color:var(--ink-soft); }
+  .steps-intro b{ color:var(--ink); display:block; font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="nav">
+    <div class="logo">B</div><strong>Bâtisseur</strong>
+    <div class="sp">
+      <a class="btn ghost" href="/">← Retour à l'atelier</a>
+    </div>
+  </header>
+
+  <span class="pill">Nouveau modèle</span>
+  <h1>Finaliser et publier mon projet</h1>
+  <p class="lead">Une fois votre projet défini et structuré dans l'atelier, générez ici son <strong>prompt complet</strong>, confiez-le à Claude Code pour la construction et la publication, puis recollez le lien du site en ligne pour obtenir votre certificat.</p>
+
+  <div class="steps-intro" aria-hidden="true">
+    <div><b>1 · Définir</b>dans l'atelier</div>
+    <div><b>2 · Prompt</b>généré ici</div>
+    <div><b>3 · Qualité</b>point de contrôle</div>
+    <div><b>4 · Claude Code</b>construit & publie</div>
+    <div><b>5 · Lien</b>pour le certificat</div>
+  </div>
+
+  <div id="gate" class="card hidden"><p class="muted" id="gateMsg"></p></div>
+
+  <main id="app" class="hidden">
+    <!-- Projet -->
+    <div class="card">
+      <h2><span class="num">1</span> Mon projet</h2>
+      <p class="muted">Choisissez le projet à finaliser.</p>
+      <select id="projSel"></select>
+    </div>
+
+    <!-- Prompt -->
+    <div class="card">
+      <h2><span class="num">2</span> Générer le prompt complet</h2>
+      <p class="muted">Bâtisseur rassemble votre projet (plan, contenus, version de départ) en un seul document, de l'initialisation à la réalisation.</p>
+      <div class="row">
+        <button class="btn primary" id="genBtn">Générer le prompt</button>
+        <button class="btn ghost" id="dlMd" disabled>Télécharger .md</button>
+        <button class="btn ghost" id="dlHtml" disabled>Télécharger .html</button>
+        <button class="btn ghost" id="copyBtn" disabled>Copier</button>
+      </div>
+      <p id="genMsg" class="note"></p>
+      <textarea id="promptOut" class="hidden" readonly spellcheck="false"></textarea>
+    </div>
+
+    <!-- Qualité -->
+    <div class="card">
+      <h2><span class="num">3</span> Point de contrôle qualité</h2>
+      <p class="muted">Avant d'envoyer à Claude Code, vérifiez ces points.</p>
+      <label class="check"><input type="checkbox" class="qc"> L'objectif du site est clair en une phrase.</label>
+      <label class="check"><input type="checkbox" class="qc"> Les rubriques et le contenu principal sont présents.</label>
+      <label class="check"><input type="checkbox" class="qc"> Au moins un moyen de contact réel est indiqué (ou repéré comme à compléter).</label>
+      <label class="check"><input type="checkbox" class="qc"> Aucune donnée n'a été inventée.</label>
+      <label class="check"><input type="checkbox" class="qc"> Le site s'affichera correctement sur téléphone.</label>
+    </div>
+
+    <!-- Claude Code -->
+    <div class="card">
+      <h2><span class="num">4</span> Construire et publier avec Claude Code</h2>
+      <p class="muted">Confiez le prompt téléchargé à Claude Code. La construction et la publication se font via le dépôt GitHub de Bâtisseur (chaque apprenant utilise son propre compte GitHub).</p>
+      <p class="note" id="ghLine"></p>
+    </div>
+
+    <!-- Lien publié -->
+    <div class="card">
+      <h2><span class="num">5</span> Recoller le lien du site publié</h2>
+      <p class="muted">Collez l'adresse du site en ligne : elle est enregistrée pour votre certificat.</p>
+      <input type="url" id="pubUrl" placeholder="https://…">
+      <div class="row"><button class="btn warm" id="saveLink">Enregistrer le lien</button></div>
+      <p id="linkMsg" class="note"></p>
+    </div>
+
+    <!-- Fiche traçable -->
+    <div class="card">
+      <h2>Fiche projet</h2>
+      <p class="muted">Le parcours complet de votre projet, en un coup d'œil.</p>
+      <div class="fiche" id="fiche"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var state = { projects: [], sel: null, promptText: "", generated: false, published: null };
+  var $ = function(id){ return document.getElementById(id); };
+  function esc(s){ var d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
+  function api(url, opts){ return fetch(url, Object.assign({ headers:{ "content-type":"application/json" } }, opts||{})).then(function(r){ return r.json().then(function(j){ return { ok:r.ok, status:r.status, data:j }; }); }); }
+  function qs(k){ try{ return new URL(location.href).searchParams.get(k); }catch(e){ return null; } }
+
+  function showGate(msg){ $("gate").classList.remove("hidden"); $("gateMsg").innerHTML = msg; $("app").classList.add("hidden"); }
+
+  function currentProject(){ return state.projects.find(function(p){ return p.id === state.sel; }) || null; }
+
+  function renderFiche(){
+    var p = currentProject();
+    var steps = [
+      { t:"Définition du projet", done: !!p, s: p ? (p.title||p.projectName||"projet") : "" },
+      { t:"Prompt généré (MD / HTML)", done: state.generated, s: state.generated ? "prêt" : "à générer" },
+      { t:"Construit & publié (Claude Code · GitHub)", done: !!state.published, s: state.published ? "fait" : "en cours" },
+      { t:"Lien du site publié", done: !!state.published, s: state.published ? "enregistré" : "à coller" },
+      { t:"Certificat", done: !!state.published, s: state.published ? "éligible" : "" }
+    ];
+    $("fiche").innerHTML = steps.map(function(x){
+      return '<div class="fstep'+(x.done?' done':'')+'"><div class="dot">'+(x.done?'✓':'')+'</div>'+
+             '<div class="t">'+esc(x.t)+'</div><div class="s">'+esc(x.s)+'</div></div>';
+    }).join("");
+  }
+
+  function selectProject(id){
+    state.sel = id; state.generated = false; state.promptText = "";
+    var p = currentProject();
+    state.published = p && p.publishedUrl ? p.publishedUrl : null;
+    $("promptOut").classList.add("hidden"); $("promptOut").value = "";
+    $("dlMd").disabled = $("dlHtml").disabled = $("copyBtn").disabled = true;
+    $("genMsg").textContent = "";
+    $("pubUrl").value = state.published || "";
+    $("linkMsg").textContent = "";
+    renderFiche();
+  }
+
+  function download(name, text, mime){
+    var blob = new Blob([text], { type: mime });
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 200);
+  }
+  function htmlWrap(md, title){
+    return "<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>"+esc(title)+"</title></head><body><pre style=\"white-space:pre-wrap;font-family:ui-monospace,Consolas,monospace;max-width:820px;margin:24px auto;padding:0 16px;line-height:1.5\">"+esc(md)+"</pre></body></html>";
+  }
+
+  // --- init ---
+  api("/api/auth/me").then(function(r){
+    if(!r.ok || !r.data || !r.data.user){ showGate('Vous devez être connecté pour finaliser un projet. <a href="/">Ouvrir l\'atelier et se connecter →</a>'); return; }
+    return api("/api/projects").then(function(rp){
+      if(!rp.ok){ showGate("Impossible de charger vos projets pour le moment."); return; }
+      // on garde les projets « site » (pas les parcours de code)
+      state.projects = (rp.data.projects||[]).filter(function(p){ return p.track !== "code"; });
+      if(!state.projects.length){ showGate('Vous n\'avez pas encore de projet. <a href="/">Construisez-en un dans l\'atelier →</a>'); return; }
+      var sel = $("projSel");
+      sel.innerHTML = state.projects.map(function(p){
+        var label = (p.title || p.projectName || "Projet") + (p.publishedUrl ? "  ✓ publié" : "");
+        return '<option value="'+esc(p.id)+'">'+esc(label)+'</option>';
+      }).join("");
+      $("app").classList.remove("hidden");
+      var wanted = qs("id");
+      if(wanted && state.projects.some(function(p){ return p.id===wanted; })) sel.value = wanted;
+      sel.addEventListener("change", function(){ selectProject(sel.value); });
+      selectProject(sel.value);
+    });
+  }).catch(function(){ showGate("Une erreur est survenue. Réessayez plus tard."); });
+
+  // --- génération du prompt ---
+  $("genBtn").addEventListener("click", function(){
+    if(!state.sel) return;
+    $("genMsg").textContent = "Génération…";
+    api("/api/project/prompt", { method:"POST", body: JSON.stringify({ id: state.sel }) }).then(function(r){
+      if(!r.ok){ $("genMsg").innerHTML = '<span class="err">'+esc((r.data&&r.data.error)||"Échec de la génération.")+'</span>'; return; }
+      state.promptText = r.data.markdown || "";
+      state.generated = true;
+      state.filenameBase = r.data.filenameBase || "prompt-projet";
+      var out = $("promptOut"); out.value = state.promptText; out.classList.remove("hidden");
+      $("dlMd").disabled = $("dlHtml").disabled = $("copyBtn").disabled = false;
+      $("genMsg").innerHTML = '<span class="ok">Prompt prêt.</span> ' + (r.data.hasSite ? "Il inclut votre version de départ." : "");
+      // lien du dépôt GitHub
+      var gh = r.data.github;
+      $("ghLine").innerHTML = gh ? ('Dépôt GitHub de Bâtisseur : <a href="'+esc(gh)+'" target="_blank" rel="noopener">'+esc(gh)+'</a>')
+                                 : 'Le lien du dépôt GitHub de Bâtisseur sera communiqué par le formateur.';
+      renderFiche();
+    }).catch(function(){ $("genMsg").innerHTML = '<span class="err">Erreur réseau.</span>'; });
+  });
+  $("dlMd").addEventListener("click", function(){ if(state.promptText) download((state.filenameBase||"prompt-projet")+".md", state.promptText, "text/markdown;charset=utf-8"); });
+  $("dlHtml").addEventListener("click", function(){ if(state.promptText) download((state.filenameBase||"prompt-projet")+".html", htmlWrap(state.promptText, state.filenameBase||"Prompt de projet"), "text/html;charset=utf-8"); });
+  $("copyBtn").addEventListener("click", function(){ if(!state.promptText) return; var o=$("promptOut"); o.select(); try{ document.execCommand("copy"); }catch(e){} $("genMsg").innerHTML='<span class="ok">Copié.</span>'; });
+
+  // --- enregistrement du lien publié ---
+  $("saveLink").addEventListener("click", function(){
+    if(!state.sel) return;
+    var url = ($("pubUrl").value||"").trim();
+    $("linkMsg").textContent = "Enregistrement…";
+    api("/api/project/published-link", { method:"POST", body: JSON.stringify({ id: state.sel, url: url }) }).then(function(r){
+      if(!r.ok){ $("linkMsg").innerHTML = '<span class="err">'+esc((r.data&&r.data.error)||"Échec.")+'</span>'; return; }
+      state.published = r.data.publishedUrl || null;
+      var p = currentProject(); if(p) p.publishedUrl = state.published;
+      $("linkMsg").innerHTML = state.published ? '<span class="ok">Lien enregistré.</span>' : "Lien retiré.";
+      renderFiche();
+    }).catch(function(){ $("linkMsg").innerHTML = '<span class="err">Erreur réseau.</span>'; });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,4 +1,17 @@
-# Bâtisseur — parcours complet (v1.5)
+# Bâtisseur — parcours complet (v1.6)
+
+> **Nouveau modèle — Finaliser et publier le projet (page `/finaliser`)**
+> Une fois le projet défini et structuré dans l'atelier, l'apprenant ouvre **`/finaliser`** pour :
+> 1) **générer automatiquement le prompt complet** du projet (Markdown, téléchargeable en `.md` ou `.html`),
+>    assemblé à partir de son plan, de ses contenus et de la version déjà construite ;
+> 2) passer un **point de contrôle qualité** (checklist) avant l'envoi ;
+> 3) **construire et publier avec Claude Code** via le **dépôt GitHub de Bâtisseur**
+>    (chaque apprenant utilise son propre compte GitHub) ;
+> 4) **recoller le lien du site publié** (enregistré pour le certificat) ;
+> 5) suivre une **fiche projet traçable** (définition → prompt → GitHub → lien → certificat).
+> Ajout **non destructif** : la publication Netlify existante reste disponible en parallèle, rien de l'existant n'est modifié.
+> Deux routes API ajoutées (`POST /api/project/prompt`, `POST /api/project/published-link`) et une page `/finaliser`.
+> Lien du dépôt affiché aux apprenants via la variable d'environnement **`BATISSEUR_GITHUB`** (facultative).
 
 > **Page d'accueil publique & gestion des réservations**
 > Nouvelle page vitrine à l'adresse **`/accueil`** : elle présente les deux formations,

@@ -72,6 +72,9 @@ const BUILD_TOKENS = parseInt(process.env.BUILD_TOKENS, 10) || 12000;
 const PORT = process.env.PORT || 3000;
 // Jeton d'hébergement (Palier 2) : la plateforme publie les sites des apprenants à leur place.
 const NETLIFY_TOKEN = process.env.NETLIFY_TOKEN;
+// Nouveau modèle Bâtisseur : dépôt GitHub commun où les projets sont construits/publiés
+// avec Claude Code. Facultatif — sert seulement à afficher le lien du dépôt aux apprenants.
+const BATISSEUR_GITHUB = (process.env.BATISSEUR_GITHUB || "").trim();
 // Paiement en ligne (Wave) — mode « API centralisée » optionnel. La clé secrète reste
 // UNIQUEMENT ici (variable d'environnement), jamais dans le chat ni dans le code des sites.
 // Sans cette clé, seul le mode « lien de paiement par apprenant » est disponible.
@@ -4915,6 +4918,121 @@ async function handleProjectExplainAsk(req, res) {
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
+// ============================================================
+// NOUVEAU MODÈLE BÂTISSEUR — finaliser le projet
+// L'apprenant définit et structure son projet dans le parcours ; ici on en
+// génère le PROMPT COMPLET (Markdown), à confier à Claude Code pour la
+// construction et la publication (dépôt GitHub de Bâtisseur), puis on recolle
+// le lien du site publié (pour le certificat). Ajout non destructif : rien de
+// l'existant n'est modifié ; la publication Netlify reste disponible en parallèle.
+// ============================================================
+function fp_extractRecaps(messages) {
+  const keys = ["PLAN DE MON SITE", "MON DOSSIER DE CONTENUS"];
+  const out = [];
+  (messages || []).forEach((m) => {
+    const t = String((m && m.content) || "");
+    keys.forEach((k) => { const i = t.indexOf(k); if (i >= 0) out.push(t.slice(i).trim().slice(0, 1600)); });
+  });
+  return out;
+}
+function fp_sitePages(html) {
+  const pages = []; const re = /data-bat-title="([^"]+)"/gi; let m;
+  while ((m = re.exec(html || ""))) { if (pages.indexOf(m[1]) < 0) pages.push(m[1]); }
+  return pages;
+}
+function fp_slug(s) {
+  return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "projet";
+}
+function fp_buildPrompt(conv, cleanHtml) {
+  const name = (conv.projectName || "").trim() || "Mon projet";
+  const recaps = fp_extractRecaps(conv.messages);
+  const pages = fp_sitePages(cleanHtml);
+  const L = [];
+  L.push("# Prompt de projet — " + name);
+  L.push("");
+  L.push("> Document généré automatiquement par Bâtisseur. Il décrit le projet **de son initialisation à sa réalisation**, pour être confié à Claude Code (construction puis publication via le dépôt GitHub de Bâtisseur).");
+  L.push("");
+  L.push("## Rôle");
+  L.push("Tu es un développeur qui construit et publie ce projet web à partir de la définition ci-dessous. Si une « Version de départ » est fournie, pars d'elle et améliore-la sans rien casser.");
+  L.push("");
+  L.push("## Contraintes");
+  L.push("- Un site web simple, clair, responsive (mobile d'abord) et accessible.");
+  L.push("- HTML / CSS / JavaScript autonomes ; pas de dépendance inutile ; images légères.");
+  L.push("- N'invente aucune information de contact ni aucun chiffre : n'utilise que ce qui est fourni ci-dessous, et laisse un repère clair là où une donnée manque.");
+  L.push("- Conserve l'esprit et le contenu voulus par l'apprenant ; publie le résultat et fournis le lien en ligne.");
+  L.push("");
+  L.push("## Définition du projet");
+  L.push("- **Nom** : " + name);
+  if (pages.length) L.push("- **Pages / rubriques** : " + pages.join(", "));
+  L.push("");
+  if (recaps.length) {
+    L.push("### Plan et contenus (définis avec l'apprenant)");
+    L.push("");
+    recaps.forEach((r) => { L.push(r); L.push(""); });
+  } else {
+    L.push("_(Le plan détaillé n'a pas été retrouvé automatiquement : complète-le à partir de la version de départ ci-dessous.)_");
+    L.push("");
+  }
+  if (cleanHtml) {
+    const CAP = 60000;
+    const body = cleanHtml.length > CAP ? (cleanHtml.slice(0, CAP) + "\n<!-- … suite tronquée … -->") : cleanHtml;
+    L.push("## Version de départ (déjà construite dans Bâtisseur)");
+    L.push("");
+    L.push("```html");
+    L.push(body);
+    L.push("```");
+    L.push("");
+  }
+  L.push("## Publication");
+  L.push("1. Construis le projet.");
+  L.push("2. Publie-le via le dépôt GitHub de Bâtisseur" + (BATISSEUR_GITHUB ? (" : " + BATISSEUR_GITHUB) : "") + ".");
+  L.push("3. Donne le **lien du site publié** : il sera recollé dans Bâtisseur pour obtenir le certificat.");
+  L.push("");
+  L.push("## Point de contrôle qualité (avant d'envoyer)");
+  L.push("- [ ] L'objectif du site est clair en une phrase.");
+  L.push("- [ ] Les rubriques et le contenu principal sont présents.");
+  L.push("- [ ] Au moins un moyen de contact réel est indiqué (ou repéré comme à compléter).");
+  L.push("- [ ] Aucune donnée n'a été inventée.");
+  L.push("- [ ] Le site s'affiche correctement sur téléphone.");
+  L.push("");
+  return L.join("\n");
+}
+
+// POST /api/project/prompt { id } — génère le prompt complet du projet (Markdown).
+async function handleProjectPrompt(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) {}
+    const conv = await loadConv(p.id);
+    if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+    const user = await currentUser(req);
+    if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    if (conv.userId && !canView(user)) return sendJson(res, 403, { error: "Accès non autorisé pour le moment." });
+    let html = null; try { html = stripKit(await readSite(conv.id)); } catch (e) { html = null; }
+    const markdown = fp_buildPrompt(conv, html || "");
+    sendJson(res, 200, { markdown, projectName: conv.projectName || null, filenameBase: "prompt-" + fp_slug(conv.projectName || conv.id), hasSite: !!html, github: BATISSEUR_GITHUB || null });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
+// POST /api/project/published-link { id, url } — l'apprenant recolle le lien du site publié.
+async function handleProjectPublishedLink(req, res) {
+  try {
+    let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    const conv = await loadConv(p.id);
+    if (!conv) return sendJson(res, 404, { error: "Projet introuvable." });
+    const user = await currentUser(req);
+    if (!owns(user, conv)) return sendJson(res, 403, { error: "Ce projet appartient à un autre compte." });
+    if (conv.userId && !canView(user)) return sendJson(res, 403, { error: "Accès non autorisé pour le moment." });
+    const url = String(p.url || "").trim();
+    if (url) {
+      if (!/^https:\/\//i.test(url) || url.length > 400) return sendJson(res, 400, { error: "Lien invalide : indiquez une adresse commençant par https:// ." });
+      conv.publishedUrl = url;
+    } else { delete conv.publishedUrl; }
+    conv.updatedAt = new Date().toISOString();
+    await saveConv(conv);
+    sendJson(res, 200, { ok: true, publishedUrl: conv.publishedUrl || null });
+  } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS" && req.url.startsWith("/api/app/")) { res.writeHead(204, corsHeaders()); return res.end(); }
   if (req.method === "GET") { logVisit(req); }   // journal des visites (pages seulement, non bloquant)
@@ -4928,6 +5046,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/project/image") return handleProjectImageSet(req, res);
   if (req.method === "POST" && req.url === "/api/publish") return handlePublish(req, res);
   if (req.method === "POST" && req.url === "/api/admin/publish") return handleAdminPublish(req, res);
+  if (req.method === "POST" && req.url === "/api/project/prompt") return handleProjectPrompt(req, res);
+  if (req.method === "POST" && req.url === "/api/project/published-link") return handleProjectPublishedLink(req, res);
   if (req.method === "POST" && req.url === "/api/auth/register") return handleRegister(req, res);
   if (req.method === "POST" && req.url === "/api/auth/login") return handleLogin(req, res);
   if (req.method === "POST" && req.url === "/api/auth/logout") return handleLogout(req, res);
@@ -5010,6 +5130,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/api/cron/maintenance")) return handleCronMaintenance(req, res);
   if (req.method === "GET" && (req.url === "/reserver" || req.url.startsWith("/reserver?"))) return serveStatic(Object.assign(req, { url: "/reserver.html" }), res);
   if (req.method === "GET" && (req.url === "/accueil" || req.url.startsWith("/accueil?"))) return serveStatic(Object.assign(req, { url: "/accueil.html" }), res);
+  if (req.method === "GET" && (req.url === "/finaliser" || req.url.startsWith("/finaliser?"))) return serveStatic(Object.assign(req, { url: "/finaliser.html" }), res);
   if (req.method === "GET" && (req.url === "/reset" || req.url.startsWith("/reset?"))) return serveStatic(Object.assign(req, { url: "/reset.html" }), res);
   if (req.method === "GET" && (req.url === "/mon-programme" || req.url.startsWith("/mon-programme?"))) return handleLearnerChrono(req, res);
   if (req.method === "POST" && req.url === "/api/feedback") return handleFeedbackSubmit(req, res);
@@ -5024,7 +5145,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  Bâtisseur — parcours complet (v1.5) en marche.`);
+  console.log(`\n  Bâtisseur — parcours complet (v1.6) en marche.`);
   console.log(`  Ouvrez  http://localhost:${PORT}`);
   console.log(`  Étapes : ${STEPS.map((s) => s.label).join("  →  ")}`);
   console.log(`  Modèles : construction ${MODEL} · questions & cours ${MODEL_LIGHT} · premium ${MODEL_PREMIUM}`);
