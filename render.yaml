@@ -12,6 +12,6 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false            # à saisir dans le tableau de bord Render (jamais dans le code)
       - key: ANTHROPIC_MODEL
-        value: claude-sonnet-5 # la variante par défaut ; modifiable ensuite
+        value: claude-sonnet-5-5 # la variante par défaut ; modifiable ensuite
       - key: ADMIN_EMAILS
         sync: false            # email(s) du/des formateur(s), séparés par des virgules

@@ -230,7 +230,7 @@ le tableau de bord de l'hébergeur.
 2. Sur **render.com**, connectez-vous, puis **New + → Blueprint** et choisissez votre
    dépôt : Render lit `render.yaml` et prépare le service.
 3. Dans les réglages, renseignez la variable **`ANTHROPIC_API_KEY`** (votre clé).
-   Laissez `ANTHROPIC_MODEL` sur `claude-sonnet-5` (modifiable ensuite).
+   Laissez `ANTHROPIC_MODEL` sur `claude-sonnet-5-5` (modifiable ensuite).
 4. Lancez le déploiement. Au bout d'une minute, vous obtenez une adresse publique
    (ex. `https://batisseur.onrender.com`) : la plateforme est en ligne. 🎉
 
@@ -477,7 +477,7 @@ sont mises « en attente » automatiquement par l'application.)
   > vraiment plus de débit, il faut monter de palier d'usage, ou des clés de comptes distincts.
 - **Modèle allégé par étape** : `ANTHROPIC_MODEL_LIGHT` (optionnel) sert pour les étapes de
   **discussion** (moins coûteux), tandis que `ANTHROPIC_MODEL` reste pour la **construction** du
-  site. Par défaut les deux sont identiques. Ex. : `ANTHROPIC_MODEL_LIGHT=claude-haiku-4-5-…`.
+  site. Par défaut les deux sont identiques. Ex. : `ANTHROPIC_MODEL_LIGHT=claude-haiku-5-5`.
 
 ## Sessions de formation (dates, places, réservation)
 
