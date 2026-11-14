@@ -14,143 +14,269 @@
 <meta property="og:image" content="https://batisseur.onrender.com/batisseur-medaille.svg">
 <meta name="twitter:card" content="summary">
 <meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0E1B2E">
 <style>
-  :root{ --ink:#0E1B2E; --ink-soft:#4a5a70; --line:#d8dfe9; --surface:#ffffff; --surface-2:#f4f7fb; --bg:#eef1f6; --accent:#147C8C; --accent-deep:#0C5866; --warm:#D98A2B; --good:#2E8B6F; }
-  @media(prefers-color-scheme:dark){ :root{ --ink:#E9EFF6; --ink-soft:#AFBED2; --line:#223449; --surface:#101E30; --surface-2:#15263B; --bg:#0A121D; } }
-  *{box-sizing:border-box}
-  body{ margin:0; font-family:system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; }
-  a{ color:var(--accent-deep); }
-  .wrap{ max-width:960px; margin:0 auto; padding:0 18px; }
-  header.nav{ display:flex; align-items:center; gap:10px; padding:16px 0; }
-  .logo{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#147C8C,#0C5866); color:#fff; font-weight:800; display:grid; place-items:center; }
-  .nav .sp{ margin-left:auto; display:flex; gap:8px; }
-  .btn{ display:inline-block; border:none; border-radius:10px; padding:11px 18px; font-size:1rem; font-weight:600; cursor:pointer; text-decoration:none; }
-  .btn.primary{ background:var(--accent); color:#fff; }
-  .btn.ghost{ background:transparent; border:1px solid var(--line); color:var(--ink); }
-  .btn.warm{ background:var(--warm); color:#231202; }
-  .hero{ padding:34px 0 8px; }
-  .hero h1{ font-size:2rem; line-height:1.2; margin:6px 0 12px; }
-  .hero p.lead{ color:var(--ink-soft); font-size:1.08rem; max-width:62ch; margin:0 0 20px; }
-  .cta{ display:flex; gap:10px; flex-wrap:wrap; }
-  section{ padding:26px 0; }
-  h2{ font-size:1.3rem; margin:0 0 14px; }
-  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  @media(max-width:680px){ .grid{ grid-template-columns:1fr; } .hero h1{ font-size:1.6rem; } }
-  .card{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px; }
-  .card h3{ margin:0 0 6px; font-size:1.1rem; }
-  .card ul{ margin:8px 0 0; padding-left:18px; color:var(--ink-soft); }
-  .card ul li{ margin:3px 0; }
-  .pill{ display:inline-block; font-size:.75rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--accent-deep); background:color-mix(in srgb,var(--accent) 14%,transparent); border-radius:999px; padding:3px 9px; margin-bottom:8px; }
-  .pill.warm{ color:var(--warm); background:color-mix(in srgb,var(--warm) 16%,transparent); }
-  .sessions{ background:var(--surface-2); border:1px solid var(--line); border-radius:14px; padding:16px; }
-  .srow{ display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--line); }
-  .srow:last-child{ border-bottom:none; }
-  .srow .d{ font-weight:600; }
-  .srow .r{ margin-left:auto; color:var(--ink-soft); font-size:.92rem; }
-  .price{ color:var(--accent-deep); font-weight:700; }
-  .steps{ counter-reset:s; list-style:none; padding:0; margin:0; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  @media(max-width:680px){ .steps{ grid-template-columns:1fr; } }
-  .steps li{ position:relative; padding:10px 12px 10px 40px; background:var(--surface); border:1px solid var(--line); border-radius:11px; color:var(--ink-soft); }
-  .steps li:before{ counter-increment:s; content:counter(s); position:absolute; left:12px; top:11px; width:20px; height:20px; border-radius:50%; background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent-deep); font-size:.75rem; font-weight:700; display:grid; place-items:center; }
-  footer{ padding:26px 0 46px; color:var(--ink-soft); font-size:.85rem; border-top:1px solid var(--line); margin-top:12px; }
-  /* ===== Formes flottantes (arrière-plan animé, léger — aucune image) ===== */
-  .wrap{ position:relative; z-index:1; }
-  .bg-floaties{ position:fixed; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
-  .bg-floaties .fl{ position:absolute; will-change:transform; animation:floatDrift var(--d,30s) ease-in-out infinite; animation-delay:var(--dl,0s); }
-  .bg-floaties .fl.sq,.bg-floaties .fl.card{ box-shadow:0 10px 30px rgba(20,40,60,.06); }
-  .bg-floaties .fl.ring{ background:transparent!important; border:12px solid currentColor; border-radius:50%; }
-  @keyframes floatDrift{
-    0%{ transform:translate(0,0) rotate(var(--r,0deg)) scale(1); }
-    25%{ transform:translate(var(--mx,60px),var(--my,-70px)) rotate(calc(var(--r,0deg) + var(--rr,24deg))) scale(1.08); }
-    50%{ transform:translate(calc(var(--mx,60px) * -0.6),calc(var(--my,-70px) * -0.45)) rotate(calc(var(--r,0deg) - var(--rr,24deg))) scale(.93); }
-    75%{ transform:translate(calc(var(--my,-70px) * 0.8),calc(var(--mx,60px) * -0.7)) rotate(calc(var(--r,0deg) + var(--rr,24deg))) scale(1.05); }
-    100%{ transform:translate(0,0) rotate(var(--r,0deg)) scale(1); }
+  /* Mise en page : barre du haut fixe · héros en 2 colonnes (texte + aperçu de l'atelier) ·
+     formations · sessions · étapes · appel final. Une seule colonne sous 760 px. */
+  :root{
+    --ink:#0E1B2E; --ink-soft:#4a5a70; --ink-faint:#6B7A90; --line:#d8dfe9;
+    --surface:#ffffff; --surface-2:#f4f7fb; --bg:#eef1f6;
+    --accent:#147C8C; --accent-deep:#0C5866; --accent-tint:#e2eff1;
+    --warm:#D98A2B; --warm-tint:#f6ecd9; --good:#2E8B6F; --nav:#0E1B2E;
+    --shadow:0 18px 44px rgba(14,27,46,.10); --shadow-sm:0 4px 14px rgba(14,27,46,.06);
   }
-  @media(prefers-reduced-motion:reduce){ .bg-floaties .fl{ animation:none; } }
-  @media(max-width:680px){ .bg-floaties .fl.hide-sm{ display:none; } }
+  @media(prefers-color-scheme:dark){ :root{
+    --ink:#E9EFF6; --ink-soft:#AFBED2; --ink-faint:#8799B0; --line:#223449;
+    --surface:#101E30; --surface-2:#15263B; --bg:#0A121D;
+    --accent:#3FA9BA; --accent-deep:#7CCBD8; --accent-tint:#12303a; --warm-tint:#33250f;
+    --shadow:0 18px 44px rgba(0,0,0,.45); --shadow-sm:0 4px 14px rgba(0,0,0,.35);
+  } }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{ margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; -webkit-font-smoothing:antialiased; }
+  a{ color:var(--accent-deep); }
+  h1,h2,h3{ text-wrap:balance; letter-spacing:-.01em; }
+  .wrap{ max-width:1080px; margin:0 auto; padding:0 20px; }
+  .sr{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+  /* --- Barre du haut --- */
+  .navbar{ position:sticky; top:0; z-index:20; background:color-mix(in srgb,var(--bg) 88%,transparent); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-bottom:1px solid transparent; }
+  .navbar.scrolled{ border-bottom-color:var(--line); }
+  .nav{ display:flex; align-items:center; gap:10px; padding:12px 0; }
+  .brand{ display:flex; align-items:center; gap:10px; font-weight:700; font-size:1.05rem; color:var(--ink); text-decoration:none; }
+  .logo{ width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#147C8C,#0C5866); color:#fff; font-weight:800; display:grid; place-items:center; flex:none; }
+  .nav .sp{ margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; border:1px solid transparent; border-radius:11px; padding:11px 18px; font-size:1rem; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap; transition:transform .12s ease, box-shadow .12s ease, background .12s ease; }
+  .btn:focus-visible{ outline:3px solid color-mix(in srgb,var(--accent) 55%,transparent); outline-offset:2px; }
+  .btn.primary{ background:var(--accent); color:#fff; box-shadow:0 8px 18px color-mix(in srgb,var(--accent) 30%,transparent); }
+  .btn.primary:hover{ background:var(--accent-deep); transform:translateY(-1px); }
+  @media(prefers-color-scheme:dark){ .btn.primary{ color:#04161a; } .btn.primary:hover{ color:#04161a; } }
+  .btn.ghost{ background:var(--surface); border-color:var(--line); color:var(--ink); }
+  .btn.ghost:hover{ border-color:var(--accent); }
+  .btn.warm{ background:var(--warm); color:#231202; }
+  .btn.warm:hover{ transform:translateY(-1px); }
+  .btn.sm{ padding:9px 14px; font-size:.95rem; }
+  .btn.lg{ padding:14px 22px; font-size:1.05rem; }
+
+  /* --- Héros --- */
+  .hero{ display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr); gap:44px; align-items:center; padding:44px 0 34px; }
+  .pill{ display:inline-block; font-size:.74rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--accent-deep); background:var(--accent-tint); border-radius:999px; padding:5px 11px; }
+  .pill.warm{ color:#8a5512; background:var(--warm-tint); }
+  @media(prefers-color-scheme:dark){ .pill.warm{ color:#E9B66B; } }
+  .hero h1{ font-size:clamp(2rem,4.6vw,3.05rem); line-height:1.1; margin:16px 0 14px; letter-spacing:-.025em; }
+  .hero h1 em{ font-style:normal; color:var(--accent); }
+  .hero p.lead{ color:var(--ink-soft); font-size:1.1rem; max-width:54ch; margin:0 0 22px; }
+  .cta{ display:flex; gap:10px; flex-wrap:wrap; }
+  .facts{ display:flex; flex-wrap:wrap; gap:8px 18px; margin:18px 0 0; padding:0; list-style:none; color:var(--ink-soft); font-size:.95rem; }
+  .facts li{ display:flex; align-items:center; gap:7px; }
+  .facts svg{ flex:none; color:var(--good); }
+
+  /* Aperçu de l'atelier (décor, sans image) */
+  .mock{ background:var(--surface); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); overflow:hidden; }
+  .mock-bar{ display:flex; align-items:center; gap:6px; padding:10px 14px; background:var(--nav); }
+  .mock-bar i{ width:9px; height:9px; border-radius:50%; background:#3a5372; }
+  .mock-bar span{ margin-left:8px; color:#9fb3c9; font-size:.74rem; letter-spacing:.06em; text-transform:uppercase; font-weight:600; }
+  .mock-body{ display:grid; grid-template-columns:1fr 1fr; min-height:300px; }
+  .mock-chat{ padding:16px; display:flex; flex-direction:column; gap:10px; border-right:1px solid var(--line); background:var(--surface); }
+  .bub{ font-size:.86rem; line-height:1.45; padding:9px 12px; border-radius:13px; max-width:92%; }
+  .bub.me{ align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
+  @media(prefers-color-scheme:dark){ .bub.me{ color:#04161a; } }
+  .bub.ai{ background:var(--surface-2); border:1px solid var(--line); color:var(--ink); border-bottom-left-radius:4px; }
+  .mock-input{ margin-top:auto; display:flex; gap:8px; align-items:center; border:1px solid var(--line); border-radius:11px; padding:8px 10px; color:var(--ink-faint); font-size:.82rem; }
+  .mock-input b{ margin-left:auto; background:var(--accent); color:#fff; border-radius:8px; padding:4px 9px; font-size:.76rem; }
+  .mock-site{ padding:14px; background:var(--surface-2); display:flex; flex-direction:column; gap:9px; }
+  .ms-top{ display:flex; align-items:center; gap:6px; }
+  .ms-top b{ width:22px; height:22px; border-radius:7px; background:var(--warm); }
+  .ms-top u{ height:7px; border-radius:4px; background:var(--line); flex:0 0 26px; }
+  .ms-hero{ border-radius:12px; padding:14px; background:linear-gradient(135deg,#147C8C,#0C5866); color:#fff; }
+  .ms-hero strong{ display:block; font-size:.95rem; line-height:1.25; }
+  .ms-hero small{ display:block; opacity:.85; font-size:.72rem; margin-top:4px; }
+  .ms-hero em{ display:inline-block; margin-top:10px; background:var(--warm); color:#231202; font-style:normal; font-weight:700; font-size:.7rem; border-radius:7px; padding:5px 9px; }
+  .ms-cards{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .ms-cards div{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:9px; }
+  .ms-cards div u{ display:block; height:6px; border-radius:4px; background:var(--line); margin-top:6px; }
+  .ms-cards div u:first-child{ width:60%; background:color-mix(in srgb,var(--accent) 45%,var(--line)); margin-top:0; }
+  .ms-tag{ align-self:flex-start; font-size:.68rem; font-weight:700; color:var(--good); background:color-mix(in srgb,var(--good) 14%,transparent); border-radius:999px; padding:3px 9px; }
+
+  /* --- Sections --- */
+  section{ padding:34px 0; }
+  .sec-head{ margin:0 0 18px; }
+  .sec-head h2{ font-size:clamp(1.35rem,2.6vw,1.75rem); margin:0 0 4px; }
+  .sec-head p{ margin:0; color:var(--ink-soft); }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:var(--shadow-sm); }
+  .card .ic{ width:44px; height:44px; border-radius:12px; display:grid; place-items:center; background:var(--accent-tint); color:var(--accent-deep); margin-bottom:12px; }
+  .card.alt .ic{ background:var(--warm-tint); color:#8a5512; }
+  @media(prefers-color-scheme:dark){ .card.alt .ic{ color:#E9B66B; } }
+  .card h3{ margin:10px 0 6px; font-size:1.15rem; }
+  .card p{ color:var(--ink-soft); margin:0; }
+  .ticks{ list-style:none; margin:14px 0 0; padding:0; color:var(--ink-soft); display:grid; gap:8px; }
+  .ticks li{ display:flex; gap:9px; align-items:flex-start; }
+  .ticks svg{ flex:none; margin-top:4px; color:var(--good); }
+
+  .sessions{ background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:6px 18px; box-shadow:var(--shadow-sm); }
+  .sessions > p{ padding:14px 0; }
+  .srow{ display:flex; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .srow:last-child{ border-bottom:none; }
+  .srow .d{ font-weight:650; }
+  .srow .r{ margin-left:auto; color:var(--ink-soft); font-size:.94rem; }
+  .srow .full{ color:#b3412f; font-weight:600; }
+  .price{ color:var(--accent-deep); font-weight:700; }
+
+  .steps{ counter-reset:s; list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .steps li{ position:relative; padding:18px 16px 16px; background:var(--surface); border:1px solid var(--line); border-radius:14px; color:var(--ink-soft); font-size:.97rem; }
+  .steps li:before{ counter-increment:s; content:counter(s); display:grid; place-items:center; width:30px; height:30px; border-radius:50%; background:var(--accent); color:#fff; font-size:.9rem; font-weight:700; margin-bottom:10px; }
+  @media(prefers-color-scheme:dark){ .steps li:before{ color:#04161a; } }
+  .steps li strong{ display:block; color:var(--ink); margin-bottom:2px; }
+
+  .band{ background:linear-gradient(135deg,#147C8C,#0C5866); color:#fff; border-radius:20px; padding:30px 28px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; box-shadow:var(--shadow); }
+  .band h2{ margin:0 0 4px; font-size:clamp(1.25rem,2.4vw,1.6rem); }
+  .band p{ margin:0; opacity:.9; }
+  .band .btn{ margin-left:auto; }
+
+  footer{ padding:26px 0 46px; color:var(--ink-soft); font-size:.88rem; border-top:1px solid var(--line); margin-top:34px; display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; }
+  footer a{ margin-left:auto; color:var(--accent-deep); text-decoration:none; font-weight:600; }
+
+  /* --- Téléphone / tablette --- */
+  @media(max-width:860px){
+    .hero{ grid-template-columns:1fr; gap:28px; padding:28px 0 18px; }
+    .steps{ grid-template-columns:1fr 1fr; }
+  }
+  @media(max-width:620px){
+    .wrap{ padding:0 16px; }
+    .grid{ grid-template-columns:1fr; }
+    .steps{ grid-template-columns:1fr; }
+    .hide-xs{ display:none; }
+    .cta .btn{ flex:1 1 auto; }
+    .band .btn{ margin-left:0; width:100%; }
+    .mock-body{ min-height:250px; }
+    footer a{ margin-left:0; }
+    section{ padding:26px 0; }
+  }
+  @media(max-width:400px){ .mock-site{ display:none; } .mock-body{ grid-template-columns:1fr; } .mock-chat{ border-right:none; } }
+  @media(prefers-reduced-motion:reduce){ html{scroll-behavior:auto} .btn{ transition:none; } }
 </style>
 </head>
 <body>
-  <div class="bg-floaties" aria-hidden="true">
-    <span class="fl sq"   style="left:6%;top:16%;width:88px;height:88px;border-radius:16px;background:linear-gradient(135deg,#147C8C,#0C5866);opacity:.16;--d:8s;--mx:80px;--my:-104px;--r:-12deg;--rr:34deg"></span>
-    <span class="fl card" style="right:8%;top:12%;width:72px;height:94px;border-radius:12px;background:linear-gradient(135deg,#2E8B6F,#1f6b54);opacity:.15;--d:10s;--dl:-4s;--mx:-74px;--my:92px;--r:8deg;--rr:-32deg"></span>
-    <span class="fl ring hide-sm" style="right:13%;bottom:18%;width:92px;height:92px;color:#D98A2B;opacity:.22;--d:7s;--dl:-2s;--mx:70px;--my:-84px;--rr:28deg"></span>
-    <span class="fl sq hide-sm" style="left:11%;bottom:14%;width:66px;height:66px;border-radius:14px;background:#D98A2B;opacity:.14;--d:9s;--dl:-5s;--mx:84px;--my:74px;--r:18deg;--rr:40deg"></span>
-    <span class="fl" style="left:43%;top:7%;width:124px;height:42px;border-radius:999px;background:linear-gradient(135deg,#147C8C,#2E8B6F);opacity:.12;--d:11s;--dl:-6s;--mx:-92px;--my:70px;--r:-6deg;--rr:22deg"></span>
-    <span class="fl ring" style="left:4%;top:54%;width:58px;height:58px;color:#147C8C;opacity:.18;--d:7s;--dl:-3s;--mx:74px;--my:82px;--rr:26deg"></span>
-    <span class="fl card hide-sm" style="right:6%;top:48%;width:60px;height:80px;border-radius:12px;background:linear-gradient(135deg,#D98A2B,#b86f1e);opacity:.14;--d:9s;--dl:-2s;--mx:-68px;--my:-84px;--r:-10deg;--rr:-30deg"></span>
-    <span class="fl sq" style="right:28%;bottom:7%;width:48px;height:48px;border-radius:12px;background:#2E8B6F;opacity:.14;--d:6s;--dl:-4s;--mx:66px;--my:-76px;--r:14deg;--rr:42deg"></span>
+  <div class="navbar" id="navbar">
+    <div class="wrap">
+      <header class="nav">
+        <a class="brand" href="/accueil" aria-label="Bâtisseur — accueil"><span class="logo" aria-hidden="true">B</span>Bâtisseur</a>
+        <div class="sp">
+          <a class="btn ghost sm" href="/">Se connecter</a>
+          <a class="btn primary sm" href="/reserver"><span>Réserver<span class="hide-xs">&nbsp;ma place</span></span></a>
+        </div>
+      </header>
+    </div>
   </div>
-  <div class="wrap">
-    <header class="nav">
-      <div class="logo">B</div><strong>Bâtisseur</strong>
-      <div class="sp">
-        <a class="btn ghost" href="/">Se connecter</a>
-        <a class="btn primary" href="/reserver">Réserver ma place</a>
-      </div>
-    </header>
 
+  <main class="wrap">
     <div class="hero">
-      <span class="pill">Formation accompagnée par l'intelligence artificielle</span>
-      <h1>Créez votre site web, ou apprenez à programmer.</h1>
-      <p class="lead">Bâtisseur est une plateforme de formation où vous avancez pas à pas, guidé par une intelligence artificielle. Deux parcours au choix : créer un vrai site ou une application web sans coder, ou apprendre les bases de la programmation avec des exercices pratiques.</p>
-      <div class="cta">
-        <a class="btn primary" href="/reserver">Réserver ma place</a>
-        <a class="btn ghost" href="/">Ouvrir l'atelier</a>
+      <div>
+        <span class="pill">Formation accompagnée par l'IA</span>
+        <h1>Créez votre site web, ou <em>apprenez à programmer</em>.</h1>
+        <p class="lead">Bâtisseur est une plateforme de formation où vous avancez pas à pas, guidé par une intelligence artificielle. Deux parcours au choix : créer un vrai site ou une application web sans coder, ou apprendre les bases de la programmation avec des exercices pratiques.</p>
+        <div class="cta">
+          <a class="btn primary lg" href="/reserver">Réserver ma place</a>
+          <a class="btn ghost lg" href="/">Ouvrir l'atelier</a>
+        </div>
+        <ul class="facts">
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l5 5L19.5 7"/></svg>Réservation en 2 minutes</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l5 5L19.5 7"/></svg>5&nbsp;000&nbsp;FCFA</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l5 5L19.5 7"/></svg>Place confirmée par le formateur</li>
+        </ul>
       </div>
-      <p style="color:var(--ink-soft);font-size:.95rem;margin:12px 0 0;">✓ Réservation en 2 minutes&nbsp;&nbsp;·&nbsp;&nbsp;✓ 5 000 FCFA&nbsp;&nbsp;·&nbsp;&nbsp;✓ Place confirmée par le formateur</p>
+
+      <div class="mock" aria-hidden="true">
+        <div class="mock-bar"><i></i><i></i><i></i><span>Atelier Bâtisseur</span></div>
+        <div class="mock-body">
+          <div class="mock-chat">
+            <div class="bub me">Je veux un site pour mon salon de coiffure à Cocody.</div>
+            <div class="bub ai">Très bien. J'ai préparé l'accueil, vos services et la prise de rendez-vous. Regardez l'aperçu.</div>
+            <div class="bub me">Mets le bouton en orange.</div>
+            <div class="mock-input">Votre réponse…<b>Envoyer</b></div>
+          </div>
+          <div class="mock-site">
+            <div class="ms-top"><b></b><u></u><u></u><u></u></div>
+            <div class="ms-hero"><strong>Salon Élégance</strong><small>Coiffure &amp; soins · Cocody</small><em>Prendre rendez-vous</em></div>
+            <div class="ms-cards"><div><u></u><u></u><u></u></div><div><u></u><u></u><u></u></div></div>
+            <span class="ms-tag">● Site en ligne</span>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <section>
-      <h2>Deux formations</h2>
+    <section aria-labelledby="h-formations">
+      <div class="sec-head">
+        <h2 id="h-formations">Deux formations</h2>
+        <p>Choisissez le parcours qui vous correspond.</p>
+      </div>
       <div class="grid">
         <div class="card">
+          <div class="ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2.5"/><path d="M3 9h18M8 21h8M12 18v3"/></svg></div>
           <span class="pill">Sans coder</span>
           <h3>Créer un site ou une application web</h3>
-          <p style="color:var(--ink-soft);margin:6px 0 0;">En discutant avec l'assistant, vous construisez un site professionnel, puis vous le mettez en ligne.</p>
-          <ul>
-            <li>Site vitrine, boutique avec panier, prise de rendez-vous</li>
-            <li>Espace membre, réception de commandes et de fichiers</li>
-            <li>Paiement en ligne et application installable sur téléphone</li>
+          <p>En discutant avec l'assistant, vous construisez un site professionnel, puis vous le mettez en ligne.</p>
+          <ul class="ticks">
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l5 5L19.5 7"/></svg>Site vitrine, boutique avec panier, prise de rendez-vous</li>
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l5 5L19.5 7"/></svg>Espace membre, réception de commandes et de fichiers</li>
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l5 5L19.5 7"/></svg>Paiement en ligne et application installable sur téléphone</li>
           </ul>
         </div>
-        <div class="card">
-          <span class="pill">Pratique</span>
+        <div class="card alt">
+          <div class="ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 4l-3 16"/></svg></div>
+          <span class="pill warm">Pratique</span>
           <h3>Apprendre la programmation</h3>
-          <p style="color:var(--ink-soft);margin:6px 0 0;">Les bases expliquées simplement, avec une console pour écrire et exécuter votre code.</p>
-          <ul>
-            <li>Python, JavaScript, Java et algorithmique, leçon par leçon</li>
-            <li>Un cours écrit clair, puis des exercices concrets</li>
-            <li>Un tuteur qui corrige et s'adapte à votre niveau</li>
+          <p>Les bases expliquées simplement, avec une console pour écrire et exécuter votre code.</p>
+          <ul class="ticks">
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l5 5L19.5 7"/></svg>Python, JavaScript, Java et algorithmique, leçon par leçon</li>
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l5 5L19.5 7"/></svg>Un cours écrit clair, puis des exercices concrets</li>
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l5 5L19.5 7"/></svg>Un tuteur qui corrige et s'adapte à votre niveau</li>
           </ul>
         </div>
       </div>
     </section>
 
-    <section>
-      <h2>Prochaines sessions</h2>
-      <div class="sessions" id="sessions"><p style="color:var(--ink-soft);margin:0;">Chargement des sessions…</p></div>
-      <p style="margin-top:12px;"><a class="btn warm" href="/reserver">Réserver une place</a></p>
+    <section aria-labelledby="h-sessions">
+      <div class="sec-head">
+        <h2 id="h-sessions">Prochaines sessions</h2>
+        <p>Les places sont limitées : réservez la vôtre dès maintenant.</p>
+      </div>
+      <div class="sessions" id="sessions" aria-live="polite"><p style="color:var(--ink-soft);margin:0;">Chargement des sessions…</p></div>
+      <p style="margin:14px 0 0;"><a class="btn warm" href="/reserver">Réserver une place</a></p>
     </section>
 
-    <section>
-      <h2>Comment ça se passe</h2>
+    <section aria-labelledby="h-etapes">
+      <div class="sec-head">
+        <h2 id="h-etapes">Comment ça se passe</h2>
+        <p>Quatre étapes, de la réservation à votre premier projet.</p>
+      </div>
       <ol class="steps">
-        <li>Vous choisissez une session et réservez votre place.</li>
-        <li>Vous réglez les frais avec Wave pour garantir votre place.</li>
-        <li>Le formateur valide votre inscription et vous recevez vos accès.</li>
-        <li>Vous suivez la formation à votre rythme, accompagné par l'IA.</li>
+        <li><strong>Réservez</strong>Vous choisissez une session et réservez votre place.</li>
+        <li><strong>Réglez</strong>Vous réglez les frais avec Wave pour garantir votre place.</li>
+        <li><strong>Recevez vos accès</strong>Le formateur valide votre inscription et vous recevez vos accès.</li>
+        <li><strong>Apprenez</strong>Vous suivez la formation à votre rythme, accompagné par l'IA.</li>
       </ol>
     </section>
 
+    <div class="band">
+      <div>
+        <h2>Prêt à construire votre premier projet ?</h2>
+        <p>Réservez votre place en deux minutes.</p>
+      </div>
+      <a class="btn warm lg" href="/reserver">Réserver ma place</a>
+    </div>
+
     <footer>
-      Bâtisseur — formation à la création web et à la programmation. Pour toute question, contactez le formateur.
-      <br><a href="/feedback" style="color:var(--brand,#147C8C);text-decoration:none;font-weight:600;">Déjà participé&nbsp;? Donnez votre avis →</a>
+      <span>Bâtisseur — formation à la création web et à la programmation. Pour toute question, contactez le formateur.</span>
+      <a href="/feedback">Déjà participé&nbsp;? Donnez votre avis →</a>
     </footer>
-  </div>
+  </main>
 
   <script>
     function esc(s){ var d=document.createElement("div"); d.textContent=(s==null?"":s); return d.innerHTML; }
+    // Barre du haut : fine bordure dès qu'on fait défiler la page.
+    (function(){ var n=document.getElementById("navbar"); function f(){ n.classList.toggle("scrolled", window.scrollY>6); } window.addEventListener("scroll", f, {passive:true}); f(); })();
     fetch("/api/formation/sessions").then(function(r){ return r.json(); }).then(function(d){
       var box = document.getElementById("sessions");
       if(!d.open){ box.innerHTML = '<p style="color:var(--ink-soft);margin:0;">Les réservations sont momentanément fermées. Revenez bientôt.</p>'; return; }
@@ -158,7 +284,7 @@
       if(!s.length){ box.innerHTML = '<p style="color:var(--ink-soft);margin:0;">Aucune session ouverte pour le moment.</p>'; return; }
       var cur = d.currency || "FCFA";
       box.innerHTML = s.map(function(x){
-        var right = x.full ? "Complet" : (x.remaining + " place" + (x.remaining>1?"s":"") + " restantes");
+        var right = x.full ? '<span class="full">Complet</span>' : (x.remaining + (x.remaining>1 ? " places restantes" : " place restante"));
         var price = (x.price!=null) ? (' · <span class="price">' + Math.round(x.price) + ' ' + esc(cur) + '</span>') : "";
         return '<div class="srow"><div class="d">' + esc(x.dateFr || x.label) + '</div><div class="r">' + right + price + '</div></div>';
       }).join("");

@@ -38,6 +38,9 @@
   .top .brand .logo{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--warm));display:grid;place-items:center;color:#06121c;font-weight:800;font-size:13px;}
   .top .k{font-family:var(--f-mono),monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8fa5bd;}
   .top .grow{flex:1;}
+  .top .brand h1{font:inherit;margin:0;letter-spacing:inherit;}
+  .top .topmenu{display:contents;}
+  .top .menubtn{display:none;}
   .top .newbtn,.top .topbtn{font-family:var(--f-mono),monospace;font-size:11px;color:#9fb3c9;background:transparent;border:1px solid var(--nav-line);border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap;}
   .top .newbtn:hover,.top .topbtn:hover{color:#fff;border-color:#3a5372;}
   .top .topbtn.solid{background:var(--accent);border-color:var(--accent);color:#fff;}
@@ -238,11 +241,18 @@
     .pane[data-pane].show{display:flex;}
     .railpane.pane.show{display:block;}
     /* Finitions mobile : barre du haut défilable (pas de boutons coupés), plus compacte */
-    .top{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;gap:8px;padding:8px 12px;scrollbar-width:none;}
-    .top::-webkit-scrollbar{display:none;}
+    .top{position:relative;z-index:60;gap:8px;padding:8px 12px;}
     .top .brand,.top .newbtn,.top .topbtn,.top .acctname,.top #workBadge{flex:0 0 auto;}
     .top .k{display:none;}
-    .top .grow{flex:0 0 4px;}
+    .top .grow{flex:1 1 4px;}
+    .top .acctname{min-width:0;flex:0 1 auto;}
+    .top .acctname #acctLabel{max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .top .topbtn.solid,.top .menubtn{padding:9px 13px;font-size:12px;}
+    .top .menubtn{display:inline-flex;align-items:center;gap:7px;color:#e7eff6;}
+    .top .menubtn::before{content:"";width:14px;height:10px;border-top:2px solid currentColor;border-bottom:2px solid currentColor;background:linear-gradient(currentColor,currentColor) center/100% 2px no-repeat;}
+    .top .topmenu{display:none;position:absolute;right:10px;top:calc(100% + 6px);flex-direction:column;gap:6px;min-width:220px;max-width:calc(100vw - 20px);max-height:70vh;overflow-y:auto;padding:10px;background:var(--nav);border:1px solid var(--nav-line);border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.35);}
+    .top .topmenu.open{display:flex;}
+    .top .topmenu .topbtn,.top .topmenu .newbtn{width:100%;text-align:left;padding:12px 13px;font-size:13px;color:#dfe9f3;}
     /* Barre d'outils de l'aperçu : défilable horizontalement si trop de boutons */
     .pv-tools{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px;}
     .pv-tools::-webkit-scrollbar{display:none;}
@@ -323,12 +333,14 @@
 <body>
   <div class="app">
     <div class="top">
-      <div class="brand"><span class="logo">B</span> Bâtisseur</div>
+      <div class="brand"><span class="logo" aria-hidden="true">B</span> <h1>Bâtisseur</h1></div>
       <span class="k">Parcours complet</span>
       <span class="grow"></span>
       <button class="topbtn solid" id="loginOpenBtn" type="button" style="display:none;">Se connecter</button>
       <span class="acctname" id="acctName" style="display:none;"><span class="av" id="acctAv">?</span><span id="acctLabel"></span></span>
       <span class="topbtn" id="workBadge" style="display:none;cursor:default;"></span>
+      <button class="topbtn menubtn" id="topMenuBtn" type="button" aria-expanded="false" aria-controls="topMenu" aria-label="Ouvrir le menu">Menu</button>
+      <div class="topmenu" id="topMenu">
       <button class="topbtn" id="adminBtn" type="button" style="display:none;">Espace formateur</button>
       <button class="topbtn" id="progBtn" type="button" style="display:none;" title="Voir le programme de ma session et comment travailler">Mon programme</button>
       <button class="topbtn" id="examplesBtn" type="button" style="display:none;" title="Voir des exemples d'interfaces de sites et d'applications">Exemples</button>
@@ -337,6 +349,7 @@
       <button class="topbtn" id="logoutBtn" type="button" style="display:none;">Se déconnecter</button>
       <button class="topbtn" id="helpBtn" type="button" title="Comment ça marche : guide rapide">Aide</button>
       <button class="newbtn" id="newBtn" type="button">Recommencer</button>
+      </div>
     </div>
 
     <div class="tabs" id="tabs">
@@ -381,7 +394,7 @@
         <div class="resumed" id="resumed" style="display:none;">Reprise de votre parcours en cours.</div>
         <div id="thread" aria-live="polite"></div>
         <form id="form">
-          <textarea id="input" placeholder="Votre réponse… (ex. « mets le titre en bleu »)" autofocus disabled></textarea>
+          <textarea aria-label="Votre message à l'assistant" id="input" placeholder="Votre réponse… (ex. « mets le titre en bleu »)" autofocus disabled></textarea>
           <button class="send" id="send" type="submit" disabled>Envoyer</button>
         </form>
       </div>
@@ -439,7 +452,7 @@
                   <button class="fbtn fgh" id="fp_copy" type="button" disabled>Copier</button>
                 </div>
                 <p id="fp_msg" class="fnote"></p>
-                <textarea id="fp_out" readonly spellcheck="false" style="display:none;width:100%;min-height:150px;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-3);color:var(--ink);font-family:var(--f-mono),monospace;font-size:.78rem;white-space:pre;"></textarea>
+                <textarea aria-label="Prompt complet du projet" id="fp_out" readonly spellcheck="false" style="display:none;width:100%;min-height:150px;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-3);color:var(--ink);font-family:var(--f-mono),monospace;font-size:.78rem;white-space:pre;"></textarea>
               </div>
 
               <div class="fcard"><h3><span class="fn">2</span> Point de contrôle qualité</h3>
@@ -457,7 +470,7 @@
 
               <div class="fcard"><h3><span class="fn">4</span> Recoller le lien du site publié</h3>
                 <p class="fmut">Collez l'adresse du site en ligne : elle est enregistrée pour votre certificat.</p>
-                <input type="url" id="fp_url" placeholder="https://…" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-3);color:var(--ink);font-size:1rem;">
+                <input aria-label="Adresse du site publié" type="url" id="fp_url" placeholder="https://…" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-3);color:var(--ink);font-size:1rem;">
                 <div class="frow"><button class="fbtn fwarm" id="fp_save" type="button">Enregistrer le lien</button></div>
                 <p id="fp_link_msg" class="fnote"></p>
               </div>
@@ -469,7 +482,7 @@
           </div>
         </div>
         <div class="code-stage" id="codeStage">
-          <textarea id="codeEditor" spellcheck="false" placeholder="# Écrivez votre code ici, puis cliquez « Exécuter »."></textarea>
+          <textarea aria-label="Éditeur de code" id="codeEditor" spellcheck="false" placeholder="# Écrivez votre code ici, puis cliquez « Exécuter »."></textarea>
           <div class="code-out-wrap">
             <div class="code-out-head">Résultat</div>
             <pre class="code-out" id="codeOut">La sortie de votre programme s'affichera ici.</pre>
@@ -483,7 +496,7 @@
     <div class="modal">
       <h3>Attestation de réussite</h3>
       <p>Indiquez le nom à faire figurer sur le certificat de réussite.</p>
-      <input id="certName" type="text" placeholder="Votre nom et prénom" maxlength="80" autocomplete="name">
+      <input aria-label="Nom à faire figurer sur le certificat" id="certName" type="text" placeholder="Votre nom et prénom" maxlength="80" autocomplete="name">
       <div class="row">
         <button id="certCancel" type="button">Annuler</button>
         <button id="certGo" class="primary" type="button">Créer mon certificat</button>
@@ -564,7 +577,7 @@
       <div class="stack">
         <label class="payopt"><input type="radio" name="paymode" value="none"> <span><b>Aucun paiement en ligne</b><br><small>Les commandes arrivent par message / WhatsApp, comme aujourd'hui.</small></span></label>
         <label class="payopt"><input type="radio" name="paymode" value="link"> <span><b>Mon lien de paiement Wave</b> (recommandé)<br><small>Collez votre lien Wave : un bouton « Payer avec Wave » s'affiche sur votre site. Vous confirmez l'encaissement dans votre application Wave.</small></span></label>
-        <input id="payLink" type="url" placeholder="https://pay.wave.com/…  (votre lien Wave)" maxlength="400" style="display:none;">
+        <input aria-label="Lien de paiement Wave" id="payLink" type="url" placeholder="https://pay.wave.com/…  (votre lien Wave)" maxlength="400" style="display:none;">
         <label class="payopt" id="payApiOpt"><input type="radio" name="paymode" value="api"> <span><b>Paiement automatique (API centralisée)</b><br><small id="payApiNote">Encaissement automatique sur le compte Wave de la plateforme.</small></span></label>
       </div>
       <div class="autherr" id="payErr"></div>
@@ -606,7 +619,7 @@
         <b>Objectif quotidien</b>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
           <label style="font-size:12px;color:var(--ink-soft)">Minutes par jour :</label>
-          <select id="goalSel" style="width:130px;">
+          <select aria-label="Minutes par jour" id="goalSel" style="width:130px;">
             <option value="30">30 minutes</option>
             <option value="35">35 minutes</option>
             <option value="45">45 minutes</option>
@@ -619,14 +632,14 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
           <label style="font-size:12px;color:var(--ink-soft)">Messages IA max. par apprenant / jour :</label>
-          <input id="aiLimInput" type="number" min="20" max="2000" step="10" style="width:100px;">
+          <input aria-label="Messages IA maximum par apprenant et par jour" id="aiLimInput" type="number" min="20" max="2000" step="10" style="width:100px;">
           <button id="aiLimSave" class="primary" type="button">Enregistrer</button>
           <span id="aiLimMsg" style="font-size:12px;color:var(--good,#2E8B6F);"></span>
         </div>
         <div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Protège le coût d'API. 150 convient largement : un apprenant normal ne l'atteint jamais. Vous n'êtes jamais limité(e).</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
           <label style="font-size:12px;color:var(--ink-soft)">Plafond de travail (avant pause) :</label>
-          <select id="capSel" style="width:170px;">
+          <select aria-label="Plafond de travail avant pause" id="capSel" style="width:170px;">
             <option value="60">1 heure (défaut)</option>
             <option value="90">1 h 30</option>
             <option value="120">2 heures</option>
@@ -667,15 +680,15 @@
         <summary style="cursor:pointer;font-weight:700;list-style:none;">⚙︎ Réglages <span style="font-weight:400;color:var(--ink-soft);font-size:.85rem;">— lien de paiement, prix, ouverture (cliquez pour ouvrir)</span></summary>
         <div class="stack" style="margin-top:10px;">
           <label style="font-size:12px;color:var(--ink-soft)">Lien de paiement Wave</label>
-          <input id="setLink" type="url" placeholder="https://pay.wave.com/…">
+          <input aria-label="Lien de paiement Wave de la formation" id="setLink" type="url" placeholder="https://pay.wave.com/…">
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <input id="setPrice" type="number" min="0" placeholder="Prix (ex. 15000)" style="flex:1;min-width:120px;">
-            <input id="setCur" type="text" maxlength="8" placeholder="Devise (FCFA)" style="width:120px;">
+            <input aria-label="Prix de la formation" id="setPrice" type="number" min="0" placeholder="Prix (ex. 15000)" style="flex:1;min-width:120px;">
+            <input aria-label="Devise" id="setCur" type="text" maxlength="8" placeholder="Devise (FCFA)" style="width:120px;">
             <label class="pwachk" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;"><input type="checkbox" id="setOpen"> Réservations ouvertes</label>
             <label class="pwachk" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;"><input type="checkbox" id="setProof"> Preuve de paiement obligatoire</label>
           </div>
           <label style="font-size:12px;color:var(--ink-soft)">Lien d'invitation de la communauté WhatsApp <span style="color:var(--ink-faint)">— envoyé automatiquement aux admis</span></label>
-          <input id="setWa" type="url" placeholder="https://chat.whatsapp.com/…" maxlength="300">
+          <input aria-label="Lien de la communauté WhatsApp" id="setWa" type="url" placeholder="https://chat.whatsapp.com/…" maxlength="300">
           <div style="font-size:11px;color:var(--ink-faint);margin-top:-2px;">Dans WhatsApp → votre communauté/groupe → « Inviter via un lien » → Copier le lien, puis collez-le ici.</div>
           <div class="autherr" id="setErr"></div>
           <div><button id="setSave" class="primary" type="button">Enregistrer les réglages</button></div>
@@ -683,7 +696,7 @@
       </details>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
         <label style="font-size:12px;color:var(--ink-soft)">Session :</label>
-        <select id="resvSession" style="flex:1;min-width:160px;"></select>
+        <select aria-label="Session" id="resvSession" style="flex:1;min-width:160px;"></select>
         <button id="resvRefresh" class="dlbtn" type="button">Actualiser</button>
         <button id="resvTick" class="dlbtn" type="button" title="Envoyer les rappels dus et mettre à jour la file">Forcer la vérification</button>
         <button id="resvRoster" class="dlbtn" type="button" title="Ouvrir la liste imprimable des admis (PDF)" style="border-color:var(--accent);color:var(--accent-deep);">Liste des admis (PDF)</button>
@@ -767,7 +780,7 @@
         <div style="color:var(--ink-faint);font-size:.88rem;margin-bottom:10px;">Une question sur ton code ? Pose-la : la réponse est <b>enregistrée</b> et reste visible ici. <span id="askLeft"></span></div>
         <div id="faqList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;"></div>
         <div id="askRow" style="display:flex;gap:8px;flex-wrap:wrap;">
-          <input id="askInput" type="text" maxlength="300" placeholder="Ex. : qu'est-ce qui crée la couleur verte ?" style="flex:1;min-width:200px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:var(--surface);">
+          <input aria-label="Votre question sur le code" id="askInput" type="text" maxlength="300" placeholder="Ex. : qu'est-ce qui crée la couleur verte ?" style="flex:1;min-width:200px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:var(--surface);">
           <button id="askBtn" class="primary" type="button">Demander</button>
         </div>
       </div>
@@ -809,7 +822,7 @@
     <div class="modal" style="max-width:420px;">
       <h3>Présence du jour</h3>
       <p id="attMsg">Vous êtes en formation. Saisissez le code à 4 chiffres affiché par le formateur pour être marqué présent.</p>
-      <div class="stack"><input id="attCodeInput" type="text" inputmode="numeric" maxlength="4" placeholder="----" style="font-size:1.6rem;text-align:center;letter-spacing:.4em;"></div>
+      <div class="stack"><input aria-label="Code de présence" id="attCodeInput" type="text" inputmode="numeric" maxlength="4" placeholder="----" style="font-size:1.6rem;text-align:center;letter-spacing:.4em;"></div>
       <div class="autherr" id="attErr"></div>
       <div class="row"><button id="attLater" type="button">Plus tard</button><button id="attGo" class="primary" type="button">Je suis présent</button></div>
     </div>
@@ -867,13 +880,13 @@
       <h3 id="authTitle">Se connecter</h3>
       <p id="authIntro">Connectez-vous à votre espace Bâtisseur.</p>
       <div class="stack">
-        <input id="authName" type="text" placeholder="Votre nom et prénom" maxlength="80" autocomplete="name" style="display:none;">
-        <input id="authEmail" type="email" placeholder="Adresse e-mail" autocomplete="email">
+        <input aria-label="Votre nom et prénom" id="authName" type="text" placeholder="Votre nom et prénom" maxlength="80" autocomplete="name" style="display:none;">
+        <input aria-label="Adresse e-mail" id="authEmail" type="email" placeholder="Adresse e-mail" autocomplete="email">
         <div style="position:relative;">
-          <input id="authPass" type="password" placeholder="Mot de passe" autocomplete="current-password" style="padding-right:44px;">
+          <input aria-label="Mot de passe" id="authPass" type="password" placeholder="Mot de passe" autocomplete="current-password" style="padding-right:44px;">
           <button id="authPassEye" type="button" aria-label="Afficher le mot de passe" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:6px;color:var(--ink-faint);line-height:0;"></button>
         </div>
-        <select id="authCohort" style="display:none;"></select>
+        <select aria-label="Session de formation" id="authCohort" style="display:none;"></select>
       </div>
       <div style="text-align:right;margin-top:3px;"><button class="linkbtn" id="forgotLink" type="button" style="font-size:.82rem;">Mot de passe oublié ?</button></div>
       <div class="autherr" id="authErr"></div>
@@ -3439,7 +3452,7 @@
       avis.addEventListener("click", function(){ window.open("/avis", "_blank", "noopener"); });
       var ab = $id("adminBtn"); if(ab) ab.addEventListener("click", loadAvisSummary);
       var ar = $id("adminRefresh"); if(ar) ar.addEventListener("click", loadAvisSummary);
-      loadAvisSummary();
+      // (Le résumé des avis se charge à l'ouverture de l'Espace formateur : plus d'appel pour les visiteurs.)
     }
     // Apprenant : proposer de noter la formation quand le parcours est terminé
     // (le bouton « Mon attestation » est visible = l'apprenant a fini).
@@ -3455,5 +3468,17 @@
     }
   })();
   </script>
+<script>
+  // Menu de la barre du haut sur téléphone : ouvre/ferme le panneau des boutons secondaires.
+  (function(){
+    var btn=document.getElementById("topMenuBtn"), menu=document.getElementById("topMenu");
+    if(!btn||!menu) return;
+    function set(open){ menu.classList.toggle("open",open); btn.setAttribute("aria-expanded",open?"true":"false"); btn.setAttribute("aria-label",open?"Fermer le menu":"Ouvrir le menu"); }
+    btn.addEventListener("click",function(e){ e.stopPropagation(); set(!menu.classList.contains("open")); });
+    menu.addEventListener("click",function(e){ if(e.target.closest("button")) set(false); });
+    document.addEventListener("click",function(e){ if(!menu.contains(e.target)&&e.target!==btn) set(false); });
+    document.addEventListener("keydown",function(e){ if(e.key==="Escape") set(false); });
+  })();
+</script>
 </body>
 </html>

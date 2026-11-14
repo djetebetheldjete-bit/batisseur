@@ -992,7 +992,8 @@ async function producePremium(conv) {
   return { reply: message, siteUpdated };
 }
 
-const DATA_DIR = path.join(__dirname, "data");
+// Dossier des données locales (mode sans base). DATA_DIR permet aux tests d'utiliser un dossier jetable.
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, "data");
 const SITES_DIR = path.join(DATA_DIR, "sites");
 try { fs.mkdirSync(SITES_DIR, { recursive: true }); } catch (e) {}
 
@@ -1219,7 +1220,7 @@ async function getSessionUser(token) {
 // -- Cookies / utilisateur courant --
 function parseCookies(req) {
   const h = req.headers.cookie || ""; const out = {};
-  h.split(";").forEach((p) => { const i = p.indexOf("="); if (i > -1) out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); });
+  h.split(";").forEach((p) => { const i = p.indexOf("="); if (i > -1) { const v = p.slice(i + 1).trim(); let d = v; try { d = decodeURIComponent(v); } catch (e) { d = v; } out[p.slice(0, i).trim()] = d; } });
   return out;
 }
 // En production (Render), le cookie de session est marqué « Secure » : il ne
@@ -2215,6 +2216,7 @@ async function handleRegister(req, res) {
     const email = normEmail(p.email);
     if (!validEmail(email)) return sendJson(res, 400, { error: "Adresse e-mail invalide." });
     if (typeof p.password !== "string" || p.password.length < 6) return sendJson(res, 400, { error: "Le mot de passe doit contenir au moins 6 caractères." });
+    if (!rateOk("register-ip:" + reqIp(req), 10, 60 * 60 * 1000)) return sendJson(res, 429, { error: "Trop de créations de compte depuis cette connexion. Réessayez plus tard." });
     if (await findUserByEmail(email)) return sendJson(res, 409, { error: "Un compte existe déjà avec cette adresse. Connectez-vous." });
     // Auto-inscription : le compte est « en attente » de validation par le formateur.
     // Sauf l'admin lui-même, qui est actif d'emblée pour pouvoir gérer la plateforme.
@@ -2240,6 +2242,8 @@ async function handleRegister(req, res) {
 async function handleLogin(req, res) {
   try {
     let p = {}; try { p = JSON.parse((await readBody(req)) || "{}"); } catch (e) { return sendJson(res, 400, { error: "Requête invalide." }); }
+    // Anti-force brute : nombre de tentatives limité par adresse IP et par e-mail.
+    if (!rateOk("login-ip:" + reqIp(req), 30, 10 * 60 * 1000) || !rateOk("login:" + normEmail(p.email).slice(0, 200), 10, 10 * 60 * 1000)) return sendJson(res, 429, { error: "Trop de tentatives de connexion. Réessayez dans quelques minutes." });
     const user = await findUserByEmail(p.email);
     if (!user || !verifyPassword(p.password, user.pass)) return sendJson(res, 401, { error: "E-mail ou mot de passe incorrect." });
     const token = await createSession(user.id);
@@ -4495,6 +4499,8 @@ async function deleteUpload(id, projectId) {
 // Limiteur de débit en mémoire (anti-abus) + en-têtes CORS pour l'écriture publique.
 const RL = {};
 function rateOk(key, limit, windowMs) { const now = Date.now(); const arr = (RL[key] || []).filter((t) => now - t < windowMs); arr.push(now); RL[key] = arr; return arr.length <= limit; }
+// Purge horaire : on oublie les clés sans activité depuis 24 h.
+setInterval(() => { const now = Date.now(); for (const k of Object.keys(RL)) { const a = RL[k]; if (!a.length || now - a[a.length - 1] > 24 * 60 * 60 * 1000) delete RL[k]; } }, 60 * 60 * 1000).unref();
 function corsHeaders() { return { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "content-type" }; }
 function sendJsonCors(res, code, obj) { res.writeHead(code, Object.assign({ "content-type": "application/json; charset=utf-8" }, corsHeaders())); res.end(JSON.stringify(obj)); }
 
@@ -5031,9 +5037,33 @@ async function handleProjectPublishedLink(req, res) {
   } catch (e) { sendJson(res, e.status || 500, { error: e.message || "Erreur serveur." }); }
 }
 
+// Réponse de secours : une requête en erreur reçoit un message, le serveur continue de tourner.
+function failRequest(res, err) {
+  const bad = err instanceof URIError;
+  if (!bad) console.error("Requête en erreur :", (err && err.stack) || err);
+  try {
+    if (!res.headersSent) { res.writeHead(bad ? 400 : 500, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify({ error: bad ? "Adresse ou requête invalide." : "Erreur serveur." })); }
+    else if (!res.writableEnded) res.end();
+  } catch (e) {}
+}
+// Filets de sécurité : une erreur imprévue est journalisée au lieu d'arrêter le serveur.
+process.on("unhandledRejection", (e) => console.error("Rejet non géré :", (e && e.stack) || e));
+process.on("uncaughtException", (e) => console.error("Exception non gérée :", (e && e.stack) || e));
+
 const server = http.createServer((req, res) => {
+  // En-têtes de sécurité communs à toutes les réponses.
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  if (COOKIE_SECURE) res.setHeader("Strict-Transport-Security", "max-age=15552000");
+  try {
+    const out = routeRequest(req, res);
+    if (out && typeof out.catch === "function") out.catch((err) => failRequest(res, err));
+  } catch (err) { failRequest(res, err); }
+});
+function routeRequest(req, res) {
   if (req.method === "OPTIONS" && req.url.startsWith("/api/app/")) { res.writeHead(204, corsHeaders()); return res.end(); }
-  if (req.method === "GET") { logVisit(req); }   // journal des visites (pages seulement, non bloquant)
+  if (req.method === "GET") { logVisit(req).catch(() => {}); }   // journal des visites (pages seulement, non bloquant)
   if (req.method === "POST" && req.url === "/api/start") return handleStart(req, res);
   if (req.method === "POST" && req.url === "/api/chat") return handleChat(req, res);
   if (req.method === "POST" && req.url === "/api/next") return handleNext(req, res);
@@ -5140,7 +5170,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/preview/")) return servePreview(req, res);
   if (req.method === "GET") return serveStatic(req, res);
   res.writeHead(405); res.end("Méthode non autorisée");
-});
+}
 
 server.listen(PORT, () => {
   console.log(`\n  Bâtisseur — parcours complet (v1.8) en marche.`);
